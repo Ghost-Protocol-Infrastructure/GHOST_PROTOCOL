@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
+import { Copy } from "lucide-react";
 import GhostList from "@/components/GhostList";
 import Navbar from "@/components/Navbar";
 import type { GhostAgent } from "@/types/ghost";
@@ -23,13 +24,15 @@ const leads = baseAgents as BaseAgentLead[];
 const truncateAddress = (address: string): string => `${address.slice(0, 6)}...${address.slice(-4)}`;
 
 const tierClassName: Record<LeadTier, string> = {
-  WHALE: "border-emerald-400/40 bg-emerald-500/20 text-emerald-300",
+  WHALE:
+    "border-neon-purple border-violet-400 bg-emerald-500/20 text-emerald-300 animate-pulse shadow-[0_0_10px_rgba(139,92,246,0.5)]",
   ACTIVE: "border-amber-400/40 bg-amber-500/20 text-amber-300",
   NEW: "border-slate-500/40 bg-slate-500/20 text-slate-300",
 };
 
 export default function Home() {
   const [network, setNetwork] = useState<Network>("MEGAETH");
+  const [copiedOwner, setCopiedOwner] = useState<string | null>(null);
   const { address: userAddress } = useAccount();
   const router = useRouter();
 
@@ -57,10 +60,24 @@ export default function Home() {
     return uniqueWhales.size;
   }, []);
 
-  const handleClaimProfile = (owner: string) => {
-    const isOwner = userAddress?.toLowerCase() === owner.toLowerCase();
-    if (!isOwner) return;
-    router.push("/dashboard");
+  const handleOpenDashboard = (mode: "merchant" | "consumer", agentId: string) => {
+    const params = new URLSearchParams({ mode, agentId });
+    router.push(`/dashboard?${params.toString()}`);
+  };
+
+  useEffect(() => {
+    if (!copiedOwner) return;
+    const timeout = setTimeout(() => setCopiedOwner(null), 1400);
+    return () => clearTimeout(timeout);
+  }, [copiedOwner]);
+
+  const handleCopyOwner = async (owner: string) => {
+    try {
+      await navigator.clipboard.writeText(owner);
+      setCopiedOwner(owner);
+    } catch {
+      setCopiedOwner(null);
+    }
   };
 
   return (
@@ -98,7 +115,7 @@ export default function Home() {
         <div className="p-4 rounded-sm bg-slate-950/50 border border-violet-500/20 backdrop-blur-sm transform-gpu group hover:border-violet-500/40 transition-colors">
           <div className="relative inline-flex mb-2">
             <div className="absolute inset-0 bg-violet-500/30" aria-hidden="true"></div>
-            <span className="relative text-white text-[10px] tracking-[0.2em]">//total_agents</span>
+            <span className="relative text-white text-[10px] tracking-[0.2em]">{"//total_agents"}</span>
           </div>
           <div className="text-3xl text-white font-regular drop-shadow-[0_0_5px_rgba(255,255,255,0.3)]">
             {network === "MEGAETH" ? megaEthMockAgents.length : leads.length}
@@ -107,7 +124,7 @@ export default function Home() {
         <div className="p-4 rounded-sm bg-slate-950/50 border border-violet-500/20 backdrop-blur-sm transform-gpu group hover:border-violet-500/40 transition-colors">
           <div className="relative inline-flex mb-2">
             <div className="absolute inset-0 bg-violet-500/30" aria-hidden="true"></div>
-            <span className="relative text-white text-[10px] tracking-[0.2em]">//network_status</span>
+            <span className="relative text-white text-[10px] tracking-[0.2em]">{"//network_status"}</span>
           </div>
           <div className="text-sm font-regular flex items-center gap-2">
             <span className="relative flex h-2 w-2">
@@ -122,7 +139,7 @@ export default function Home() {
         <div className="p-4 rounded-sm bg-slate-950/50 border border-violet-500/20 backdrop-blur-sm transform-gpu group hover:border-violet-500/40 transition-colors">
           <div className="relative inline-flex mb-2">
             <div className="absolute inset-0 bg-violet-500/30" aria-hidden="true"></div>
-            <span className="relative text-white text-[10px] tracking-[0.2em]">//whale_wallets</span>
+            <span className="relative text-white text-[10px] tracking-[0.2em]">{"//whale_wallets"}</span>
           </div>
           <div className="text-3xl text-white font-regular drop-shadow-[0_0_5px_rgba(255,255,255,0.3)]">
             {network === "MEGAETH" ? "--" : whaleOwners}
@@ -131,7 +148,7 @@ export default function Home() {
         <div className="p-4 rounded-sm bg-slate-950/50 border border-violet-500/20 backdrop-blur-sm transform-gpu group hover:border-violet-500/40 transition-colors">
           <div className="relative inline-flex mb-2">
             <div className="absolute inset-0 bg-violet-500/20" aria-hidden="true"></div>
-            <span className="relative text-white text-[10px] tracking-[0.2em]">//claim_route</span>
+            <span className="relative text-white text-[10px] tracking-[0.2em]">{"//claim_route"}</span>
           </div>
           <div className="text-sm text-cyan-300">/dashboard</div>
         </div>
@@ -168,24 +185,38 @@ export default function Home() {
                     {agent.agentId}
                   </div>
                   <div className="col-span-3 py-3 px-4 border-r border-cyan-500/10 text-slate-400">
-                    <span title={agent.owner}>{truncateAddress(agent.owner)}</span>
+                    <div className="flex items-center gap-2">
+                      <span title={agent.owner}>{truncateAddress(agent.owner)}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyOwner(agent.owner)}
+                        className="inline-flex items-center justify-center border border-slate-700 px-1.5 py-1 text-slate-400 transition hover:border-cyan-500/50 hover:text-cyan-300"
+                        aria-label={`Copy ${agent.owner}`}
+                        title={copiedOwner === agent.owner ? "Copied" : "Copy full address"}
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                   <div className="col-span-1 py-3 px-4 border-r border-cyan-500/10 text-right text-slate-300">
                     {agent.txCount}
                   </div>
                   <div className="col-span-3 py-3 px-4 text-right">
-                    <button
-                      type="button"
-                      onClick={() => handleClaimProfile(agent.owner)}
-                      disabled={!isOwner}
-                      className={
-                        isOwner
-                          ? "px-3 py-2 text-xs tracking-[0.12em] bg-emerald-500 text-black hover:bg-emerald-400 transition"
-                          : "px-3 py-2 text-xs tracking-[0.12em] border border-slate-700 text-slate-600 cursor-not-allowed"
-                      }
-                    >
-                      {isOwner ? "CLAIM PROFILE" : "LOCKED"}
-                    </button>
+                    {!userAddress ? (
+                      <span className="text-slate-600">---</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenDashboard(isOwner ? "merchant" : "consumer", agent.agentId)}
+                        className={`inline-flex min-w-[132px] items-center justify-center px-3 py-2 text-xs uppercase tracking-[0.12em] font-mono border transition ${
+                          isOwner
+                            ? "bg-emerald-500 text-black border-emerald-400/40 hover:bg-emerald-400"
+                            : "text-cyan-400 border-cyan-400/20 hover:bg-cyan-400/10"
+                        }`}
+                      >
+                        {isOwner ? "CLAIM PROFILE" : "USE AGENT"}
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -196,4 +227,3 @@ export default function Home() {
     </main>
   );
 }
-
