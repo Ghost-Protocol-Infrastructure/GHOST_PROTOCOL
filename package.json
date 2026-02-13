@@ -2,6 +2,7 @@
   "name": "ghost-rank-indexer",
   "private": true,
   "type": "module",
+  "packageManager": "npm@10.8.2",
   "scripts": {
     "indexer": "tsx indexer.ts",
     "indexer:once": "tsx indexer.ts --once",
@@ -12,6 +13,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "check:lock": "npx npm@10.8.2 ci --ignore-scripts --no-audit --no-fund",
     "update-data": "npx tsx indexer.ts --once"
   },
   "dependencies": {
@@ -41,6 +43,7 @@
     "typescript": "^5.5.4"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20 <21",
+    "npm": "^10.8.2"
   }
 }

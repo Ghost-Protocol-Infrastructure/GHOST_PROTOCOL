@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: data-refresh
+  cancel-in-progress: false
+
 jobs:
   update-data:
     runs-on: ubuntu-latest
@@ -19,14 +23,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20.20.0'
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install dependencies (pinned npm)
+        run: npx npm@10.8.2 ci
 
       - name: Run data update
-        run: npm run update-data
+        run: npx npm@10.8.2 run update-data
 
       - name: Commit and push if changed
         run: |
