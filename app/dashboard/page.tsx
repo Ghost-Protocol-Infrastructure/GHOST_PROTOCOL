@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { Activity, AlertTriangle, Code, Copy, Wallet } from "lucide-react";
+import { Activity, AlertTriangle, Code, Copy, Info, Wallet } from "lucide-react";
 import {
   useAccount,
   useReadContract,
@@ -67,6 +67,7 @@ export default function DashboardPage() {
   });
 
   const [ethAmount, setEthAmount] = useState("0.0001");
+  const [selectedAgentId, setSelectedAgentId] = useState("");
   const [copyState, setCopyState] = useState<CopyState>("idle");
   const [apiKeyCopyState, setApiKeyCopyState] = useState<CopyState>("idle");
   const [switchError, setSwitchError] = useState<string | null>(null);
@@ -114,40 +115,73 @@ export default function DashboardPage() {
     return () => clearTimeout(timeout);
   }, [apiKeyCopyState]);
 
-  const selectedAgentId = searchParams.get("agentId") ?? "${agentId}";
+  const requestedAgentId = searchParams.get("agentId");
+  const consumerAgentId = requestedAgentId ?? "${agentId}";
   const consumerUsageExample = useMemo(
     () =>
       `curl -X POST \\
-  https://ghost-gate.vercel.app/api/run/${selectedAgentId} \\
+  https://ghost-gate.vercel.app/api/run/${consumerAgentId} \\
   -H "Content-Type: application/json" \\
   -d '{"prompt": "Your query here"}'`,
-    [selectedAgentId],
+    [consumerAgentId],
   );
 
-  const ownedAgent = useMemo(() => {
-    if (!address) return null;
-    return indexedBaseAgents.find((a) => a.owner.toLowerCase() === address.toLowerCase()) ?? null;
+  const ownedAgents = useMemo(() => {
+    if (!address) return [];
+    return indexedBaseAgents.filter((a) => a.owner.toLowerCase() === address.toLowerCase());
   }, [address]);
+
+  const selectedOwnedAgent = useMemo(() => {
+    if (!ownedAgents.length) return null;
+    return ownedAgents.find((agent) => agent.agentId === selectedAgentId) ?? ownedAgents[0];
+  }, [ownedAgents, selectedAgentId]);
 
   const requestedMode = searchParams.get("mode");
   const forceConsumerView = requestedMode === "consumer";
-  const showMerchantView = Boolean(ownedAgent) && !forceConsumerView;
+  const showMerchantView = ownedAgents.length > 0 && !forceConsumerView;
+
+  useEffect(() => {
+    if (!ownedAgents.length) {
+      setSelectedAgentId("");
+      return;
+    }
+
+    const selectedIsOwned = ownedAgents.some((agent) => agent.agentId === selectedAgentId);
+
+    // Only use URL agentId for initial/default selection.
+    if (!selectedAgentId) {
+      const requestedIsOwned = requestedAgentId != null && ownedAgents.some((agent) => agent.agentId === requestedAgentId);
+      if (requestedIsOwned && requestedAgentId != null) {
+        setSelectedAgentId(requestedAgentId);
+        return;
+      }
+
+      setSelectedAgentId(ownedAgents[0].agentId);
+      return;
+    }
+
+    if (!selectedIsOwned) {
+      setSelectedAgentId(ownedAgents[0].agentId);
+    }
+  }, [ownedAgents, requestedAgentId, selectedAgentId]);
 
   const merchantApiKey = useMemo(() => {
-    if (!address) return "sk_live_[WALLET]...";
-    return `sk_live_${address.slice(2, 10)}...`;
-  }, [address]);
+    if (!address || !selectedOwnedAgent) return "sk_live_[WALLET]...";
+    return `sk_live_${selectedOwnedAgent.agentId}_${address.slice(2, 10)}...`;
+  }, [address, selectedOwnedAgent]);
 
   const merchantSdkExample = useMemo(
     () =>
       `from ghostgate import GhostGate
-gate = GhostGate(api_key="YOUR_KEY")
+gate = GhostGate(api_key="${merchantApiKey}")
+
+# Agent ID: ${selectedOwnedAgent?.agentId ?? "YOUR_AGENT_ID"}
 
 @app.route('/ask', methods=['POST'])
 @gate.guard(cost=1)
 def my_agent():
     return "AI Response"`,
-    [],
+    [merchantApiKey, selectedOwnedAgent],
   );
 
   const canPurchase =
@@ -233,9 +267,25 @@ def my_agent():
         {showMerchantView ? (
           <section className="space-y-6">
             <div className="border border-emerald-500/40 bg-emerald-950/10 p-4">
-              <p className="text-sm uppercase tracking-[0.18em] text-emerald-400">
-                MERCHANT CONSOLE // AGENT #{ownedAgent?.agentId}
-              </p>
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <p className="text-sm uppercase tracking-[0.18em] text-emerald-400">
+                  MERCHANT CONSOLE
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Active Agent</span>
+                  <select
+                    value={selectedOwnedAgent?.agentId ?? ""}
+                    onChange={(event) => setSelectedAgentId(event.target.value)}
+                    className="min-w-[156px] border border-emerald-500/40 bg-slate-950 px-3 py-2 text-xs uppercase tracking-[0.16em] text-emerald-300 outline-none focus:border-emerald-400"
+                  >
+                    {ownedAgents.map((agent) => (
+                      <option key={`${agent.agentId}-${agent.owner}`} value={agent.agentId}>
+                        AGENT #{agent.agentId}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -307,13 +357,19 @@ def my_agent():
               >
                 DOWNLOAD SDK (.PY)
               </a>
-              <button
-                type="button"
-                disabled
-                className="inline-flex items-center justify-center border border-slate-700 bg-slate-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-slate-600 cursor-not-allowed"
-              >
-                WITHDRAW FUNDS
-              </button>
+              <div className="inline-flex flex-col items-start">
+                <button
+                  type="button"
+                  disabled
+                  className="inline-flex items-center justify-center border border-slate-700 bg-slate-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-slate-600 cursor-not-allowed disabled:cursor-not-allowed"
+                >
+                  WITHDRAW FUNDS
+                </button>
+                <p className="mt-1 inline-flex items-center gap-1 text-[10px] text-slate-500">
+                  <Info className="h-3 w-3" />
+                  Minimum 0.01 ETH required for withdrawal.
+                </p>
+              </div>
             </div>
           </section>
         ) : (
