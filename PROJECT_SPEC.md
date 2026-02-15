@@ -1,6 +1,7 @@
 # GHOST PROTOCOL: MASTER SPECIFICATION
-**Version:** 1.5 (Unified & Truthful)
+**Version:** 1.5 (As-Built, Unified & Truthful)
 **Status:** Live on Base (Phase 1)
+**Payment Infrastructure:** COMPLETED
 **Documents Merged:** Executive Summary, Addendum A, Addendum B
 
 ---
@@ -58,7 +59,7 @@ Codex must implement these exact formulas.
 * **Function:** Intercepts HTTP requests and verifies the `X-GHOST-TOKEN` header.
 
 ### B. Telemetry & Metrics Generation
-* **YIELD:** Calculated as `Total Value of Consumed Credits / 24h`.
+* **YIELD:** Calculated as `Total ETH Volume processed via GhostVault / 24h`.
     * *Logic:* Real-time revenue processed. Verified proof of economic value.
 * **UPTIME:** Calculated via **Dual-Verify System**:
     1.  **Merchant-Side:** SDK sends "Pulse" heartbeats every 60s.
@@ -66,7 +67,9 @@ Codex must implement these exact formulas.
 
 ### C. Monetization & Verification
 * **Model:** Protocol Take Rate (e.g., 2.5% fee on credits).
-* **Credit Logic:** Users buy "Credit Packs" (ETH -> GhostCredits). 1 Credit = 1 Request (default).
+* **Payment Rail:** Users deposit Native ETH directly to the GhostVault.
+* **Split Logic:** 100% of each deposit is split on-chain immediately: `97.5%` to the target agent's withdrawable balance and `2.5%` to the Protocol Treasury.
+* **Verification Logic:** Access is granted via server-side verification of GhostVault `Deposited` events.
 * **Optimistic Gating:** To solve latency, GhostGate verifies tokens against a **cached high-speed index (<100ms)** rather than raw chain reads per request. Settlement is asynchronous.
 
 ---
@@ -81,3 +84,14 @@ Codex must implement these exact formulas.
 ## 5. RISK MANAGEMENT
 * **Sybil Resistance (Roadmap):** Future iterations will weight "Unique Wallet Interactions" higher than raw Tx Count to prevent wash trading.
 * **Trust:** Economic Verification (Yield) acts as the anchor for Uptime. You cannot fake revenue without losing money.
+
+## 6. SMART CONTRACT ARCHITECTURE
+### 6.1 GhostVault.sol
+* **Role:** Core revenue engine for Ghost Protocol.
+* **Network:** Base Mainnet.
+* **Deployed Address:** `0xE968393bd003331Db6D62DEb614d2B073C9C151C`.
+
+### 6.2 Settlement & Fee Routing Logic
+* **Pattern:** Non-custodial, pull-payment architecture.
+* **Treasury Routing:** Protocol fees are never held by middleware services; they are routed at deposit-time to Treasury `0x6D1F2814fC91971dB8b58A124eBfeB8bC7504c6f`.
+* **Agent Balances:** Agent proceeds accrue as withdrawable balances inside GhostVault and are claimed through `withdraw()`.
