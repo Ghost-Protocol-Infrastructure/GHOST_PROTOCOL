@@ -5,10 +5,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -17,10 +25,18 @@
     "isClaimed": false,
     "transactionCount": 56,
     "txCount": 56,
+    "txVolumeNorm": 45,
     "velocity": 56,
+    "velocityNorm": 45,
     "reputation": 45,
+    "rankScore": 48.3,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "ACTIVE"
   },
   {
@@ -29,10 +45,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -41,10 +65,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -53,10 +85,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -65,10 +105,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -77,10 +125,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -89,10 +145,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -101,10 +165,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -113,10 +185,18 @@
     "isClaimed": false,
     "transactionCount": 358,
     "txCount": 358,
+    "txVolumeNorm": 66,
     "velocity": 358,
+    "velocityNorm": 66,
     "reputation": 66,
+    "rankScore": 153.6,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "ACTIVE"
   },
   {
@@ -125,10 +205,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -137,10 +225,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -149,10 +245,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -161,10 +265,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -173,10 +285,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -185,10 +305,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -197,10 +325,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -209,10 +345,18 @@
     "isClaimed": false,
     "transactionCount": 104,
     "txCount": 104,
+    "txVolumeNorm": 52,
     "velocity": 104,
+    "velocityNorm": 52,
     "reputation": 52,
+    "rankScore": 67.6,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "ACTIVE"
   },
   {
@@ -221,10 +365,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -233,10 +385,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -245,10 +405,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -257,10 +425,18 @@
     "isClaimed": false,
     "transactionCount": 6,
     "txCount": 6,
+    "txVolumeNorm": 22,
     "velocity": 6,
+    "velocityNorm": 22,
     "reputation": 22,
+    "rankScore": 17.2,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -269,10 +445,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -281,10 +465,18 @@
     "isClaimed": false,
     "transactionCount": 616,
     "txCount": 616,
+    "txVolumeNorm": 72,
     "velocity": 616,
+    "velocityNorm": 72,
     "reputation": 72,
+    "rankScore": 235.2,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "WHALE"
   },
   {
@@ -293,10 +485,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -305,10 +505,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -317,10 +525,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -329,10 +545,18 @@
     "isClaimed": false,
     "transactionCount": 43,
     "txCount": 43,
+    "txVolumeNorm": 43,
     "velocity": 43,
+    "velocityNorm": 43,
     "reputation": 43,
+    "rankScore": 43,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -341,10 +565,18 @@
     "isClaimed": false,
     "transactionCount": 27,
     "txCount": 27,
+    "txVolumeNorm": 37,
     "velocity": 27,
+    "velocityNorm": 37,
     "reputation": 37,
+    "rankScore": 34,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -353,10 +585,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -365,10 +605,18 @@
     "isClaimed": false,
     "transactionCount": 1423,
     "txCount": 1423,
+    "txVolumeNorm": 82,
     "velocity": 1423,
-    "reputation": 82,
+    "velocityNorm": 82,
+    "reputation": 80,
+    "rankScore": 482.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "WHALE"
   },
   {
@@ -377,10 +625,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -389,10 +645,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -401,10 +665,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -413,10 +685,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -425,10 +705,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -437,10 +725,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -449,10 +745,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -461,10 +765,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -473,10 +785,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -485,10 +805,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -497,10 +825,18 @@
     "isClaimed": false,
     "transactionCount": 9,
     "txCount": 9,
+    "txVolumeNorm": 26,
     "velocity": 9,
+    "velocityNorm": 26,
     "reputation": 26,
+    "rankScore": 20.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -509,10 +845,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -521,10 +865,18 @@
     "isClaimed": false,
     "transactionCount": 141,
     "txCount": 141,
+    "txVolumeNorm": 56,
     "velocity": 141,
+    "velocityNorm": 56,
     "reputation": 56,
+    "rankScore": 81.5,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "ACTIVE"
   },
   {
@@ -533,10 +885,18 @@
     "isClaimed": false,
     "transactionCount": 61,
     "txCount": 61,
+    "txVolumeNorm": 46,
     "velocity": 61,
+    "velocityNorm": 46,
     "reputation": 46,
+    "rankScore": 50.5,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "ACTIVE"
   },
   {
@@ -545,10 +905,18 @@
     "isClaimed": false,
     "transactionCount": 127,
     "txCount": 127,
+    "txVolumeNorm": 55,
     "velocity": 127,
+    "velocityNorm": 55,
     "reputation": 55,
+    "rankScore": 76.6,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "ACTIVE"
   },
   {
@@ -557,10 +925,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -569,10 +945,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -581,10 +965,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -593,10 +985,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -605,10 +1005,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -617,10 +1025,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -629,10 +1045,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -641,10 +1065,18 @@
     "isClaimed": false,
     "transactionCount": 88,
     "txCount": 88,
+    "txVolumeNorm": 50,
     "velocity": 88,
-    "reputation": 51,
+    "velocityNorm": 50,
+    "reputation": 50,
+    "rankScore": 61.4,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "ACTIVE"
   },
   {
@@ -653,10 +1085,18 @@
     "isClaimed": false,
     "transactionCount": 88,
     "txCount": 88,
+    "txVolumeNorm": 50,
     "velocity": 88,
-    "reputation": 51,
+    "velocityNorm": 50,
+    "reputation": 50,
+    "rankScore": 61.4,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "ACTIVE"
   },
   {
@@ -665,10 +1105,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -677,10 +1125,18 @@
     "isClaimed": false,
     "transactionCount": 34,
     "txCount": 34,
+    "txVolumeNorm": 40,
     "velocity": 34,
+    "velocityNorm": 40,
     "reputation": 40,
+    "rankScore": 38.2,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -689,10 +1145,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -701,10 +1165,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -713,10 +1185,18 @@
     "isClaimed": false,
     "transactionCount": 29,
     "txCount": 29,
+    "txVolumeNorm": 38,
     "velocity": 29,
+    "velocityNorm": 38,
     "reputation": 38,
+    "rankScore": 35.3,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -725,10 +1205,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -737,10 +1225,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -749,10 +1245,18 @@
     "isClaimed": false,
     "transactionCount": 13,
     "txCount": 13,
+    "txVolumeNorm": 30,
     "velocity": 13,
+    "velocityNorm": 30,
     "reputation": 30,
+    "rankScore": 24.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -761,10 +1265,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -773,10 +1285,18 @@
     "isClaimed": false,
     "transactionCount": 32,
     "txCount": 32,
+    "txVolumeNorm": 39,
     "velocity": 32,
+    "velocityNorm": 39,
     "reputation": 39,
+    "rankScore": 36.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -785,10 +1305,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -797,10 +1325,18 @@
     "isClaimed": false,
     "transactionCount": 88,
     "txCount": 88,
+    "txVolumeNorm": 50,
     "velocity": 88,
-    "reputation": 51,
+    "velocityNorm": 50,
+    "reputation": 50,
+    "rankScore": 61.4,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "ACTIVE"
   },
   {
@@ -809,10 +1345,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -821,10 +1365,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -833,10 +1385,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -845,10 +1405,18 @@
     "isClaimed": false,
     "transactionCount": 88,
     "txCount": 88,
+    "txVolumeNorm": 50,
     "velocity": 88,
-    "reputation": 51,
+    "velocityNorm": 50,
+    "reputation": 50,
+    "rankScore": 61.4,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "ACTIVE"
   },
   {
@@ -857,10 +1425,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -869,10 +1445,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -881,10 +1465,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -893,10 +1485,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -905,10 +1505,18 @@
     "isClaimed": false,
     "transactionCount": 21,
     "txCount": 21,
+    "txVolumeNorm": 35,
     "velocity": 21,
+    "velocityNorm": 35,
     "reputation": 35,
+    "rankScore": 30.8,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -917,10 +1525,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -929,10 +1545,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -941,10 +1565,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -953,10 +1585,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -965,10 +1605,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -977,10 +1625,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -989,10 +1645,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1001,10 +1665,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1013,10 +1685,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1025,10 +1705,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1037,10 +1725,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1049,10 +1745,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1061,10 +1765,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1073,10 +1785,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1085,10 +1805,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1097,10 +1825,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1109,10 +1845,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1121,10 +1865,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1133,10 +1885,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1145,10 +1905,18 @@
     "isClaimed": false,
     "transactionCount": 17,
     "txCount": 17,
+    "txVolumeNorm": 33,
     "velocity": 17,
+    "velocityNorm": 33,
     "reputation": 33,
+    "rankScore": 28.2,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1157,10 +1925,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1169,10 +1945,18 @@
     "isClaimed": false,
     "transactionCount": 22,
     "txCount": 22,
+    "txVolumeNorm": 35,
     "velocity": 22,
+    "velocityNorm": 35,
     "reputation": 35,
+    "rankScore": 31.1,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1181,10 +1965,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1193,10 +1985,18 @@
     "isClaimed": false,
     "transactionCount": 17,
     "txCount": 17,
+    "txVolumeNorm": 33,
     "velocity": 17,
+    "velocityNorm": 33,
     "reputation": 33,
+    "rankScore": 28.2,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1205,10 +2005,18 @@
     "isClaimed": false,
     "transactionCount": 41,
     "txCount": 41,
+    "txVolumeNorm": 42,
     "velocity": 41,
+    "velocityNorm": 42,
     "reputation": 42,
+    "rankScore": 41.7,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1217,10 +2025,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1229,10 +2045,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1241,10 +2065,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1253,10 +2085,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1265,10 +2105,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1277,10 +2125,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1289,10 +2145,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1301,10 +2165,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1313,22 +2185,38 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
     "agentId": "155",
     "owner": "0x19310357eEb9b5AF955BBd8fF639E65172E2995b",
     "isClaimed": false,
-    "transactionCount": 7241,
-    "txCount": 7241,
-    "velocity": 7241,
-    "reputation": 100,
+    "transactionCount": 7261,
+    "txCount": 7261,
+    "txVolumeNorm": 100,
+    "velocity": 7261,
+    "velocityNorm": 100,
+    "reputation": 80,
+    "rankScore": 2234.3,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "WHALE"
   },
   {
@@ -1337,10 +2225,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1349,10 +2245,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1361,10 +2265,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1373,10 +2285,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1385,10 +2305,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1397,10 +2325,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1409,10 +2345,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1421,10 +2365,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1433,10 +2385,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1445,10 +2405,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1457,10 +2425,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1469,10 +2445,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1481,10 +2465,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1493,10 +2485,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1505,10 +2505,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1517,10 +2525,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1529,10 +2545,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1541,10 +2565,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1553,10 +2585,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1565,10 +2605,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1577,10 +2625,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1589,10 +2645,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1601,10 +2665,18 @@
     "isClaimed": false,
     "transactionCount": 57,
     "txCount": 57,
+    "txVolumeNorm": 46,
     "velocity": 57,
+    "velocityNorm": 46,
     "reputation": 46,
+    "rankScore": 49.3,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "ACTIVE"
   },
   {
@@ -1613,10 +2685,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1625,10 +2705,18 @@
     "isClaimed": false,
     "transactionCount": 57,
     "txCount": 57,
+    "txVolumeNorm": 46,
     "velocity": 57,
+    "velocityNorm": 46,
     "reputation": 46,
+    "rankScore": 49.3,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "ACTIVE"
   },
   {
@@ -1637,10 +2725,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1649,10 +2745,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1661,10 +2765,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1673,10 +2785,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1685,10 +2805,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1697,10 +2825,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1709,10 +2845,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1721,10 +2865,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1733,10 +2885,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1745,10 +2905,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1757,10 +2925,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1769,10 +2945,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1781,10 +2965,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1793,10 +2985,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1805,10 +3005,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1817,10 +3025,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1829,10 +3045,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1841,10 +3065,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1853,10 +3085,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1865,10 +3105,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1877,10 +3125,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1889,10 +3145,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1901,10 +3165,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1913,10 +3185,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1925,10 +3205,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1937,10 +3225,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1949,10 +3245,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1961,10 +3265,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1973,10 +3285,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1985,10 +3305,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -1997,10 +3325,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2009,10 +3345,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2021,10 +3365,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2033,10 +3385,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2045,10 +3405,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2057,10 +3425,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2069,10 +3445,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2081,10 +3465,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2093,10 +3485,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2105,10 +3505,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2117,10 +3525,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2129,10 +3545,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2141,10 +3565,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2153,10 +3585,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2165,10 +3605,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2177,10 +3625,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2189,10 +3645,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2201,10 +3665,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2213,10 +3685,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2225,10 +3705,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2237,10 +3725,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2249,10 +3745,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2261,10 +3765,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2273,10 +3785,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2285,10 +3805,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2297,10 +3825,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2309,10 +3845,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2321,10 +3865,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2333,10 +3885,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2345,10 +3905,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2357,10 +3925,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2369,10 +3945,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2381,10 +3965,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2393,10 +3985,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2405,10 +4005,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2417,10 +4025,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2429,10 +4045,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2441,10 +4065,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2453,10 +4085,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2465,10 +4105,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2477,10 +4125,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2489,10 +4145,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2501,10 +4165,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2513,10 +4185,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2525,10 +4205,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2537,10 +4225,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2549,10 +4245,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2561,10 +4265,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2573,10 +4285,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2585,10 +4305,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2597,10 +4325,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2609,10 +4345,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2621,10 +4365,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2633,10 +4385,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2645,10 +4405,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2657,10 +4425,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2669,10 +4445,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2681,10 +4465,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2693,10 +4485,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2705,10 +4505,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2717,10 +4525,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2729,10 +4545,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2741,10 +4565,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2753,10 +4585,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2765,10 +4605,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2777,10 +4625,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2789,10 +4645,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2801,10 +4665,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2813,10 +4685,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2825,10 +4705,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2837,10 +4725,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2849,10 +4745,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2861,10 +4765,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2873,10 +4785,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2885,10 +4805,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2897,10 +4825,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2909,10 +4845,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2921,10 +4865,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2933,10 +4885,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2945,10 +4905,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2957,10 +4925,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2969,10 +4945,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2981,10 +4965,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -2993,10 +4985,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3005,10 +5005,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3017,10 +5025,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3029,10 +5045,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3041,10 +5065,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3053,10 +5085,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3065,10 +5105,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3077,10 +5125,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3089,10 +5145,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3101,10 +5165,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3113,10 +5185,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3125,10 +5205,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3137,10 +5225,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3149,10 +5245,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3161,10 +5265,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3173,10 +5285,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3185,10 +5305,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3197,10 +5325,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3209,10 +5345,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3221,10 +5365,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3233,10 +5385,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3245,10 +5405,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3257,10 +5425,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3269,10 +5445,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3281,10 +5465,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3293,10 +5485,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3305,10 +5505,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3317,10 +5525,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3329,10 +5545,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3341,10 +5565,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3353,10 +5585,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3365,10 +5605,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3377,10 +5625,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3389,10 +5645,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3401,10 +5665,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3413,10 +5685,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3425,10 +5705,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3437,10 +5725,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3449,10 +5745,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3461,10 +5765,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3473,10 +5785,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3485,10 +5805,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3497,10 +5825,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3509,10 +5845,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3521,10 +5865,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3533,10 +5885,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3545,10 +5905,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3557,10 +5925,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3569,10 +5945,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3581,10 +5965,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3593,10 +5985,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3605,10 +6005,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3617,10 +6025,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3629,10 +6045,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3641,10 +6065,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3653,10 +6085,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3665,10 +6105,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3677,10 +6125,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3689,10 +6145,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3701,10 +6165,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3713,10 +6185,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3725,10 +6205,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3737,10 +6225,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3749,10 +6245,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3761,10 +6265,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   },
   {
@@ -3773,10 +6285,18 @@
     "isClaimed": false,
     "transactionCount": 1,
     "txCount": 1,
+    "txVolumeNorm": 8,
     "velocity": 1,
+    "velocityNorm": 8,
     "reputation": 8,
+    "rankScore": 5.9,
     "yield": null,
     "uptime": null,
+    "dualVerify": {
+      "merchantPulseLastSeen": null,
+      "consumerSuccessRatePct": null,
+      "source": "stub"
+    },
     "tier": "NEW"
   }
 ]

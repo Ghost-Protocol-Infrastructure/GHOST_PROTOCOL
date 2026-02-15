@@ -17,6 +17,7 @@ type BaseAgentLead = {
   txCount?: number;
   transactionCount?: number;
   velocity?: number;
+  rankScore?: number;
   reputation?: number;
   yield?: number | string | null;
   uptime?: number | string | null;
@@ -32,8 +33,10 @@ type ProcessedLead = {
   owner: string;
   tier: LeadTier;
   txCount: number;
+  velocity: number;
   isClaimed: boolean;
   reputationScore: number;
+  rankScore: number;
   yieldEth: number | null;
   uptimePct: number | null;
 };
@@ -72,19 +75,11 @@ const normalizeTxScore = (txCount: number, maxTxCount: number): number => {
   return clamp(Math.round((numerator / denominator) * 100), 0, 100);
 };
 
-const computeClaimedReputation = (
-  txScore: number,
-  uptimePct: number,
-  yieldEth: number,
-  maxClaimedYield: number,
-): number => {
-  const yieldScore = maxClaimedYield > 0 ? clamp((yieldEth / maxClaimedYield) * 100, 0, 100) : 0;
-  const weighted = txScore * 0.5 + uptimePct * 0.3 + yieldScore * 0.2;
-  return clamp(Math.round(weighted), 0, 100);
-};
+const roundToTwo = (value: number): number => Math.round(value * 100) / 100;
 
 const formatYield = (yieldEth: number): string => `${yieldEth.toFixed(4)} ETH`;
 const formatUptime = (uptimePct: number): string => `${uptimePct.toFixed(1)}%`;
+const formatReputation = (score: number): string => (Number.isInteger(score) ? String(score) : score.toFixed(2));
 
 const tierClassName: Record<LeadTier, string> = {
   WHALE:
@@ -106,6 +101,11 @@ export default function Home() {
       const txCount = Math.max(0, lead.transactionCount ?? lead.txCount ?? 0);
       const yieldEth = parseYieldEth(lead.yield);
       const uptimePct = parseUptimePct(lead.uptime);
+      const velocity = Math.max(0, lead.velocity ?? txCount);
+      const providedReputation =
+        typeof lead.reputation === "number" && Number.isFinite(lead.reputation) ? clamp(lead.reputation, 0, 100) : null;
+      const providedRankScore =
+        typeof lead.rankScore === "number" && Number.isFinite(lead.rankScore) ? Math.max(0, lead.rankScore) : null;
       const hasClaimFlag = Boolean(lead.claimed || lead.isClaimed || lead.monitored || lead.isMonitored);
       const isClaimed = monitoredAgentIds.has(lead.agentId) || hasClaimFlag;
 
@@ -114,9 +114,12 @@ export default function Home() {
         owner: lead.owner,
         tier: lead.tier,
         txCount,
+        velocity,
         yieldEth,
         uptimePct,
         isClaimed,
+        providedReputation,
+        providedRankScore,
       };
     });
 
@@ -131,23 +134,28 @@ export default function Home() {
     return seededLeads
       .map((lead) => {
         const txScore = normalizeTxScore(lead.txCount, maxTxCount);
-        const hasFullClaimTelemetry = lead.isClaimed && lead.yieldEth != null && lead.uptimePct != null;
-        const reputationScore = hasFullClaimTelemetry
-          ? computeClaimedReputation(txScore, lead.uptimePct!, lead.yieldEth!, maxClaimedYield)
-          : txScore;
+        const yieldScore = lead.yieldEth != null && maxClaimedYield > 0 ? clamp((lead.yieldEth / maxClaimedYield) * 100, 0, 100) : 0;
+        const computedReputationScore = lead.isClaimed
+          ? clamp(roundToTwo(txScore * 0.3 + (lead.uptimePct ?? 0) * 0.5 + yieldScore * 0.2), 0, 100)
+          : Math.min(txScore, 80);
+        const reputationScore = lead.providedReputation ?? computedReputationScore;
+        const computedRankScore = roundToTwo(reputationScore * 0.7 + lead.velocity * 0.3);
+        const rankScore = lead.providedRankScore ?? computedRankScore;
 
         return {
           agentId: lead.agentId,
           owner: lead.owner,
           tier: lead.tier,
           txCount: lead.txCount,
+          velocity: lead.velocity,
           isClaimed: lead.isClaimed,
           reputationScore,
+          rankScore,
           yieldEth: lead.isClaimed ? lead.yieldEth : null,
           uptimePct: lead.isClaimed ? lead.uptimePct : null,
         };
       })
-      .sort((a, b) => b.reputationScore - a.reputationScore || b.txCount - a.txCount);
+      .sort((a, b) => b.rankScore - a.rankScore || b.reputationScore - a.reputationScore || b.txCount - a.txCount);
   }, []);
 
   const filteredAgents = useMemo(() => {
@@ -360,7 +368,7 @@ export default function Home() {
                   </div>
                   <div className="col-span-1 py-3 px-4 border-r border-cyan-500/10 text-right text-slate-300">{agent.txCount}</div>
                   <div className={`col-span-2 py-3 px-4 border-r border-cyan-500/10 text-right ${reputationColor(agent.reputationScore)}`}>
-                    {agent.reputationScore}
+                    {formatReputation(agent.reputationScore)}
                   </div>
                   <div className={`col-span-2 py-3 px-4 border-r border-cyan-500/10 text-right ${yieldClassName}`}>
                     {agent.isClaimed ? formatYield(safeYieldEth) : "---"}
@@ -383,7 +391,7 @@ export default function Home() {
                             : "text-cyan-400 border-cyan-400/20 hover:bg-cyan-400/10"
                         }`}
                       >
-                        {isOwner ? "CLAIM PROFILE" : "USE AGENT"}
+                        {isOwner ? "MANAGE" : "ACCESS"}
                       </button>
                     )}
                   </div>
