@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  createPublicClient,
-  http,
   recoverTypedDataAddress,
   verifyTypedData,
   type Address,
 } from "viem";
-import { baseSepolia } from "viem/chains";
-import { GHOST_CREDITS_ABI, GHOST_CREDITS_ADDRESS } from "@/lib/ghost-credits";
+import { addUserCredits, consumeUserCredits, getUserCredits } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -48,10 +45,14 @@ interface RouteContext {
   params: { slug?: string[] } | Promise<{ slug?: string[] }>;
 }
 
-const publicClient = createPublicClient({
-  chain: baseSepolia,
-  transport: http(),
-});
+const DEFAULT_REQUEST_COST = (() => {
+  const raw = process.env.GHOST_REQUEST_CREDIT_COST?.trim();
+  if (raw && /^\d+$/.test(raw)) {
+    const parsed = BigInt(raw);
+    if (parsed > 0n) return parsed;
+  }
+  return 1n;
+})();
 
 const json = (body: unknown, status = 200): NextResponse =>
   NextResponse.json(body, {
@@ -103,6 +104,21 @@ const isReplayWindowValid = (timestamp: bigint): boolean => {
   const now = BigInt(Math.floor(Date.now() / 1000));
   if (timestamp > now) return false;
   return now - timestamp <= REPLAY_WINDOW_SECONDS;
+};
+
+const parseCreditCost = (value: string | null): bigint | null => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const parsed = BigInt(trimmed);
+  if (parsed <= 0n) return null;
+  return parsed;
+};
+
+const resolveRequestCost = (request: NextRequest): bigint => {
+  const requestScopedCost = parseCreditCost(request.headers.get("x-ghost-credit-cost"));
+  if (requestScopedCost != null) return requestScopedCost;
+  return DEFAULT_REQUEST_COST;
 };
 
 const forwardToUpstream = async (
@@ -194,29 +210,41 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
     return json({ error: "Invalid Signature", code: 401 }, 401);
   }
 
-  let balance: bigint;
-  console.log("DEBUG: Checking credits for user:", signer);
-  console.log("DEBUG: Contract Address:", GHOST_CREDITS_ADDRESS);
-  try {
-    balance = await publicClient.readContract({
-      address: GHOST_CREDITS_ADDRESS,
-      abi: GHOST_CREDITS_ABI,
-      functionName: "credits",
-      args: [signer],
-    });
-  } catch (error) {
-    console.error("READ CONTRACT ERROR:", error);
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    return json({ error: "Failed to read on-chain credits", code: 500, details: errorMessage }, 500);
+  const requestCost = resolveRequestCost(request);
+  const balance = await getUserCredits(signer);
+  if (balance < requestCost) {
+    return json(
+      {
+        error: "Payment Required",
+        code: 402,
+        details: {
+          balance: balance.toString(),
+          required: requestCost.toString(),
+        },
+      },
+      402,
+    );
   }
 
-  if (balance <= 0n) {
-    return json({ error: "Insufficient Credits", code: 402 }, 402);
+  const consumed = await consumeUserCredits(signer, requestCost);
+  if (!consumed) {
+    return json(
+      {
+        error: "Payment Required",
+        code: 402,
+      },
+      402,
+    );
   }
 
   try {
-    return await forwardToUpstream(request, upstreamUrl);
+    const upstreamResponse = await forwardToUpstream(request, upstreamUrl);
+    if (upstreamResponse.status >= 500) {
+      await addUserCredits(signer, requestCost);
+    }
+    return upstreamResponse;
   } catch {
+    await addUserCredits(signer, requestCost);
     return json({ error: "Upstream request failed", code: 502 }, 502);
   }
 };

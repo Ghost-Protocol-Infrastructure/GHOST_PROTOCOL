@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { Activity, AlertTriangle, Code, Copy, Info, Wallet } from "lucide-react";
@@ -11,17 +11,21 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi";
-import { formatEther, parseEther, type Address } from "viem";
-import { base, baseSepolia } from "viem/chains";
-import { GHOST_CREDITS_ABI, GHOST_CREDITS_ADDRESS } from "@/lib/ghost-credits";
+import { formatEther, getAddress, parseEther, type Address } from "viem";
+import { base } from "viem/chains";
+import {
+  GHOST_VAULT_ABI,
+  GHOST_VAULT_ADDRESS,
+  PROTOCOL_TREASURY_FALLBACK_ADDRESS,
+} from "@/lib/constants";
 import baseAgents from "../../data/leads-scored.json";
 
-const PLACEHOLDER_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 const CREDIT_PRICE_WEI = parseEther("0.00001");
-const SUPPORTED_CHAIN_IDS = new Set<number>([base.id, baseSepolia.id]);
-const PREFERRED_CHAIN_ID = baseSepolia.id;
+const SUPPORTED_CHAIN_IDS = new Set<number>([base.id]);
+const PREFERRED_CHAIN_ID = base.id;
 
 type CopyState = "idle" | "copied" | "error";
+type CreditSyncState = "idle" | "syncing" | "synced" | "error";
 
 type BaseAgentLead = {
   agentId: string;
@@ -31,6 +35,15 @@ type BaseAgentLead = {
 };
 
 const indexedBaseAgents = baseAgents as BaseAgentLead[];
+
+const normalizeAddress = (rawAddress: string | null | undefined): Address | null => {
+  if (!rawAddress) return null;
+  try {
+    return getAddress(rawAddress);
+  } catch {
+    return null;
+  }
+};
 
 const parseInputWei = (value: string): bigint | null => {
   if (!value.trim()) return 0n;
@@ -57,7 +70,12 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
   return fallback;
 };
 
-export default function DashboardPage() {
+type SyncCreditsResponse = {
+  userAddress: string;
+  credits: string;
+};
+
+function DashboardPageContent() {
   const searchParams = useSearchParams();
   const { address, chainId, isConnected } = useAccount();
   const { switchChainAsync, isPending: isSwitchingChain } = useSwitchChain();
@@ -71,6 +89,10 @@ export default function DashboardPage() {
   const [copyState, setCopyState] = useState<CopyState>("idle");
   const [apiKeyCopyState, setApiKeyCopyState] = useState<CopyState>("idle");
   const [switchError, setSwitchError] = useState<string | null>(null);
+  const [creditSyncState, setCreditSyncState] = useState<CreditSyncState>("idle");
+  const [creditSyncError, setCreditSyncError] = useState<string | null>(null);
+  const [syncedCredits, setSyncedCredits] = useState<string | null>(null);
+  const syncedHashesRef = useRef<Set<string>>(new Set());
 
   const amountWei = useMemo(() => parseInputWei(ethAmount), [ethAmount]);
   const estimatedCredits = useMemo(() => {
@@ -78,30 +100,95 @@ export default function DashboardPage() {
     return amountWei / CREDIT_PRICE_WEI;
   }, [amountWei]);
 
-  const canQueryBalance = Boolean(isConnected && address);
+  const requestedAgentId = searchParams.get("agentId");
+  const requestedAgentWallet = useMemo(
+    () => indexedBaseAgents.find((agent) => agent.agentId === requestedAgentId)?.owner ?? null,
+    [requestedAgentId],
+  );
+  const requestedAgentAddress = useMemo(
+    () => normalizeAddress(requestedAgentWallet),
+    [requestedAgentWallet],
+  );
+  const targetAgentAddress = requestedAgentAddress ?? PROTOCOL_TREASURY_FALLBACK_ADDRESS;
+  const usesFallbackAgentAddress = requestedAgentAddress == null;
+
   const isOnSupportedChain = chainId != null && SUPPORTED_CHAIN_IDS.has(chainId);
-  const readChainId = chainId != null && SUPPORTED_CHAIN_IDS.has(chainId) ? chainId : PREFERRED_CHAIN_ID;
+  const readChainId = isOnSupportedChain ? chainId : PREFERRED_CHAIN_ID;
 
   const {
-    data: creditBalance,
+    data: agentVaultBalance,
     error: readError,
     isPending: isBalancePending,
     refetch: refetchBalance,
   } = useReadContract({
-    address: GHOST_CREDITS_ADDRESS,
+    address: GHOST_VAULT_ADDRESS,
     chainId: readChainId,
-    abi: GHOST_CREDITS_ABI,
-    functionName: "credits",
-    args: [address ?? PLACEHOLDER_ADDRESS],
+    abi: GHOST_VAULT_ABI,
+    functionName: "balances",
+    args: [targetAgentAddress],
     query: {
-      enabled: canQueryBalance,
+      enabled: isOnSupportedChain,
     },
   });
 
+  const syncCreditsFromChain = async (userAddress: Address, hash: string): Promise<void> => {
+    setCreditSyncState("syncing");
+    setCreditSyncError(null);
+
+    try {
+      const params = new URLSearchParams({ userAddress });
+      const response = await fetch(`/api/sync-credits?${params.toString()}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      const payload = (await response.json()) as Partial<SyncCreditsResponse> & {
+        error?: string;
+        details?: string;
+      };
+
+      if (!response.ok) {
+        const message =
+          typeof payload.error === "string" && payload.error.length > 0
+            ? payload.error
+            : "Failed to sync credits.";
+        throw new Error(message);
+      }
+
+      setSyncedCredits(typeof payload.credits === "string" ? payload.credits : null);
+      setCreditSyncState("synced");
+    } catch (error) {
+      syncedHashesRef.current.delete(hash);
+      setCreditSyncState("error");
+      setCreditSyncError(getErrorMessage(error, "Failed to sync credits."));
+    }
+  };
+
+  const handleRetryCreditSync = async () => {
+    if (!address || !txHash || !isConfirmed) return;
+    await syncCreditsFromChain(address, txHash);
+  };
+
   useEffect(() => {
-    if (!isConfirmed) return;
+    if (!txHash) {
+      setCreditSyncState("idle");
+      setCreditSyncError(null);
+      setSyncedCredits(null);
+      return;
+    }
+
+    setCreditSyncState("idle");
+    setCreditSyncError(null);
+  }, [txHash]);
+
+  useEffect(() => {
+    if (!isConfirmed || !address || !txHash) return;
+    if (syncedHashesRef.current.has(txHash)) return;
+    syncedHashesRef.current.add(txHash);
+
     void refetchBalance();
-  }, [isConfirmed, refetchBalance]);
+    void syncCreditsFromChain(address, txHash);
+  }, [address, isConfirmed, refetchBalance, txHash]);
 
   useEffect(() => {
     if (copyState !== "copied") return;
@@ -115,7 +202,6 @@ export default function DashboardPage() {
     return () => clearTimeout(timeout);
   }, [apiKeyCopyState]);
 
-  const requestedAgentId = searchParams.get("agentId");
   const consumerAgentId = requestedAgentId ?? "${agentId}";
   const consumerUsageExample = useMemo(
     () =>
@@ -195,6 +281,11 @@ def my_agent():
     !isConfirming &&
     !isSwitchingChain;
 
+  const vaultBalanceWei = typeof agentVaultBalance === "bigint" ? agentVaultBalance : 0n;
+  const formattedVaultBalance = useMemo(() => {
+    return `${Number.parseFloat(formatEther(vaultBalanceWei)).toFixed(4)} ETH`;
+  }, [vaultBalanceWei]);
+
   const handleSwitchToPreferredChain = async () => {
     setSwitchError(null);
     try {
@@ -218,9 +309,10 @@ def my_agent():
     }
 
     writeContract({
-      address: GHOST_CREDITS_ADDRESS,
-      abi: GHOST_CREDITS_ABI,
-      functionName: "buyCredits",
+      address: GHOST_VAULT_ADDRESS,
+      abi: GHOST_VAULT_ABI,
+      functionName: "depositCredit",
+      args: [targetAgentAddress],
       value: amountWei,
     });
   };
@@ -377,32 +469,75 @@ def my_agent():
             <article className="bg-slate-900 border border-slate-800 rounded-none p-5">
               <div className="mb-5 flex items-center gap-3">
                 <Wallet className="h-5 w-5 text-emerald-400" />
-                <h2 className="text-sm uppercase tracking-[0.18em] text-slate-100">Credit Balance</h2>
+                <h2 className="text-sm uppercase tracking-[0.18em] text-slate-100">Agent Vault</h2>
               </div>
 
               {isConfirmed && (
                 <div className="mb-5 flex items-center gap-2 border border-emerald-500/50 bg-emerald-950/20 px-3 py-2">
                   <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
                   <p className="text-xs uppercase tracking-[0.16em] text-emerald-300">
-                    Credits Purchased // Transaction Confirmed
+                    Deposit Confirmed // Agent Access Unlocked
                   </p>
                 </div>
               )}
 
+              {isConfirmed && creditSyncState === "syncing" && (
+                <div className="mb-5 flex items-center gap-2 border border-cyan-500/40 bg-cyan-950/20 px-3 py-2">
+                  <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
+                  <p className="text-xs uppercase tracking-[0.16em] text-cyan-300">
+                    Syncing Payment Ledger...
+                  </p>
+                </div>
+              )}
+
+              {isConfirmed && creditSyncState === "synced" && (
+                <div className="mb-5 flex items-center gap-2 border border-cyan-500/40 bg-cyan-950/20 px-3 py-2">
+                  <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
+                  <p className="text-xs uppercase tracking-[0.16em] text-cyan-300">
+                    Credits Synced // Available Credits: {syncedCredits ?? "--"}
+                  </p>
+                </div>
+              )}
+
+              {isConfirmed && creditSyncState === "error" && (
+                <div className="mb-5 flex flex-col gap-2 border border-yellow-500/40 bg-yellow-950/20 px-3 py-2">
+                  <p className="text-xs uppercase tracking-[0.16em] text-yellow-300">
+                    Credit Sync Failed // {creditSyncError ?? "Unable to refresh access credits."}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleRetryCreditSync}
+                    className="inline-flex w-fit items-center justify-center border border-yellow-500/40 bg-slate-900 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-yellow-300 transition hover:bg-slate-800"
+                  >
+                    Retry Sync
+                  </button>
+                </div>
+              )}
+
               <div className="mb-5 border border-slate-800 bg-slate-950 p-4">
-                <p className="mb-1 text-xs uppercase tracking-[0.16em] text-slate-400">Available Credits</p>
+                <p className="mb-1 text-xs uppercase tracking-[0.16em] text-slate-400">Agent Pending Balance</p>
                 <p className="text-3xl text-emerald-400">
                   {isConnected
                     ? isBalancePending
                       ? "..."
-                      : (creditBalance ?? 0n).toString()
-                    : "0"}
+                      : formattedVaultBalance
+                    : "0.0000 ETH"}
                 </p>
+              </div>
+
+              <div className="mb-5 border border-slate-800 bg-slate-950 p-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Target Agent Wallet</p>
+                <p className="mt-1 break-all text-sm text-cyan-300">{targetAgentAddress}</p>
+                {usesFallbackAgentAddress && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    No agent wallet found in page context. Using protocol treasury fallback for testing.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-4">
                 <label className="block text-xs uppercase tracking-[0.16em] text-slate-400">
-                  ETH Amount
+                  Deposit ETH
                   <input
                     value={ethAmount}
                     onChange={(event) => setEthAmount(event.target.value)}
@@ -413,7 +548,7 @@ def my_agent():
                 </label>
 
                 <div className="border border-slate-800 bg-slate-950 p-3">
-                  <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Calculated Credits</p>
+                  <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Estimated Access Credits</p>
                   <p className="text-lg text-emerald-400">{estimatedCredits == null ? "--" : estimatedCredits.toString()}</p>
                   <p className="mt-1 text-xs text-slate-500">
                     Price per credit: {formatEther(CREDIT_PRICE_WEI)} ETH
@@ -432,7 +567,7 @@ def my_agent():
                       disabled={isSwitchingChain}
                       className="mt-3 inline-flex items-center gap-2 border border-yellow-500/40 bg-slate-900 px-4 py-2 text-xs uppercase tracking-wider text-yellow-400 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {isSwitchingChain ? "Switching..." : "Switch to Base Sepolia"}
+                      {isSwitchingChain ? "Switching..." : "Switch to Base Mainnet"}
                     </button>
                   </div>
                 )}
@@ -449,14 +584,14 @@ def my_agent():
                       ? "Submitting..."
                       : isConfirming
                         ? "Confirming..."
-                        : "Purchase"}
+                        : "Deposit ETH"}
                 </button>
 
                 {writeError && (
                   <p className="text-xs text-cyan-400">{getErrorMessage(writeError, "Transaction failed.")}</p>
                 )}
                 {readError && (
-                  <p className="text-xs text-cyan-400">{getErrorMessage(readError, "Failed to read credits.")}</p>
+                  <p className="text-xs text-cyan-400">{getErrorMessage(readError, "Failed to read vault balance.")}</p>
                 )}
                 {switchError && <p className="text-xs text-cyan-400">{switchError}</p>}
               </div>
@@ -499,5 +634,13 @@ def my_agent():
         )}
       </div>
     </main>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<main className="min-h-screen bg-slate-950 font-mono text-slate-400" />}>
+      <DashboardPageContent />
+    </Suspense>
   );
 }

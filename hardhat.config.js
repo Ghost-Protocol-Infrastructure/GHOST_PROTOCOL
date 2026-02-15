@@ -5,13 +5,14 @@ import hardhatVerify from "@nomicfoundation/hardhat-verify";
 
 loadEnv();
 
-const BASE_SEPOLIA_RPC_URL = "https://sepolia.base.org";
+const BASE_MAINNET_RPC_URL = process.env.BASE_MAINNET_RPC_URL?.trim() || "https://mainnet.base.org";
+const BASE_SEPOLIA_RPC_URL = process.env.BASE_SEPOLIA_RPC_URL?.trim() || "https://sepolia.base.org";
 
-const privateKey = process.env.PRIVATE_KEY?.trim();
-const normalizedPrivateKey = privateKey
-  ? privateKey.startsWith("0x")
-    ? privateKey
-    : `0x${privateKey}`
+const rawPrivateKey = process.env.PRIVATE_KEY?.trim();
+const normalizedPrivateKey = rawPrivateKey
+  ? rawPrivateKey.startsWith("0x")
+    ? rawPrivateKey
+    : `0x${rawPrivateKey}`
   : undefined;
 
 const basescanApiKey = process.env.BASESCAN_API_KEY?.trim() ?? "";
@@ -25,6 +26,13 @@ export default defineConfig({
     hardhatMainnet: {
       type: "edr-simulated",
       chainType: "l1",
+    },
+    baseMainnet: {
+      type: "http",
+      chainType: "l1",
+      url: BASE_MAINNET_RPC_URL,
+      chainId: 8453,
+      accounts: normalizedPrivateKey ? [normalizedPrivateKey] : [],
     },
     baseSepolia: {
       type: "http",
