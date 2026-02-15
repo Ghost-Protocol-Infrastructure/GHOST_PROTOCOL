@@ -22,7 +22,7 @@ async function loadVaultArtifact() {
 }
 
 async function main() {
-  const rpcUrl = process.env.BASE_MAINNET_RPC_URL?.trim() || "https://mainnet.base.org";
+  const rpcUrl = process.env.BASE_RPC_URL?.trim() || "https://mainnet.base.org";
   const treasuryWallet = process.env.TREASURY_WALLET?.trim();
   const privateKey = normalizePrivateKey(process.env.PRIVATE_KEY);
 

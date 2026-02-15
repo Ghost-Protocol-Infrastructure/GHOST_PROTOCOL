@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { Activity, AlertTriangle, Code, Copy, Info, Wallet } from "lucide-react";
@@ -131,38 +131,43 @@ function DashboardPageContent() {
     },
   });
 
-  const syncCreditsFromChain = async (userAddress: Address, hash: string): Promise<void> => {
+  const readCreditsFromLedger = useCallback(async (userAddress: Address): Promise<string> => {
+    const params = new URLSearchParams({ userAddress });
+    const response = await fetch(`/api/sync-credits?${params.toString()}`, {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    const payload = (await response.json()) as Partial<SyncCreditsResponse> & {
+      error?: string;
+      details?: string;
+    };
+
+    if (!response.ok) {
+      const message =
+        typeof payload.error === "string" && payload.error.length > 0
+          ? payload.error
+          : "Failed to sync credits.";
+      throw new Error(message);
+    }
+
+    return typeof payload.credits === "string" ? payload.credits : "0";
+  }, []);
+
+  const syncCreditsFromChain = useCallback(async (userAddress: Address, hash: string): Promise<void> => {
     setCreditSyncState("syncing");
     setCreditSyncError(null);
 
     try {
-      const params = new URLSearchParams({ userAddress });
-      const response = await fetch(`/api/sync-credits?${params.toString()}`, {
-        method: "GET",
-        cache: "no-store",
-      });
-
-      const payload = (await response.json()) as Partial<SyncCreditsResponse> & {
-        error?: string;
-        details?: string;
-      };
-
-      if (!response.ok) {
-        const message =
-          typeof payload.error === "string" && payload.error.length > 0
-            ? payload.error
-            : "Failed to sync credits.";
-        throw new Error(message);
-      }
-
-      setSyncedCredits(typeof payload.credits === "string" ? payload.credits : null);
+      const credits = await readCreditsFromLedger(userAddress);
+      setSyncedCredits(credits);
       setCreditSyncState("synced");
     } catch (error) {
       syncedHashesRef.current.delete(hash);
       setCreditSyncState("error");
       setCreditSyncError(getErrorMessage(error, "Failed to sync credits."));
     }
-  };
+  }, [readCreditsFromLedger]);
 
   const handleRetryCreditSync = async () => {
     if (!address || !txHash || !isConfirmed) return;
@@ -182,13 +187,31 @@ function DashboardPageContent() {
   }, [txHash]);
 
   useEffect(() => {
+    if (!address) {
+      setSyncedCredits(null);
+      return;
+    }
+
+    const hydrateCredits = async () => {
+      try {
+        const credits = await readCreditsFromLedger(address);
+        setSyncedCredits(credits);
+      } catch {
+        // Keep current value; tx-driven sync surface handles user-facing errors.
+      }
+    };
+
+    void hydrateCredits();
+  }, [address, readCreditsFromLedger]);
+
+  useEffect(() => {
     if (!isConfirmed || !address || !txHash) return;
     if (syncedHashesRef.current.has(txHash)) return;
     syncedHashesRef.current.add(txHash);
 
     void refetchBalance();
     void syncCreditsFromChain(address, txHash);
-  }, [address, isConfirmed, refetchBalance, txHash]);
+  }, [address, isConfirmed, refetchBalance, syncCreditsFromChain, txHash]);
 
   useEffect(() => {
     if (copyState !== "copied") return;
@@ -202,14 +225,11 @@ function DashboardPageContent() {
     return () => clearTimeout(timeout);
   }, [apiKeyCopyState]);
 
-  const consumerAgentId = requestedAgentId ?? "${agentId}";
   const consumerUsageExample = useMemo(
     () =>
-      `curl -X POST \\
-  https://ghost-gate.vercel.app/api/run/${consumerAgentId} \\
-  -H "Content-Type: application/json" \\
-  -d '{"prompt": "Your query here"}'`,
-    [consumerAgentId],
+      `The Python SDK automatically routes verification requests to
+https://ghost-rank.vercel.app/api/gate/<your-service-name>.`,
+    [],
   );
 
   const ownedAgents = useMemo(() => {
@@ -264,7 +284,7 @@ gate = GhostGate(api_key="${merchantApiKey}")
 # Agent ID: ${selectedOwnedAgent?.agentId ?? "YOUR_AGENT_ID"}
 
 @app.route('/ask', methods=['POST'])
-@gate.guard(cost=1)
+@gate.guard(cost=1, service="weather")
 def my_agent():
     return "AI Response"`,
     [merchantApiKey, selectedOwnedAgent],
@@ -515,7 +535,7 @@ def my_agent():
               )}
 
               <div className="mb-5 border border-slate-800 bg-slate-950 p-4">
-                <p className="mb-1 text-xs uppercase tracking-[0.16em] text-slate-400">Agent Pending Balance</p>
+                <p className="mb-1 text-xs uppercase tracking-[0.16em] text-slate-400">Vault Revenue (ETH)</p>
                 <p className="text-3xl text-emerald-400">
                   {isConnected
                     ? isBalancePending
@@ -523,6 +543,11 @@ def my_agent():
                       : formattedVaultBalance
                     : "0.0000 ETH"}
                 </p>
+              </div>
+
+              <div className="mb-5 border border-slate-800 bg-slate-950 p-4">
+                <p className="mb-1 text-xs uppercase tracking-[0.16em] text-slate-400">Your Available Credits</p>
+                <p className="text-2xl text-cyan-300">{isConnected ? syncedCredits ?? "0" : "0"}</p>
               </div>
 
               <div className="mb-5 border border-slate-800 bg-slate-950 p-3">
@@ -625,7 +650,8 @@ def my_agent():
 
               <div className="mt-5 border border-slate-800 bg-slate-950 p-4">
                 <p className="text-sm text-slate-400">
-                  Send requests to this endpoint to consume agent services.{" "}
+                  The Python SDK automatically routes verification requests to{" "}
+                  <span className="text-cyan-300">https://ghost-rank.vercel.app/api/gate/&lt;your-service-name&gt;.</span>{" "}
                   <span className="text-cyan-300">1 Request = 1 Credit.</span>
                 </p>
               </div>

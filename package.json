@@ -4,8 +4,8 @@
   "type": "module",
   "packageManager": "npm@10.8.2",
   "scripts": {
-    "indexer": "tsx indexer.ts",
-    "indexer:once": "tsx indexer.ts --once",
+    "index:base": "npx ts-node scripts/index-base.ts",
+    "score": "npx ts-node scripts/score-leads.ts",
     "typecheck": "tsc --noEmit",
     "contracts:compile": "hardhat compile",
     "contracts:deploy:vault:base-mainnet": "node scripts/deploy-vault.js",
@@ -14,7 +14,7 @@
     "start": "next start",
     "lint": "eslint",
     "check:lock": "npx npm@10.8.2 ci --ignore-scripts --no-audit --no-fund",
-    "update-data": "npx ts-node scripts/score-leads.ts"
+    "update-data": "npm run score"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0",

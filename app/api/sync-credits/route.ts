@@ -40,7 +40,7 @@ const json = (body: unknown, status = 200): NextResponse =>
 
 const publicClient = createPublicClient({
   chain: base,
-  transport: http(process.env.BASE_MAINNET_RPC_URL?.trim() || "https://mainnet.base.org"),
+  transport: http(process.env.BASE_RPC_URL?.trim() || "https://mainnet.base.org"),
 });
 
 const depositedEvent = GHOST_VAULT_ABI.find(

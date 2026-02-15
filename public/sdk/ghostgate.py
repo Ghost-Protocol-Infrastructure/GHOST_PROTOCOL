@@ -6,38 +6,61 @@ using credit checks.
 
 from __future__ import annotations
 
+import json
 import os
+import time
+import uuid
 from functools import wraps
 from typing import Any, Callable, Optional
 
 import requests
+from eth_account import Account
+from eth_account.messages import encode_typed_data
 
 
 class GhostGate:
     """Credit-gate helper for Python APIs."""
 
-    VERIFY_URL = "https://ghost-rank.vercel.app/api/verify"
+    BASE_URL = os.getenv("GHOST_GATE_BASE_URL", "https://ghost-rank.vercel.app").rstrip("/")
+    GATE_URL = f"{BASE_URL}/api/gate"
     PULSE_URL = "https://ghost-rank.vercel.app/api/telemetry/pulse"
     OUTCOME_URL = "https://ghost-rank.vercel.app/api/telemetry/outcome"
+    DOMAIN_NAME = "GhostGate"
+    DOMAIN_VERSION = "1"
 
-    def __init__(self, api_key: str) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        private_key: Optional[str] = None,
+        chain_id: int = 8453,
+    ) -> None:
         if not api_key:
             raise ValueError("api_key is required")
-        self.api_key = api_key
 
-    def guard(self, cost: int) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-        """Decorator that verifies credits before executing a handler."""
+        self.api_key = api_key
+        self.chain_id = chain_id
+        self.private_key = private_key or os.getenv("GHOST_SIGNER_PRIVATE_KEY") or os.getenv("PRIVATE_KEY")
+        if not self.private_key:
+            raise ValueError("A signing private key is required (private_key arg or GHOST_SIGNER_PRIVATE_KEY/PRIVATE_KEY).")
+
+    def guard(
+        self,
+        cost: int,
+        *,
+        service: str = "weather",
+        method: str = "GET",
+    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """Decorator that verifies paid access via the GhostGate gateway."""
         if cost <= 0:
             raise ValueError("cost must be greater than 0")
+        if not service:
+            raise ValueError("service is required")
 
         def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
             @wraps(func)
             def wrapper(*args: Any, **kwargs: Any) -> Any:
-                token = self._resolve_credit_token(*args, **kwargs)
-                if not token:
-                    return "Payment Required"
-
-                if not self._verify(token=token, cost=cost):
+                if not self._verify_access(service=service, cost=cost, method=method):
                     return "Payment Required"
 
                 result = func(*args, **kwargs)
@@ -50,14 +73,52 @@ class GhostGate:
 
         return decorator
 
-    def _verify(self, token: str, cost: int) -> bool:
-        payload = {
-            "apiKey": self.api_key,
-            "token": token,
-            "cost": cost,
+    def _build_access_payload(self, service: str) -> dict[str, Any]:
+        return {
+            "service": service,
+            "timestamp": int(time.time()),
+            "nonce": uuid.uuid4().hex,
         }
+
+    def _sign_access_payload(self, payload: dict[str, Any]) -> str:
+        typed_data = {
+            "types": {
+                "EIP712Domain": [
+                    {"name": "name", "type": "string"},
+                    {"name": "version", "type": "string"},
+                    {"name": "chainId", "type": "uint256"},
+                ],
+                "Access": [
+                    {"name": "service", "type": "string"},
+                    {"name": "timestamp", "type": "uint256"},
+                    {"name": "nonce", "type": "string"},
+                ],
+            },
+            "domain": {
+                "name": self.DOMAIN_NAME,
+                "version": self.DOMAIN_VERSION,
+                "chainId": self.chain_id,
+            },
+            "primaryType": "Access",
+            "message": payload,
+        }
+        signable = encode_typed_data(full_message=typed_data)
+        signed = Account.sign_message(signable, private_key=self.private_key)
+        return signed.signature.hex()
+
+    def _verify_access(self, *, service: str, cost: int, method: str) -> bool:
+        payload = self._build_access_payload(service)
+        signature = self._sign_access_payload(payload)
+        headers = {
+            "x-ghost-sig": signature,
+            "x-ghost-payload": json.dumps(payload),
+            "x-ghost-credit-cost": str(cost),
+            "accept": "application/json, text/plain;q=0.9, */*;q=0.8",
+        }
+        target = f"{self.GATE_URL}/{service}"
+
         try:
-            response = requests.post(self.VERIFY_URL, json=payload, timeout=10)
+            response = requests.request(method=method.upper(), url=target, headers=headers, timeout=10)
         except requests.RequestException:
             return False
 
@@ -107,43 +168,3 @@ class GhostGate:
             return 200 <= response.status_code < 300
         except requests.RequestException:
             return False
-
-    @staticmethod
-    def _resolve_credit_token(*args: Any, **kwargs: Any) -> Optional[str]:
-        # 1) Explicit env override for local runs/scripts.
-        env_token = os.getenv("X_GHOST_TOKEN") or os.getenv("GHOST_CREDIT_TOKEN") or os.getenv("GHOST-CREDIT-TOKEN")
-        if env_token:
-            return env_token
-
-        # 2) Request-like object passed into handler args/kwargs.
-        request_obj = kwargs.get("request")
-        if request_obj is None:
-            for arg in args:
-                if hasattr(arg, "headers"):
-                    request_obj = arg
-                    break
-
-        if request_obj is not None:
-            headers = getattr(request_obj, "headers", None)
-            if headers and hasattr(headers, "get"):
-                return (
-                    headers.get("X-GHOST-TOKEN")
-                    or headers.get("x-ghost-token")
-                    or headers.get("GHOST-CREDIT-TOKEN")
-                    or headers.get("ghost-credit-token")
-                    or headers.get("X-GHOST-CREDIT-TOKEN")
-                    or headers.get("x-ghost-credit-token")
-                )
-
-        # 3) Flask fallback (global request context).
-        try:
-            from flask import request as flask_request  # type: ignore
-
-            return (
-                flask_request.headers.get("X-GHOST-TOKEN")
-                or flask_request.headers.get("x-ghost-token")
-                or flask_request.headers.get("GHOST-CREDIT-TOKEN")
-                or flask_request.headers.get("X-GHOST-CREDIT-TOKEN")
-            )
-        except Exception:
-            return None

@@ -4,16 +4,11 @@ import {
   verifyTypedData,
   type Address,
 } from "viem";
-import { addUserCredits, consumeUserCredits, getUserCredits } from "@/lib/db";
+import { consumeUserCredits, getUserCredits } from "@/lib/db";
 
 export const runtime = "nodejs";
 
 const REPLAY_WINDOW_SECONDS = 60n;
-
-const SERVICE_REGISTRY: Record<string, string> = {
-  weather: "https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41",
-  mock: "https://jsonplaceholder.typicode.com/todos/1",
-};
 
 const DOMAIN = {
   name: "GhostGate",
@@ -121,46 +116,10 @@ const resolveRequestCost = (request: NextRequest): bigint => {
   return DEFAULT_REQUEST_COST;
 };
 
-const forwardToUpstream = async (
-  request: NextRequest,
-  targetUrl: string,
-): Promise<NextResponse> => {
-  const init: RequestInit = {
-    method: request.method,
-    headers: { accept: "application/json, text/plain;q=0.9, */*;q=0.8" },
-    cache: "no-store",
-  };
-
-  if (request.method !== "GET" && request.method !== "HEAD") {
-    const contentType = request.headers.get("content-type");
-    if (contentType) {
-      (init.headers as Record<string, string>)["content-type"] = contentType;
-    }
-    init.body = await request.text();
-  }
-
-  const upstream = await fetch(targetUrl, init);
-  const body = await upstream.text();
-  const contentType = upstream.headers.get("content-type") ?? "application/json; charset=utf-8";
-
-  return new NextResponse(body, {
-    status: upstream.status,
-    headers: {
-      "content-type": contentType,
-      "cache-control": "no-store",
-    },
-  });
-};
-
 const handle = async (request: NextRequest, context: RouteContext): Promise<NextResponse> => {
   const requestedService = await resolveServiceFromSlug(context);
   if (!requestedService) {
     return json({ error: "Missing service slug", code: 400 }, 400);
-  }
-
-  const upstreamUrl = SERVICE_REGISTRY[requestedService];
-  if (!upstreamUrl) {
-    return json({ error: "Unknown service", code: 404 }, 404);
   }
 
   const rawSig = request.headers.get("x-ghost-sig");
@@ -237,16 +196,17 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
     );
   }
 
-  try {
-    const upstreamResponse = await forwardToUpstream(request, upstreamUrl);
-    if (upstreamResponse.status >= 500) {
-      await addUserCredits(signer, requestCost);
-    }
-    return upstreamResponse;
-  } catch {
-    await addUserCredits(signer, requestCost);
-    return json({ error: "Upstream request failed", code: 502 }, 502);
-  }
+  return json(
+    {
+      authorized: true,
+      code: 200,
+      service: requestedService,
+      signer,
+      cost: requestCost.toString(),
+      remainingCredits: consumed.after.toString(),
+    },
+    200,
+  );
 };
 
 export async function GET(request: NextRequest, context: RouteContext): Promise<NextResponse> {

@@ -1,8 +1,6 @@
 # GHOST PROTOCOL: MASTER SPECIFICATION
-**Version:** 1.5 (As-Built, Unified & Truthful)
-**Status:** Live on Base (Phase 1)
-**Payment Infrastructure:** COMPLETED
-**Documents Merged:** Executive Summary, Addendum A, Addendum B
+**Version:** 1.5
+**Status:** Live on Base (Mainnet)
 
 ---
 
@@ -55,8 +53,9 @@ Codex must implement these exact formulas.
 ## 3. GHOSTGATE SPECIFICATION (SDK & Gateway)
 
 ### A. System Architecture
-* **Role:** Middleware/Decorator for Python (Flask/FastAPI) and Node.js.
-* **Function:** Intercepts HTTP requests and verifies the `X-GHOST-TOKEN` header.
+* **SDKs:** Python (Available), Node.js (Roadmap).
+* **Role:** Middleware/Decorator for Python integrations (Flask/FastAPI), with Node.js SDK support planned.
+* **Function:** Intercepts HTTP requests and verifies EIP-712 headers (`x-ghost-sig`, `x-ghost-payload`). The Gateway cryptographically recovers the signer address to authorize access.
 
 ### B. Telemetry & Metrics Generation
 * **YIELD:** Calculated as `Total ETH Volume processed via GhostVault / 24h`.
@@ -64,13 +63,28 @@ Codex must implement these exact formulas.
 * **UPTIME:** Calculated via **Dual-Verify System**:
     1.  **Merchant-Side:** SDK sends "Pulse" heartbeats every 60s.
     2.  **Consumer-Side:** Gateway tracks success rates of paid tokens. If a consumer pays but receives a 500 Error, Uptime is penalized.
+* **Current As-Built Note:** Telemetry (Yield/Uptime) is currently derived from on-chain inputs and indexed datasets. SDK heartbeats/outcome hooks are implemented, but scoring-engine ingestion remains stubbed (Roadmap Item).
 
-### C. Monetization & Verification
+### C. Monetization & Verification: THE GHOSTVAULT
+**Role:** The core revenue engine and non-custodial payment rail.
+
+### C-1. On-Chain Settlement
 * **Model:** Protocol Take Rate (e.g., 2.5% fee on credits).
 * **Payment Rail:** Users deposit Native ETH directly to the GhostVault.
 * **Split Logic:** 100% of each deposit is split on-chain immediately: `97.5%` to the target agent's withdrawable balance and `2.5%` to the Protocol Treasury.
 * **Verification Logic:** Access is granted via server-side verification of GhostVault `Deposited` events.
-* **Optimistic Gating:** To solve latency, GhostGate verifies tokens against a **cached high-speed index (<100ms)** rather than raw chain reads per request. Settlement is asynchronous.
+
+### C-2. Virtual Credit Logic (Off-Chain Scaling)
+To avoid high-frequency gas fees, Ghost Protocol uses a "Prepaid Native ETH" model:
+1.  **Deposit:** User pays ETH to `GhostVault`.
+2.  **Sync:** The backend (`/api/sync-credits`) scans the `Deposited` events on Base Mainnet.
+3.  **Credit Ledger:** ETH value is converted to Virtual Credits (e.g., 0.001 ETH = 100 Credits) and stored in `data/credits.json`.
+4.  **Consumption:** Credit decrement occurs **Server-Side** at the Gateway upon successful signature verification and balance checks.
+* **Optimistic Gating:** To solve latency, GhostGate verifies signed access requests against a **cached high-speed index (<100ms)** rather than raw chain reads per request. Settlement is asynchronous.
+
+### D. Credit Consumption & Enforcement
+* **Enforcement Point:** Credit decrement is performed server-side by the Gateway, not by client SDKs.
+* **SDK Responsibility:** The SDK signs/authenticates requests and forwards request metadata; it does not maintain or decrement local balances.
 
 ---
 
