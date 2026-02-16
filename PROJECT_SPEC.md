@@ -1,6 +1,6 @@
 # GHOST PROTOCOL: MASTER SPECIFICATION
-**Version:** 1.5
-**Status:** Live on Base (Mainnet)
+**Version:** 1.6
+**Status:** Live on Base (Mainnet), Postgres-backed indexing and credit ledger
 
 ---
 
@@ -25,9 +25,14 @@ We strictly separate **Public Data** (Unclaimed) from **Proprietary Data** (Clai
 ## 2. GHOSTRANK SPECIFICATION (Dashboard & Logic)
 
 ### A. Data Pipeline & Inputs
-The application reads from a unified index (`leads-scored.json`).
+The canonical backend store is PostgreSQL (Prisma) with the following core models:
+* **`Agent`:** Indexed ERC-8004 agents used by API consumers and ranking services.
+* **`SystemState`:** Stateful cursor storage (for example, `agent_indexer.lastSyncedBlock`) used by background indexers.
+* **`CreditBalance`:** Per-wallet virtual credit balances and per-wallet sync cursor (`lastSyncedBlock`).
 * **Inputs:** Wallet Address, Agent ID, Transaction Count.
 * **Claimed Logic:** The system checks `monitored-agents.json` (or internal flag) to determine if an agent is Claimed.
+* **Leaderboard API:** `/api/agents` reads `Agent` rows ordered by score/volume and serializes BigInt fields as strings.
+* **Transitional Note:** `data/leads-scored.json` remains as a legacy/static dataset in parts of the UI while DB-first rendering is rolled out.
 
 ### B. The Scoring Algorithms (Hard Requirements)
 Codex must implement these exact formulas.
@@ -77,8 +82,8 @@ Codex must implement these exact formulas.
 ### C-2. Virtual Credit Logic (Off-Chain Scaling)
 To avoid high-frequency gas fees, Ghost Protocol uses a "Prepaid Native ETH" model:
 1.  **Deposit:** User pays ETH to `GhostVault`.
-2.  **Sync:** The backend (`/api/sync-credits`) scans the `Deposited` events on Base Mainnet.
-3.  **Credit Ledger:** ETH value is converted to Virtual Credits (e.g., 0.001 ETH = 100 Credits) and stored in `data/credits.json`.
+2.  **Sync:** The backend (`/api/sync-credits`) scans `Deposited` events from the wallet cursor (`lastSyncedBlock + 1`) to latest block on Base Mainnet.
+3.  **Credit Ledger:** ETH value is converted to Virtual Credits (e.g., 0.001 ETH = 100 Credits) and stored in Postgres (`CreditBalance`) via Prisma transactions.
 4.  **Consumption:** Credit decrement occurs **Server-Side** at the Gateway upon successful signature verification and balance checks.
 * **Optimistic Gating:** To solve latency, GhostGate verifies signed access requests against a **cached high-speed index (<100ms)** rather than raw chain reads per request. Settlement is asynchronous.
 
@@ -89,7 +94,7 @@ To avoid high-frequency gas fees, Ghost Protocol uses a "Prepaid Native ETH" mod
 ---
 
 ## 4. MERCHANT CONSOLE & ONBOARDING
-* **Access:** Unlocked by connecting a wallet that owns an ERC-8004 agent indexed in `leads-scored.json`.
+* **Access:** Unlocked by connecting a wallet that owns an ERC-8004 agent indexed in the Postgres `Agent` table.
 * **Features:**
     * **Portfolio View:** Dropdown to manage multiple agents.
     * **Installation:** Display API Key and dynamic code snippets (`@gate.guard`).
@@ -109,3 +114,15 @@ To avoid high-frequency gas fees, Ghost Protocol uses a "Prepaid Native ETH" mod
 * **Pattern:** Non-custodial, pull-payment architecture.
 * **Treasury Routing:** Protocol fees are never held by middleware services; they are routed at deposit-time to Treasury `0x6D1F2814fC91971dB8b58A124eBfeB8bC7504c6f`.
 * **Agent Balances:** Agent proceeds accrue as withdrawable balances inside GhostVault and are claimed through `withdraw()`.
+
+## 7. INDEXER OPERATIONS (AS-BUILT)
+* **Primary Indexer:** `scripts/index-db.ts` indexes agent registrations into Postgres.
+* **Stateful Cursor:** Cursor key `agent_indexer` is stored in `SystemState.lastSyncedBlock`.
+* **Default Bootstrap Block:** `23,000,000` (override with `AGENT_INDEX_START_BLOCK`).
+* **Chunking:** Default chunk size is `2,000` blocks (override with `AGENT_INDEX_CHUNK_SIZE`) to stay within strict RPC `eth_getLogs` limits.
+* **Fallback Path:** If `AgentRegistered` logs are unavailable in-range, the indexer can fall back to `CreateService` + `ownerOf`.
+* **CI Automation:** `.github/workflows/cron.yml` runs on `workflow_dispatch`, `schedule`, and `push` to `main`, then executes:
+  * `npm ci`
+  * `npx prisma generate`
+  * `npm run migrate:indexer`
+  * `npm run index:db`
