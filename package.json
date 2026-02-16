@@ -53,7 +53,7 @@
   },
   "lint-staged": {
     "package.json": [
-      "node -e \"require('child_process').execSync('npm install --package-lock-only', { stdio: 'inherit' })\"",
+      "node -e \"require('child_process').execSync('npx npm@10.8.2 install --package-lock-only --ignore-scripts', { stdio: 'inherit' })\"",
       "git add package-lock.json"
     ]
   }
