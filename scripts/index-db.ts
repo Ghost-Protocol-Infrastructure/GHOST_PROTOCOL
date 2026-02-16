@@ -10,7 +10,7 @@ const DEFAULT_START_BLOCK = 23_000_000n;
 const CHUNK_SIZE = (() => {
   const raw = process.env.AGENT_INDEX_CHUNK_SIZE?.trim();
   if (raw && /^\d+$/.test(raw)) return BigInt(raw);
-  return 100_000n;
+  return 2_000n;
 })();
 const CHUNK_DELAY_MS = 100;
 const OWNER_READ_DELAY_MS = 120;
