@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createPublicClient, getAddress, http, parseEther, type AbiEvent, type Address } from "viem";
 import { base } from "viem/chains";
 import { GHOST_VAULT_ABI, GHOST_VAULT_ADDRESS } from "@/lib/constants";
-import { getUserCredits, syncUserCreditsFromDeposits } from "@/lib/db";
+import { getCreditBalance, syncDeposits } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -75,30 +75,47 @@ const parseUserAddress = async (request: NextRequest): Promise<Address | null> =
 };
 
 const syncCreditsForUser = async (userAddress: Address) => {
-  const logs = await publicClient.getLogs({
-    address: GHOST_VAULT_ADDRESS,
-    event: depositedEvent,
-    args: { payer: userAddress },
-    fromBlock: START_BLOCK,
-    toBlock: "latest",
-  });
+  const latestBlock = await publicClient.getBlockNumber();
+  const existingBalance = await getCreditBalance(userAddress);
+  const lastSyncedBlockBefore = existingBalance?.lastSyncedBlock ?? 0n;
+  const fromBlockCandidate = lastSyncedBlockBefore + 1n;
+  const fromBlock = fromBlockCandidate > START_BLOCK ? fromBlockCandidate : START_BLOCK;
 
-  const totalDepositedWei = logs.reduce((sum, log) => {
+  const logs =
+    fromBlock <= latestBlock
+      ? await publicClient.getLogs({
+          address: GHOST_VAULT_ADDRESS,
+          event: depositedEvent,
+          args: { payer: userAddress },
+          fromBlock,
+          toBlock: latestBlock,
+        })
+      : [];
+
+  const depositedWeiSinceLastSync = logs.reduce((sum, log) => {
     const args = log.args as { amount?: bigint };
     return sum + (args.amount ?? 0n);
   }, 0n);
 
-  await syncUserCreditsFromDeposits(userAddress, totalDepositedWei, CREDIT_PRICE_WEI);
-  const credits = await getUserCredits(userAddress);
+  const synced = await syncDeposits(
+    userAddress,
+    depositedWeiSinceLastSync,
+    CREDIT_PRICE_WEI,
+    latestBlock,
+  );
 
   return {
     userAddress,
     vaultAddress: GHOST_VAULT_ADDRESS,
-    fromBlock: START_BLOCK.toString(),
+    fromBlock: fromBlock.toString(),
+    toBlock: latestBlock.toString(),
+    lastSyncedBlockBefore: lastSyncedBlockBefore.toString(),
+    lastSyncedBlock: synced.lastSyncedBlock.toString(),
     matchedDeposits: logs.length,
-    totalDepositedWei: totalDepositedWei.toString(),
+    depositedWeiSinceLastSync: depositedWeiSinceLastSync.toString(),
     creditPriceWei: CREDIT_PRICE_WEI.toString(),
-    credits: credits.toString(),
+    addedCredits: synced.added.toString(),
+    credits: synced.after.toString(),
   };
 };
 

@@ -29,15 +29,8 @@ jobs:
       - name: Install dependencies (pinned npm)
         run: npx npm@10.8.2 ci
 
-      - name: Index base agents
-        run: npm run index:base
+      - name: Push indexer schema
+        run: npm run migrate:indexer
 
-      - name: Score indexed leads
-        run: npm run score
-
-      - name: Commit and push if changed
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/base-agents.json data/leads-scored.json
-          git diff --cached --quiet || git commit -m "Data Refresh" && git push
+      - name: Index agents in Postgres
+        run: npm run index:db

@@ -1,0 +1,37 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("POSTGRES_PRISMA_URL")
+  directUrl = env("POSTGRES_URL_NON_POOLING")
+}
+
+model CreditBalance {
+  walletAddress   String   @id
+  credits         Int      @default(0)
+  lastSyncedBlock BigInt   @default(0)
+  updatedAt       DateTime @updatedAt
+}
+
+model Agent {
+  address     String   @id
+  name        String
+  creator     String
+  image       String?
+  description String?
+  telegram    String?
+  twitter     String?
+  website     String?
+  status      String   @default("active")
+  volume      BigInt   @default(0)
+  score       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SystemState {
+  key             String @id
+  lastSyncedBlock BigInt @default(0)
+}
