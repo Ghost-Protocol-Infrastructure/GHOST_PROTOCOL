@@ -1,17 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Shield, ChevronRight, Activity, Lock } from 'lucide-react';
 
 const HomePage = () => {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) return <div className="bg-neutral-950 h-screen w-full" />;
-
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-400 font-mono selection:bg-red-900 selection:text-white overflow-x-hidden">
       <div className="fixed top-0 left-0 w-full z-50 border-b border-neutral-900 bg-neutral-950/90 backdrop-blur-sm h-12 flex items-center px-4 justify-between text-xs tracking-widest uppercase">
@@ -21,7 +13,7 @@ const HomePage = () => {
             GHOST_PROTOCOL
           </span>
           <span className="hidden md:inline text-neutral-600">
-            // INDEXING_V.1.0.4
+            {"// INDEXING_V.1.0.4"}
           </span>
         </div>
         <div className="flex items-center gap-6">
@@ -83,7 +75,7 @@ const HomePage = () => {
 
         <div className="absolute bottom-10 left-0 w-full border-t border-b border-neutral-900 py-2 overflow-hidden bg-neutral-950">
           <div className="whitespace-nowrap text-[10px] text-neutral-700 font-bold tracking-widest animate-marquee inline-block">
-            // INDEXING MEGAETH AGENTS // REPUTATION LAYER ACTIVE // SETTLEMENT RAIL ONLINE // BLOCK_TIME: 10MS // TX_VOLUME: 4.2M ETH // AGENT_ID_2049 VERIFIED // INDEXING MEGAETH AGENTS // REPUTATION LAYER ACTIVE //
+            {"// INDEXING MEGAETH AGENTS // REPUTATION LAYER ACTIVE // SETTLEMENT RAIL ONLINE // BLOCK_TIME: 10MS // TX_VOLUME: 4.2M ETH // AGENT_ID_2049 VERIFIED // INDEXING MEGAETH AGENTS // REPUTATION LAYER ACTIVE //"}
           </div>
         </div>
       </main>
@@ -97,15 +89,15 @@ const HomePage = () => {
             </h2>
             <div className="space-y-8 text-neutral-400 text-sm leading-7">
               <p>
-                <strong className="text-neutral-200 block mb-2">// 01. THE DEATH OF THE ARCADE</strong>
-                We declare the end of the "Neon Era." The magenta sunsets and cyan grids were for tourists. We are not players. We are the Architects.
+                <strong className="text-neutral-200 block mb-2">{"// 01. THE DEATH OF THE ARCADE"}</strong>
+                We declare the end of the &quot;Neon Era.&quot; The magenta sunsets and cyan grids were for tourists. We are not players. We are the Architects.
               </p>
               <p>
-                <strong className="text-neutral-200 block mb-2">// 02. ENTER CYPHER_CORE</strong>
+                <strong className="text-neutral-200 block mb-2">{"// 02. ENTER CYPHER_CORE"}</strong>
                 Our aesthetic is not a vibe; it is a weight. We embrace the Void Black, Tungsten Grey, and Bone White. The visual language of heavy financial infrastructure.
               </p>
               <p>
-                <strong className="text-neutral-200 block mb-2">// 03. THE PHILOSOPHY OF MASS</strong>
+                <strong className="text-neutral-200 block mb-2">{"// 03. THE PHILOSOPHY OF MASS"}</strong>
                 Ghost Protocol is the Shadow Layer. We are the impenetrable geometry that sits beneath the market. Not the flashing lights, but the engine block itself.
               </p>
             </div>
