@@ -18,7 +18,7 @@ import {
   GHOST_VAULT_ADDRESS,
   PROTOCOL_TREASURY_FALLBACK_ADDRESS,
 } from "@/lib/constants";
-import baseAgents from "../../data/leads-scored.json";
+import baseAgents from "@/data/leads-scored.json";
 
 const CREDIT_PRICE_WEI = parseEther("0.00001");
 const SUPPORTED_CHAIN_IDS = new Set<number>([base.id]);

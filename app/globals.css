@@ -2,49 +2,51 @@
 
 :root {
   --background: #020617;
-  /* slate-950 */
   --foreground: #94a3b8;
-  /* slate-400 */
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-mono);
-  /* Force mono everywhere */
+  --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 body {
+  min-height: 100vh;
+  overflow-x: hidden;
   background-color: var(--background);
   color: var(--foreground);
-  font-family: var(--font-mono);
+  font-family: var(--font-geist-sans);
+}
+
+.app-shell {
+  min-height: 100vh;
+  position: relative;
   background-image:
     linear-gradient(rgba(139, 92, 246, 0.03) 1px, transparent 1px),
     linear-gradient(90deg, rgba(139, 92, 246, 0.03) 1px, transparent 1px);
   background-size: 40px 40px, 40px 40px;
-  min-height: 100vh;
-  position: relative;
-  overflow-x: hidden;
 }
 
-/* CRT Scanline Effect */
-body::after {
+.app-shell::after {
   content: "";
   position: fixed;
   top: 0;
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: linear-gradient(rgba(18, 16, 16, 0) 50%,
-      rgba(0, 0, 0, 0.15) 50%),
-    linear-gradient(90deg,
+  background:
+    linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.15) 50%),
+    linear-gradient(
+      90deg,
       rgba(255, 0, 0, 0.02),
       rgba(0, 255, 0, 0.01),
-      rgba(0, 0, 255, 0.02));
+      rgba(0, 0, 255, 0.02)
+    );
   background-size: 100% 4px, 2px 100%;
   pointer-events: none;
-  z-index: 0 !important;
+  z-index: 0;
   animation: scanline 10s linear infinite;
   opacity: 0.6;
 }
@@ -59,14 +61,6 @@ body::after {
   }
 }
 
-/* Selection Glow */
-::selection {
-  background: rgba(139, 92, 246, 0.3);
-  color: #fff;
-  text-shadow: 0 0 10px rgba(139, 92, 246, 0.8);
-}
-
-/* Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
 }

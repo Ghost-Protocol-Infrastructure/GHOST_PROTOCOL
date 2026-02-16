@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
 import { Check, Copy } from "lucide-react";
 import Navbar from "@/components/Navbar";
-import baseAgents from "../data/leads-scored.json";
-import monitoredAgentIdsData from "../data/monitored-agents.json";
+import baseAgents from "@/data/leads-scored.json";
+import monitoredAgentIdsData from "@/data/monitored-agents.json";
 
 type Network = "MEGAETH" | "BASE";
 type LeadTier = "WHALE" | "ACTIVE" | "NEW";

@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "GhostRank",
-  description: "Bloomberg Terminal for MegaETH — AI Agent Directory",
+  title: "Ghost Protocol",
+  description: "Infrastructure for the Agentic Economy",
 };
 
 export default function RootLayout({
@@ -26,9 +26,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} font-mono antialiased bg-slate-950 text-slate-400 selection:bg-violet-500/30 selection:text-violet-200`}
-      >
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <Providers>{children}</Providers>
       </body>
     </html>
