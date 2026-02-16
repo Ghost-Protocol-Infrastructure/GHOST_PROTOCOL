@@ -34,6 +34,8 @@ type ProcessedLead = {
 
 type AgentApiResponse = {
   agents: ApiAgent[];
+  totalAgents?: number;
+  lastSyncedBlock?: string | null;
 };
 
 const truncateAddress = (address: string): string => `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -54,6 +56,10 @@ const roundToTwo = (value: number): number => Math.round(value * 100) / 100;
 const formatYield = (yieldEth: number): string => `${yieldEth.toFixed(4)} ETH`;
 const formatUptime = (uptimePct: number): string => `${uptimePct.toFixed(1)}%`;
 const formatReputation = (score: number): string => (Number.isInteger(score) ? String(score) : score.toFixed(2));
+const formatBlockHeight = (rawBlock: string | null): string => {
+  if (!rawBlock || !/^\d+$/.test(rawBlock)) return "--";
+  return rawBlock.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+};
 
 const isHexAddress = (value: string): boolean => /^0x[a-fA-F0-9]{40}$/.test(value);
 
@@ -142,6 +148,8 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedOwner, setCopiedOwner] = useState<string | null>(null);
   const [baseLeads, setBaseLeads] = useState<ProcessedLead[]>([]);
+  const [totalAgentsCount, setTotalAgentsCount] = useState<number>(0);
+  const [lastSyncedBlock, setLastSyncedBlock] = useState<string | null>(null);
   const [isLoadingLeads, setIsLoadingLeads] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const { address: userAddress } = useAccount();
@@ -166,9 +174,15 @@ export default function Home() {
 
         const payload = (await response.json()) as AgentApiResponse;
         const agents = Array.isArray(payload.agents) ? payload.agents : [];
+        const totalAgents =
+          typeof payload.totalAgents === "number" && Number.isFinite(payload.totalAgents)
+            ? payload.totalAgents
+            : agents.length;
 
         if (!isActive) return;
         setBaseLeads(buildLeadsFromApi(agents));
+        setTotalAgentsCount(Math.max(0, Math.trunc(totalAgents)));
+        setLastSyncedBlock(payload.lastSyncedBlock ?? null);
         setLoadError(null);
       } catch (error) {
         if (!isActive) return;
@@ -176,6 +190,8 @@ export default function Home() {
         const message = error instanceof Error ? error.message : "Failed to load live leaderboard data.";
         setLoadError(message);
         setBaseLeads([]);
+        setTotalAgentsCount(0);
+        setLastSyncedBlock(null);
       } finally {
         if (isActive) setIsLoadingLeads(false);
       }
@@ -213,19 +229,6 @@ export default function Home() {
       })),
     [filteredAgents],
   );
-
-  const whaleOwners = useMemo(() => {
-    const uniqueWhales = new Set(baseLeads.filter((agent) => agent.tier === "WHALE").map((agent) => agent.owner.toLowerCase()));
-    return uniqueWhales.size;
-  }, [baseLeads]);
-
-  const uniqueBaseAgents = useMemo(() => {
-    const seen = new Set<string>();
-    for (const lead of baseLeads) {
-      seen.add(lead.owner.toLowerCase());
-    }
-    return seen.size;
-  }, [baseLeads]);
 
   const claimedCount = useMemo(() => baseLeads.filter((agent) => agent.isClaimed).length, [baseLeads]);
 
@@ -321,10 +324,10 @@ export default function Home() {
         <div className="p-4 rounded-sm bg-slate-950/50 border border-violet-500/20 backdrop-blur-sm transform-gpu group hover:border-violet-500/40 transition-colors">
           <div className="relative inline-flex mb-2">
             <div className="absolute inset-0 bg-violet-500/30" aria-hidden="true"></div>
-            <span className="relative text-white text-[10px] tracking-[0.2em]">{"//whale_wallets"}</span>
+            <span className="relative text-white text-[10px] tracking-[0.2em]">{"//sync_height"}</span>
           </div>
           <div className="text-3xl text-white font-regular drop-shadow-[0_0_5px_rgba(255,255,255,0.3)]">
-            {network === "BASE" ? (isLoadingLeads ? "--" : whaleOwners) : "--"}
+            {network === "BASE" ? (isLoadingLeads ? "--" : formatBlockHeight(lastSyncedBlock)) : "--"}
           </div>
         </div>
         <div className="p-4 rounded-sm bg-slate-950/50 border border-violet-500/20 backdrop-blur-sm transform-gpu group hover:border-violet-500/40 transition-colors">
@@ -333,7 +336,7 @@ export default function Home() {
             <span className="relative text-white text-[10px] tracking-[0.2em]">{"//claimed_agents"}</span>
           </div>
           <div className="text-sm text-cyan-300">
-            {network === "BASE" ? (isLoadingLeads ? "--/--" : `${claimedCount}/${uniqueBaseAgents}`) : "--"}
+            {network === "BASE" ? (isLoadingLeads ? "--/--" : `${claimedCount}/${totalAgentsCount}`) : "--"}
           </div>
         </div>
       </div>

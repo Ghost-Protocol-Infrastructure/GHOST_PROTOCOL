@@ -21,13 +21,21 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       ? [{ volume: "desc" as const }, { score: "desc" as const }]
       : [{ score: "desc" as const }, { volume: "desc" as const }];
 
-  const agents = await prisma.agent.findMany({
-    orderBy,
-    take: limit,
-  });
+  const [agents, totalAgents, indexerState] = await prisma.$transaction([
+    prisma.agent.findMany({
+      orderBy,
+      take: limit,
+    }),
+    prisma.agent.count(),
+    prisma.systemState.findFirst({
+      where: { key: "agent_indexer" },
+    }),
+  ]);
 
   return NextResponse.json(
     {
+      totalAgents,
+      lastSyncedBlock: indexerState?.lastSyncedBlock?.toString() ?? null,
       agents: agents.map((agent) => ({
         address: agent.address,
         name: agent.name,
