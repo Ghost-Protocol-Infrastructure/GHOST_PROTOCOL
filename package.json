@@ -4,8 +4,8 @@
   "type": "module",
   "packageManager": "npm@10.8.2",
   "scripts": {
-    "index:base": "npx ts-node scripts/index-base.ts",
-    "score": "npx ts-node scripts/score-leads.ts",
+    "index:base": "npx tsx scripts/index-base.ts",
+    "score": "npx tsx scripts/score-leads.ts",
     "typecheck": "tsc --noEmit",
     "contracts:compile": "hardhat compile",
     "contracts:deploy:vault:base-mainnet": "node scripts/deploy-vault.js",
