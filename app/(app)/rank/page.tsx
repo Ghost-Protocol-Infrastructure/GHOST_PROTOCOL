@@ -5,31 +5,22 @@ import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
 import { Check, Copy } from "lucide-react";
 import Navbar from "@/components/Navbar";
-import baseAgents from "@/data/leads-scored.json";
-import monitoredAgentIdsData from "@/data/monitored-agents.json";
 
 type Network = "MEGAETH" | "BASE";
 type LeadTier = "WHALE" | "ACTIVE" | "NEW";
 
-type BaseAgentLead = {
-  agentId: string;
-  owner: string;
-  txCount?: number;
-  transactionCount?: number;
-  velocity?: number;
-  rankScore?: number;
-  reputation?: number;
-  yield?: number | string | null;
-  uptime?: number | string | null;
-  claimed?: boolean;
-  isClaimed?: boolean;
-  monitored?: boolean;
-  isMonitored?: boolean;
-  tier: LeadTier;
+type ApiAgent = {
+  address: string;
+  name: string;
+  creator: string;
+  status: string;
+  volume: string;
+  score: number;
 };
 
 type ProcessedLead = {
   agentId: string;
+  displayName: string;
   owner: string;
   tier: LeadTier;
   txCount: number;
@@ -41,29 +32,12 @@ type ProcessedLead = {
   uptimePct: number | null;
 };
 
-const leads = baseAgents as BaseAgentLead[];
-const monitoredAgentIds = new Set(
-  (Array.isArray(monitoredAgentIdsData) ? monitoredAgentIdsData : []).map((value) => String(value)),
-);
+type AgentApiResponse = {
+  agents: ApiAgent[];
+};
 
 const truncateAddress = (address: string): string => `${address.slice(0, 6)}...${address.slice(-4)}`;
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
-
-const parseYieldEth = (value: unknown): number | null => {
-  if (typeof value === "number" && Number.isFinite(value) && value >= 0) return value;
-  if (typeof value !== "string") return null;
-
-  const numeric = Number.parseFloat(value.replace(/[^0-9.]/g, ""));
-  return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
-};
-
-const parseUptimePct = (value: unknown): number | null => {
-  if (typeof value === "number" && Number.isFinite(value)) return clamp(value, 0, 100);
-  if (typeof value !== "string") return null;
-
-  const numeric = Number.parseFloat(value.replace("%", "").trim());
-  return Number.isFinite(numeric) ? clamp(numeric, 0, 100) : null;
-};
 
 const normalizeTxScore = (txCount: number, maxTxCount: number): number => {
   if (maxTxCount <= 0) return 0;
@@ -81,6 +55,81 @@ const formatYield = (yieldEth: number): string => `${yieldEth.toFixed(4)} ETH`;
 const formatUptime = (uptimePct: number): string => `${uptimePct.toFixed(1)}%`;
 const formatReputation = (score: number): string => (Number.isInteger(score) ? String(score) : score.toFixed(2));
 
+const isHexAddress = (value: string): boolean => /^0x[a-fA-F0-9]{40}$/.test(value);
+
+const parseTxCount = (rawVolume: string): number => {
+  const parsed = Number.parseInt(rawVolume, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.min(parsed, Number.MAX_SAFE_INTEGER);
+};
+
+const deriveAgentId = (agent: ApiAgent): string => {
+  const fromAddress = agent.address.match(/(?:service|agent)[:_-](\d+)/i)?.[1];
+  if (fromAddress) return fromAddress;
+
+  const fromName = agent.name.match(/(?:agent|service)\s*#?\s*(\d+)/i)?.[1];
+  if (fromName) return fromName;
+
+  if (isHexAddress(agent.address)) return agent.address.slice(2, 8).toUpperCase();
+  return agent.name.trim().slice(0, 12).toUpperCase() || "UNKNOWN";
+};
+
+const normalizeDisplayName = (agent: ApiAgent, agentId: string): string => {
+  const clean = agent.name.trim();
+  return clean.length > 0 ? clean : `Agent #${agentId}`;
+};
+
+const getLeadTier = (txCount: number): LeadTier => {
+  if (txCount > 500) return "WHALE";
+  if (txCount > 50) return "ACTIVE";
+  return "NEW";
+};
+
+const statusIndicatesClaimed = (status: string): boolean => {
+  const normalized = status.trim().toLowerCase();
+  if (normalized.length === 0) return false;
+  return normalized.includes("claimed") || normalized.includes("verified") || normalized.includes("monetized");
+};
+
+const buildLeadsFromApi = (agents: ApiAgent[]): ProcessedLead[] => {
+  const seeded = agents.map((agent) => {
+    const txCount = parseTxCount(agent.volume);
+    const velocity = txCount;
+    const reputationScore =
+      typeof agent.score === "number" && Number.isFinite(agent.score) ? clamp(agent.score, 0, 100) : 0;
+    const isClaimed = statusIndicatesClaimed(agent.status);
+    const agentId = deriveAgentId(agent);
+
+    return {
+      agentId,
+      displayName: normalizeDisplayName(agent, agentId),
+      owner: isHexAddress(agent.creator) ? agent.creator.toLowerCase() : agent.creator,
+      tier: getLeadTier(txCount),
+      txCount,
+      velocity,
+      isClaimed,
+      reputationScore,
+      rankScore: 0,
+      yieldEth: null,
+      uptimePct: null,
+    };
+  });
+
+  const maxTxCount = Math.max(0, ...seeded.map((lead) => lead.txCount));
+
+  return seeded
+    .map((lead) => {
+      const txScore = normalizeTxScore(lead.txCount, maxTxCount);
+      const rankScore = roundToTwo(lead.reputationScore * 0.7 + txScore * 0.3);
+
+      return {
+        ...lead,
+        rankScore,
+      };
+    })
+    .sort((a, b) => b.rankScore - a.rankScore || b.reputationScore - a.reputationScore || b.txCount - a.txCount);
+};
+
 const tierClassName: Record<LeadTier, string> = {
   WHALE:
     "border-neon-purple border-violet-400 bg-emerald-500/20 text-emerald-300 animate-pulse shadow-[0_0_10px_rgba(139,92,246,0.5)]",
@@ -92,70 +141,55 @@ export default function Home() {
   const [network, setNetwork] = useState<Network>("BASE");
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedOwner, setCopiedOwner] = useState<string | null>(null);
+  const [baseLeads, setBaseLeads] = useState<ProcessedLead[]>([]);
+  const [isLoadingLeads, setIsLoadingLeads] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const { address: userAddress } = useAccount();
   const router = useRouter();
   const networkSelectValue = network === "BASE" ? "base" : "megaeth";
 
-  const baseLeads = useMemo<ProcessedLead[]>(() => {
-    const seededLeads = leads.map((lead) => {
-      const txCount = Math.max(0, lead.transactionCount ?? lead.txCount ?? 0);
-      const yieldEth = parseYieldEth(lead.yield);
-      const uptimePct = parseUptimePct(lead.uptime);
-      const velocity = Math.max(0, lead.velocity ?? txCount);
-      const providedReputation =
-        typeof lead.reputation === "number" && Number.isFinite(lead.reputation) ? clamp(lead.reputation, 0, 100) : null;
-      const providedRankScore =
-        typeof lead.rankScore === "number" && Number.isFinite(lead.rankScore) ? Math.max(0, lead.rankScore) : null;
-      const hasClaimFlag = Boolean(lead.claimed || lead.isClaimed || lead.monitored || lead.isMonitored);
-      const isClaimed = monitoredAgentIds.has(lead.agentId) || hasClaimFlag;
+  useEffect(() => {
+    let isActive = true;
 
-      return {
-        agentId: lead.agentId,
-        owner: lead.owner,
-        tier: lead.tier,
-        txCount,
-        velocity,
-        yieldEth,
-        uptimePct,
-        isClaimed,
-        providedReputation,
-        providedRankScore,
-      };
-    });
+    const loadLeads = async () => {
+      try {
+        const response = await fetch("/api/agents?limit=1000&sort=score", {
+          cache: "no-store",
+          headers: {
+            "cache-control": "no-cache",
+          },
+        });
 
-    const maxTxCount = Math.max(0, ...seededLeads.map((lead) => lead.txCount));
-    const maxClaimedYield = Math.max(
-      0,
-      ...seededLeads
-        .filter((lead) => lead.isClaimed && lead.yieldEth != null)
-        .map((lead) => lead.yieldEth ?? 0),
-    );
+        if (!response.ok) {
+          throw new Error(`Agent API request failed with status ${response.status}`);
+        }
 
-    return seededLeads
-      .map((lead) => {
-        const txScore = normalizeTxScore(lead.txCount, maxTxCount);
-        const yieldScore = lead.yieldEth != null && maxClaimedYield > 0 ? clamp((lead.yieldEth / maxClaimedYield) * 100, 0, 100) : 0;
-        const computedReputationScore = lead.isClaimed
-          ? clamp(roundToTwo(txScore * 0.3 + (lead.uptimePct ?? 0) * 0.5 + yieldScore * 0.2), 0, 100)
-          : Math.min(txScore, 80);
-        const reputationScore = lead.providedReputation ?? computedReputationScore;
-        const computedRankScore = roundToTwo(reputationScore * 0.7 + lead.velocity * 0.3);
-        const rankScore = lead.providedRankScore ?? computedRankScore;
+        const payload = (await response.json()) as AgentApiResponse;
+        const agents = Array.isArray(payload.agents) ? payload.agents : [];
 
-        return {
-          agentId: lead.agentId,
-          owner: lead.owner,
-          tier: lead.tier,
-          txCount: lead.txCount,
-          velocity: lead.velocity,
-          isClaimed: lead.isClaimed,
-          reputationScore,
-          rankScore,
-          yieldEth: lead.isClaimed ? lead.yieldEth : null,
-          uptimePct: lead.isClaimed ? lead.uptimePct : null,
-        };
-      })
-      .sort((a, b) => b.rankScore - a.rankScore || b.reputationScore - a.reputationScore || b.txCount - a.txCount);
+        if (!isActive) return;
+        setBaseLeads(buildLeadsFromApi(agents));
+        setLoadError(null);
+      } catch (error) {
+        if (!isActive) return;
+
+        const message = error instanceof Error ? error.message : "Failed to load live leaderboard data.";
+        setLoadError(message);
+        setBaseLeads([]);
+      } finally {
+        if (isActive) setIsLoadingLeads(false);
+      }
+    };
+
+    void loadLeads();
+    const refreshHandle = window.setInterval(() => {
+      void loadLeads();
+    }, 60_000);
+
+    return () => {
+      isActive = false;
+      window.clearInterval(refreshHandle);
+    };
   }, []);
 
   const filteredAgents = useMemo(() => {
@@ -163,7 +197,12 @@ export default function Home() {
     if (!searchQuery.trim()) return source;
 
     const query = searchQuery.toLowerCase().trim();
-    return source.filter((lead) => lead.agentId.toLowerCase().includes(query) || lead.owner.toLowerCase().includes(query));
+    return source.filter(
+      (lead) =>
+        lead.agentId.toLowerCase().includes(query) ||
+        lead.displayName.toLowerCase().includes(query) ||
+        lead.owner.toLowerCase().includes(query),
+    );
   }, [baseLeads, network, searchQuery]);
 
   const rankedAgents = useMemo(
@@ -261,7 +300,7 @@ export default function Home() {
             <span className="relative text-white text-[10px] tracking-[0.2em]">{"//total_agents"}</span>
           </div>
           <div className="text-3xl text-white font-regular drop-shadow-[0_0_5px_rgba(255,255,255,0.3)]">
-            {network === "BASE" ? baseLeads.length : 0}
+            {network === "BASE" ? (isLoadingLeads ? "--" : baseLeads.length) : 0}
           </div>
         </div>
         <div className="p-4 rounded-sm bg-slate-950/50 border border-violet-500/20 backdrop-blur-sm transform-gpu group hover:border-violet-500/40 transition-colors">
@@ -285,7 +324,7 @@ export default function Home() {
             <span className="relative text-white text-[10px] tracking-[0.2em]">{"//whale_wallets"}</span>
           </div>
           <div className="text-3xl text-white font-regular drop-shadow-[0_0_5px_rgba(255,255,255,0.3)]">
-            {network === "BASE" ? whaleOwners : "--"}
+            {network === "BASE" ? (isLoadingLeads ? "--" : whaleOwners) : "--"}
           </div>
         </div>
         <div className="p-4 rounded-sm bg-slate-950/50 border border-violet-500/20 backdrop-blur-sm transform-gpu group hover:border-violet-500/40 transition-colors">
@@ -294,7 +333,7 @@ export default function Home() {
             <span className="relative text-white text-[10px] tracking-[0.2em]">{"//claimed_agents"}</span>
           </div>
           <div className="text-sm text-cyan-300">
-            {network === "BASE" ? `${claimedCount}/${uniqueBaseAgents}` : "--"}
+            {network === "BASE" ? (isLoadingLeads ? "--/--" : `${claimedCount}/${uniqueBaseAgents}`) : "--"}
           </div>
         </div>
       </div>
@@ -314,6 +353,14 @@ export default function Home() {
         {network !== "BASE" ? (
           <div className="py-16 text-center text-xs uppercase tracking-[0.16em] text-slate-600">
             MegaETH telemetry is not verified yet. Switch to BASE (LIVE).
+          </div>
+        ) : isLoadingLeads ? (
+          <div className="py-16 text-center text-xs uppercase tracking-[0.16em] text-slate-600">
+            Loading live agents from Postgres...
+          </div>
+        ) : loadError ? (
+          <div className="py-16 text-center text-xs uppercase tracking-[0.16em] text-rose-400">
+            Live data fetch failed: {loadError}
           </div>
         ) : (
           <div className="divide-y divide-cyan-500/10">
@@ -353,6 +400,7 @@ export default function Home() {
                         </span>
                       )}
                     </div>
+                    <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-slate-600">{agent.displayName}</div>
                     <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
                       <span title={agent.owner}>{truncateAddress(agent.owner)}</span>
                       <button

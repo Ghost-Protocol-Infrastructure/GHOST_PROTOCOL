@@ -20,6 +20,7 @@ const AGENT_REGISTERED_EVENT = parseAbiItem(
 );
 const CREATE_SERVICE_EVENT = parseAbiItem("event CreateService(uint256 indexed serviceId, bytes32 configHash)");
 const OWNER_OF_FUNCTION = parseAbiItem("function ownerOf(uint256 serviceId) view returns (address)");
+const FALLBACK_ADDRESS_PREFIX = "service:";
 
 type IndexedAgentRecord = {
   address: string;
@@ -50,6 +51,9 @@ const sanitizeOptionalText = (value: unknown): string | null => {
 };
 
 const fallbackName = (address: string): string => `Agent ${address.slice(0, 10)}`;
+const fallbackServiceName = (serviceId: string): string => `Agent #${serviceId}`;
+const fallbackServiceDescription = (serviceId: string): string =>
+  `Fallback-indexed registry service ${serviceId} (CreateService + ownerOf).`;
 
 const getFromBlock = async (): Promise<bigint> => {
   const state = await prisma.systemState.findUnique({ where: { key: CURSOR_KEY } });
@@ -239,13 +243,14 @@ const fetchCreateServiceFallback = async (
         args: [serviceId],
       });
 
-      const syntheticAddress = `service:${serviceId.toString()}`;
+      const serviceIdText = serviceId.toString();
+      const syntheticAddress = `${FALLBACK_ADDRESS_PREFIX}${serviceIdText}`;
       indexed.set(syntheticAddress, {
         address: syntheticAddress,
-        name: `Service ${serviceId.toString()}`,
+        name: fallbackServiceName(serviceIdText),
         creator: getAddress(owner).toLowerCase(),
         image: null,
-        description: null,
+        description: fallbackServiceDescription(serviceIdText),
         telegram: null,
         twitter: null,
         website: null,
@@ -259,6 +264,37 @@ const fetchCreateServiceFallback = async (
   }
 
   return indexed;
+};
+
+const normalizeLegacyFallbackRows = async (): Promise<number> => {
+  const legacyRows = await prisma.agent.findMany({
+    where: { address: { startsWith: FALLBACK_ADDRESS_PREFIX } },
+    select: { address: true, name: true, description: true },
+  });
+
+  let updatedCount = 0;
+
+  for (const row of legacyRows) {
+    const serviceId = row.address.slice(FALLBACK_ADDRESS_PREFIX.length);
+    if (!/^\d+$/.test(serviceId)) continue;
+
+    const normalizedName = fallbackServiceName(serviceId);
+    const normalizedDescription = fallbackServiceDescription(serviceId);
+
+    if (row.name === normalizedName && row.description === normalizedDescription) continue;
+
+    await prisma.agent.update({
+      where: { address: row.address },
+      data: {
+        name: normalizedName,
+        description: normalizedDescription,
+      },
+    });
+
+    updatedCount += 1;
+  }
+
+  return updatedCount;
 };
 
 const upsertAgents = async (records: Map<string, IndexedAgentRecord>): Promise<number> => {
@@ -318,9 +354,13 @@ async function main(): Promise<void> {
   }
 
   const newCount = await upsertAgents(records);
+  const normalizedLegacyCount = await normalizeLegacyFallbackRows();
   await persistCursor(latestBlock);
 
   console.log(`Indexed ${newCount} new agents from block ${fromBlock.toString()} to ${latestBlock.toString()}.`);
+  if (normalizedLegacyCount > 0) {
+    console.log(`Normalized ${normalizedLegacyCount} legacy fallback agent labels.`);
+  }
 }
 
 main()
