@@ -1,15 +1,12 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { createPublicClient, http, type Address } from "viem";
+import { createPublicClient, fallback, getAddress, http, type Address } from "viem";
 import { base } from "viem/chains";
+import { prisma } from "../lib/db";
 
-const INPUT_PATH = join(process.cwd(), "data", "base-agents.json");
-const OUTPUT_PATH = join(process.cwd(), "data", "leads-scored.json");
-const MONITORED_AGENTS_PATH = join(process.cwd(), "data", "monitored-agents.json");
-const TELEMETRY_PATH = join(process.cwd(), "data", "agent-telemetry.json");
-const BASE_RPC_URL = process.env.BASE_RPC_URL ?? "https://mainnet.base.org";
+const BASE_RPC_URL = process.env.BASE_RPC_URL?.trim() || "https://mainnet.base.org";
 const CONCURRENCY_LIMIT = 5;
 const BATCH_DELAY_MS = 100;
+const UPDATE_BATCH_SIZE = 100;
+
 const UNCLAIMED_REPUTATION_CAP = 80;
 const REPUTATION_TX_WEIGHT = 0.3;
 const REPUTATION_UPTIME_WEIGHT = 0.5;
@@ -17,43 +14,18 @@ const REPUTATION_YIELD_WEIGHT = 0.2;
 const RANK_REPUTATION_WEIGHT = 0.7;
 const RANK_VELOCITY_WEIGHT = 0.3;
 
-type Tier = "WHALE" | "ACTIVE" | "NEW";
+type AgentTier = "WHALE" | "ACTIVE" | "NEW" | "GHOST";
 
-type BaseAgent = {
-  agentId: string;
-  owner: Address;
-  monetized?: boolean;
-};
-
-type ScoredLead = {
-  agentId: string;
-  owner: Address;
-  isClaimed: boolean;
-  transactionCount: number;
+type ScoreUpdate = {
+  address: string;
   txCount: number;
-  txVolumeNorm: number;
-  velocity: number;
-  velocityNorm: number;
+  tier: AgentTier;
   reputation: number;
   rankScore: number;
-  yield: number | null;
-  uptime: number | null;
-  dualVerify: {
-    merchantPulseLastSeen: string | null;
-    consumerSuccessRatePct: number | null;
-    source: "stub";
-  };
-  tier: Tier;
-};
-
-type AgentTelemetry = {
-  agentId: string;
-  yield24hEth: number | null;
-  uptimePct: number | null;
-  dualVerify: {
-    merchantPulseLastSeen: string | null;
-    consumerSuccessRatePct: number | null;
-  };
+  yieldEth: number;
+  uptimePct: number;
+  volume: bigint;
+  score: number;
 };
 
 const sleep = (ms: number): Promise<void> =>
@@ -61,246 +33,222 @@ const sleep = (ms: number): Promise<void> =>
     setTimeout(resolve, ms);
   });
 
-const getTier = (txCount: number): Tier => {
+const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
+const roundToTwo = (value: number): number => Math.round(value * 100) / 100;
+
+const normalizeLog100 = (value: number, maxValue: number): number => {
+  if (maxValue <= 0) return 0;
+
+  const numerator = Math.log10(value + 1);
+  const denominator = Math.log10(maxValue + 1);
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator === 0) {
+    return 0;
+  }
+
+  return clamp(roundToTwo((numerator / denominator) * 100), 0, 100);
+};
+
+const toSafeInt = (value: bigint | number): number => {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value <= 0) return 0;
+    return Math.min(Math.trunc(value), Number.MAX_SAFE_INTEGER);
+  }
+
+  const max = BigInt(Number.MAX_SAFE_INTEGER);
+  if (value > max) return Number.MAX_SAFE_INTEGER;
+  if (value < 0n) return 0;
+  return Number(value);
+};
+
+const parseAddress = (value: string): Address | null => {
+  try {
+    return getAddress(value);
+  } catch {
+    return null;
+  }
+};
+
+const statusIndicatesClaimed = (status: string): boolean => {
+  const normalized = status.trim().toLowerCase();
+  if (normalized.length === 0) return false;
+  return normalized.includes("claimed") || normalized.includes("verified") || normalized.includes("monetized");
+};
+
+const getTier = (txCount: number, isClaimed: boolean): AgentTier => {
+  if (!isClaimed && txCount <= 0) return "GHOST";
   if (txCount > 500) return "WHALE";
   if (txCount > 50) return "ACTIVE";
   return "NEW";
 };
 
-const normalizeReputation = (txCount: number, maxTxCount: number): number => {
-  if (maxTxCount <= 0) return 0;
-
-  const numerator = Math.log10(txCount + 1);
-  const denominator = Math.log10(maxTxCount + 1);
-  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator === 0) {
-    return 0;
-  }
-
-  const normalized = (numerator / denominator) * 100;
-  return Math.max(0, Math.min(100, Math.round(normalized)));
-};
-
-const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
-
-const roundToTwo = (value: number): number => Math.round(value * 100) / 100;
-
-const normalizeAgentId = (value: unknown): string | null => {
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return String(Math.trunc(value));
-  }
-
-  return null;
-};
-
-const loadMonitoredAgentIds = async (): Promise<Set<string>> => {
-  try {
-    const raw = await readFile(MONITORED_AGENTS_PATH, "utf8");
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) {
-      console.warn(`Expected array in ${MONITORED_AGENTS_PATH}. Using empty monitored list.`);
-      return new Set<string>();
-    }
-
-    const monitored = new Set<string>();
-    for (const entry of parsed) {
-      if (typeof entry === "object" && entry !== null) {
-        const maybeId = normalizeAgentId((entry as { agentId?: unknown }).agentId);
-        if (maybeId) {
-          monitored.add(maybeId);
-        }
-        continue;
-      }
-
-      const normalized = normalizeAgentId(entry);
-      if (normalized) {
-        monitored.add(normalized);
-      }
-    }
-
-    return monitored;
-  } catch (error) {
-    console.warn(`Failed to load ${MONITORED_AGENTS_PATH}. Using empty monitored list.`);
-    console.error(error);
-    return new Set<string>();
-  }
-};
-
-const parseNullableNumber = (value: unknown): number | null => {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return null;
-};
-
-const loadTelemetryByAgentId = async (): Promise<Map<string, AgentTelemetry>> => {
-  try {
-    const raw = await readFile(TELEMETRY_PATH, "utf8");
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) {
-      console.warn(`Expected array in ${TELEMETRY_PATH}. Using empty telemetry map.`);
-      return new Map<string, AgentTelemetry>();
-    }
-
-    const telemetryByAgentId = new Map<string, AgentTelemetry>();
-    for (const entry of parsed) {
-      if (typeof entry !== "object" || entry === null) continue;
-      const row = entry as {
-        agentId?: unknown;
-        yield24hEth?: unknown;
-        uptimePct?: unknown;
-        dualVerify?: {
-          merchantPulseLastSeen?: unknown;
-          consumerSuccessRatePct?: unknown;
-        };
-      };
-
-      const agentId = normalizeAgentId(row.agentId);
-      if (!agentId) continue;
-
-      const merchantPulseLastSeen =
-        typeof row.dualVerify?.merchantPulseLastSeen === "string"
-          ? row.dualVerify.merchantPulseLastSeen
-          : null;
-      const consumerSuccessRatePctRaw = parseNullableNumber(row.dualVerify?.consumerSuccessRatePct);
-      const consumerSuccessRatePct =
-        consumerSuccessRatePctRaw == null ? null : clamp(consumerSuccessRatePctRaw, 0, 100);
-
-      telemetryByAgentId.set(agentId, {
-        agentId,
-        yield24hEth: parseNullableNumber(row.yield24hEth),
-        uptimePct: parseNullableNumber(row.uptimePct),
-        dualVerify: {
-          merchantPulseLastSeen,
-          consumerSuccessRatePct,
-        },
-      });
-    }
-
-    return telemetryByAgentId;
-  } catch {
-    return new Map<string, AgentTelemetry>();
-  }
-};
-
-async function main(): Promise<void> {
-  const raw = await readFile(INPUT_PATH, "utf8");
-  const agents = JSON.parse(raw) as BaseAgent[];
-  const monitoredAgentIds = await loadMonitoredAgentIds();
-  const telemetryByAgentId = await loadTelemetryByAgentId();
-
-  const publicClient = createPublicClient({
+const buildClient = () =>
+  createPublicClient({
     chain: base,
-    transport: http(BASE_RPC_URL, {
-      retryCount: 2,
-      retryDelay: 250,
-      timeout: 15_000,
-    }),
+    transport: fallback([
+      http(BASE_RPC_URL, { retryCount: 2, retryDelay: 250, timeout: 15_000 }),
+      http("https://base.llamarpc.com", { retryCount: 2, retryDelay: 250, timeout: 15_000 }),
+      http("https://1rpc.io/base", { retryCount: 2, retryDelay: 250, timeout: 15_000 }),
+    ]),
   });
 
-  const ownerByLowercase = new Map<string, Address>();
-  for (const agent of agents) {
-    ownerByLowercase.set(agent.owner.toLowerCase(), agent.owner);
-  }
+const fetchTxCountsByCreator = async (
+  creators: string[],
+): Promise<{
+  txCountByCreatorLower: Map<string, number>;
+  failures: number;
+}> => {
+  const txCountByCreatorLower = new Map<string, number>();
+  const normalizedCreators = Array.from(
+    new Set(
+      creators
+        .map((creator) => creator.toLowerCase())
+        .map((creatorLower) => {
+          const parsed = parseAddress(creatorLower);
+          return parsed ? { creatorLower, creatorAddress: parsed } : null;
+        })
+        .filter((value): value is { creatorLower: string; creatorAddress: Address } => value !== null),
+    ),
+  );
 
-  const uniqueOwners = Array.from(ownerByLowercase.entries());
-  const txCountByOwnerLower = new Map<string, number>();
+  const publicClient = buildClient();
+  let failures = 0;
 
-  for (let index = 0; index < uniqueOwners.length; index += CONCURRENCY_LIMIT) {
-    const batch = uniqueOwners.slice(index, index + CONCURRENCY_LIMIT);
+  for (let index = 0; index < normalizedCreators.length; index += CONCURRENCY_LIMIT) {
+    const batch = normalizedCreators.slice(index, index + CONCURRENCY_LIMIT);
 
     await Promise.all(
-      batch.map(async ([ownerLower, owner]) => {
+      batch.map(async ({ creatorLower, creatorAddress }) => {
         try {
-          const txCount = await publicClient.getTransactionCount({ address: owner });
-          txCountByOwnerLower.set(ownerLower, Number(txCount));
+          const txCountRaw = await publicClient.getTransactionCount({ address: creatorAddress });
+          txCountByCreatorLower.set(creatorLower, toSafeInt(txCountRaw));
         } catch (error) {
-          txCountByOwnerLower.set(ownerLower, 0);
-          console.warn(`Failed to fetch txCount for ${owner}. Defaulting to 0.`);
+          failures += 1;
+          txCountByCreatorLower.set(creatorLower, 0);
+          console.warn(`Failed txCount fetch for ${creatorAddress}. Defaulting to 0.`);
           console.error(error);
         }
       }),
     );
 
-    if (index + CONCURRENCY_LIMIT < uniqueOwners.length) {
+    if (index + CONCURRENCY_LIMIT < normalizedCreators.length) {
       await sleep(BATCH_DELAY_MS);
     }
   }
 
-  const maxTxCount = Math.max(0, ...Array.from(txCountByOwnerLower.values()));
-  const maxVelocity = maxTxCount;
-  const maxYield = Math.max(
-    0,
-    ...Array.from(telemetryByAgentId.values())
-      .map((telemetry) => telemetry.yield24hEth ?? 0)
-      .filter((yield24hEth) => yield24hEth >= 0),
-  );
+  return { txCountByCreatorLower, failures };
+};
 
-  const scored: ScoredLead[] = agents.map((agent) => {
-    const txCount = txCountByOwnerLower.get(agent.owner.toLowerCase()) ?? 0;
-    const isClaimed = monitoredAgentIds.has(agent.agentId);
-    const telemetry = telemetryByAgentId.get(agent.agentId);
-    const txVolumeNorm = normalizeReputation(txCount, maxTxCount);
-    const velocity = txCount;
-    const velocityNorm = normalizeReputation(velocity, maxVelocity);
-    const yield24hEth = isClaimed ? Math.max(0, telemetry?.yield24hEth ?? 0) : null;
-    const uptimePct = isClaimed ? clamp(telemetry?.uptimePct ?? 0, 0, 100) : null;
-    const yieldNorm = yield24hEth == null || maxYield <= 0 ? 0 : clamp((yield24hEth / maxYield) * 100, 0, 100);
+const applyScoreUpdates = async (updates: ScoreUpdate[]): Promise<void> => {
+  for (let index = 0; index < updates.length; index += UPDATE_BATCH_SIZE) {
+    const chunk = updates.slice(index, index + UPDATE_BATCH_SIZE);
+
+    await prisma.$transaction(
+      chunk.map((update) =>
+        prisma.agent.update({
+          where: { address: update.address },
+          data: {
+            txCount: update.txCount,
+            tier: update.tier,
+            reputation: update.reputation,
+            rankScore: update.rankScore,
+            yield: update.yieldEth,
+            uptime: update.uptimePct,
+            volume: update.volume,
+            score: update.score,
+          },
+        }),
+      ),
+    );
+  }
+};
+
+async function main(): Promise<void> {
+  const agents = await prisma.agent.findMany({
+    select: {
+      address: true,
+      creator: true,
+      status: true,
+      yield: true,
+      uptime: true,
+      txCount: true,
+    },
+  });
+
+  if (agents.length === 0) {
+    console.log("No agents found. Skipping scoring run.");
+    return;
+  }
+
+  const { txCountByCreatorLower, failures } = await fetchTxCountsByCreator(agents.map((agent) => agent.creator));
+
+  const txCounts = agents.map((agent) => txCountByCreatorLower.get(agent.creator.toLowerCase()) ?? agent.txCount ?? 0);
+  const maxTxCount = Math.max(0, ...txCounts);
+
+  const claimedYields = agents
+    .map((agent) => {
+      const isClaimed = statusIndicatesClaimed(agent.status);
+      return isClaimed ? Math.max(0, agent.yield ?? 0) : 0;
+    })
+    .filter((value) => value > 0);
+  const maxClaimedYield = claimedYields.length > 0 ? Math.max(...claimedYields) : 0;
+
+  const updates: ScoreUpdate[] = agents.map((agent) => {
+    const txCount = txCountByCreatorLower.get(agent.creator.toLowerCase()) ?? agent.txCount ?? 0;
+    const txVolumeNorm = normalizeLog100(txCount, maxTxCount);
+    const velocityNorm = normalizeLog100(txCount, maxTxCount);
+    const isClaimed = statusIndicatesClaimed(agent.status);
+    const yieldEth = isClaimed ? Math.max(0, agent.yield ?? 0) : 0;
+    const uptimePct = isClaimed ? clamp(agent.uptime ?? 0, 0, 100) : 0;
+    const yieldNorm = maxClaimedYield > 0 ? clamp((yieldEth / maxClaimedYield) * 100, 0, 100) : 0;
+
     const reputation = isClaimed
       ? roundToTwo(
           txVolumeNorm * REPUTATION_TX_WEIGHT +
-            (uptimePct ?? 0) * REPUTATION_UPTIME_WEIGHT +
+            uptimePct * REPUTATION_UPTIME_WEIGHT +
             yieldNorm * REPUTATION_YIELD_WEIGHT,
         )
-      : Math.min(txVolumeNorm, UNCLAIMED_REPUTATION_CAP);
-    // Section 2B: Rank = (Reputation * 0.7) + (Velocity * 0.3), with MVP velocity proxied by raw tx count.
-    const rankScore = roundToTwo(reputation * RANK_REPUTATION_WEIGHT + velocity * RANK_VELOCITY_WEIGHT);
+      : roundToTwo(Math.min(txVolumeNorm, UNCLAIMED_REPUTATION_CAP));
+
+    // Critical fix: use normalized velocity in final rank math (0-100 scale).
+    const rankScore = roundToTwo(reputation * RANK_REPUTATION_WEIGHT + velocityNorm * RANK_VELOCITY_WEIGHT);
+    const tier = getTier(txCount, isClaimed);
 
     return {
-      agentId: agent.agentId,
-      owner: agent.owner,
-      isClaimed,
-      transactionCount: txCount,
+      address: agent.address,
       txCount,
-      txVolumeNorm,
-      velocity,
-      velocityNorm,
+      tier,
       reputation,
       rankScore,
-      yield: yield24hEth,
-      uptime: uptimePct,
-      dualVerify: {
-        merchantPulseLastSeen: telemetry?.dualVerify.merchantPulseLastSeen ?? null,
-        consumerSuccessRatePct: telemetry?.dualVerify.consumerSuccessRatePct ?? null,
-        source: "stub",
-      },
-      tier: getTier(txCount),
+      yieldEth,
+      uptimePct,
+      volume: BigInt(txCount),
+      score: Math.round(rankScore),
     };
   });
 
-  const whaleOwners = new Set(
-    uniqueOwners
-      .filter(([ownerLower]) => (txCountByOwnerLower.get(ownerLower) ?? 0) > 500)
-      .map(([ownerLower]) => ownerLower),
+  await applyScoreUpdates(updates);
+
+  const tierCounts = updates.reduce<Record<AgentTier, number>>(
+    (acc, update) => {
+      acc[update.tier] += 1;
+      return acc;
+    },
+    { WHALE: 0, ACTIVE: 0, NEW: 0, GHOST: 0 },
   );
 
-  await mkdir(join(process.cwd(), "data"), { recursive: true });
-  await writeFile(OUTPUT_PATH, JSON.stringify(scored, null, 2), "utf8");
-
-  console.log(`Scored ${uniqueOwners.length} unique owners. Found ${whaleOwners.size} Whales.`);
-  console.log(`Detected ${monitoredAgentIds.size} monitored agent IDs.`);
-  console.log(`Max transaction count observed: ${maxTxCount}.`);
-  console.log(`Loaded telemetry for ${telemetryByAgentId.size} agents (Dual-Verify stub).`);
-  console.log(`Saved scored leads to ${OUTPUT_PATH}`);
+  console.log(`Scored ${updates.length} agents and updated Postgres.`);
+  console.log(`RPC txCount failures: ${failures}.`);
+  console.log(`Max txCount observed: ${maxTxCount}.`);
+  console.log(
+    `Tier distribution => WHALE: ${tierCounts.WHALE}, ACTIVE: ${tierCounts.ACTIVE}, NEW: ${tierCounts.NEW}, GHOST: ${tierCounts.GHOST}.`,
+  );
 }
 
-main().catch((error) => {
-  console.error("Failed to score leads:", error);
-  process.exitCode = 1;
-});
+main()
+  .catch((error) => {
+    console.error("Failed to score agents:", error);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

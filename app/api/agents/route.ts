@@ -18,8 +18,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const limit = parseLimit(request.nextUrl.searchParams.get("limit"));
   const orderBy =
     sort === "volume"
-      ? [{ volume: "desc" as const }, { score: "desc" as const }]
-      : [{ score: "desc" as const }, { volume: "desc" as const }];
+      ? [{ txCount: "desc" as const }, { rankScore: "desc" as const }]
+      : [{ rankScore: "desc" as const }, { reputation: "desc" as const }, { txCount: "desc" as const }];
 
   const [agents, totalAgents, indexerState] = await prisma.$transaction([
     prisma.agent.findMany({
@@ -46,6 +46,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         twitter: agent.twitter,
         website: agent.website,
         status: agent.status,
+        tier: agent.tier,
+        txCount: agent.txCount,
+        reputation: agent.reputation,
+        rankScore: agent.rankScore,
+        yield: agent.yield,
+        uptime: agent.uptime,
         volume: agent.volume.toString(),
         score: agent.score,
         createdAt: agent.createdAt.toISOString(),

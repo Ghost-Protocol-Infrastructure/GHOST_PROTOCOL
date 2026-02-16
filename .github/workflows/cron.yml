@@ -43,3 +43,6 @@ jobs:
 
       - name: Run indexer
         run: npm run index:db
+
+      - name: Run scoring engine
+        run: npm run score

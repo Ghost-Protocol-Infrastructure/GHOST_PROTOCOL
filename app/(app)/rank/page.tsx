@@ -7,13 +7,19 @@ import { Check, Copy } from "lucide-react";
 import Navbar from "@/components/Navbar";
 
 type Network = "MEGAETH" | "BASE";
-type LeadTier = "WHALE" | "ACTIVE" | "NEW";
+type LeadTier = "WHALE" | "ACTIVE" | "NEW" | "GHOST";
 
 type ApiAgent = {
   address: string;
   name: string;
   creator: string;
   status: string;
+  tier?: string;
+  txCount?: number;
+  reputation?: number;
+  rankScore?: number;
+  yield?: number;
+  uptime?: number;
   volume: string;
   score: number;
 };
@@ -85,10 +91,16 @@ const normalizeDisplayName = (agent: ApiAgent, agentId: string): string => {
   return clean.length > 0 ? clean : `Agent #${agentId}`;
 };
 
-const getLeadTier = (txCount: number): LeadTier => {
+const getLeadTier = (txCount: number, isClaimed: boolean): LeadTier => {
+  if (!isClaimed && txCount <= 0) return "GHOST";
   if (txCount > 500) return "WHALE";
   if (txCount > 50) return "ACTIVE";
   return "NEW";
+};
+
+const parseTier = (tier: string | undefined, txCount: number, isClaimed: boolean): LeadTier => {
+  if (tier === "WHALE" || tier === "ACTIVE" || tier === "NEW" || tier === "GHOST") return tier;
+  return getLeadTier(txCount, isClaimed);
 };
 
 const statusIndicatesClaimed = (status: string): boolean => {
@@ -98,41 +110,50 @@ const statusIndicatesClaimed = (status: string): boolean => {
 };
 
 const buildLeadsFromApi = (agents: ApiAgent[]): ProcessedLead[] => {
-  const seeded = agents.map((agent) => {
-    const txCount = parseTxCount(agent.volume);
-    const velocity = txCount;
-    const reputationScore =
-      typeof agent.score === "number" && Number.isFinite(agent.score) ? clamp(agent.score, 0, 100) : 0;
-    const isClaimed = statusIndicatesClaimed(agent.status);
+  const maxTxCount = Math.max(
+    0,
+    ...agents.map((agent) =>
+      typeof agent.txCount === "number" && Number.isFinite(agent.txCount) ? Math.max(0, Math.trunc(agent.txCount)) : parseTxCount(agent.volume),
+    ),
+  );
+
+  const seeded: ProcessedLead[] = agents.map((agent) => {
+    const txCount =
+      typeof agent.txCount === "number" && Number.isFinite(agent.txCount)
+        ? Math.max(0, Math.trunc(agent.txCount))
+        : parseTxCount(agent.volume);
+    const velocity = normalizeTxScore(txCount, maxTxCount);
+    const rawReputation =
+      typeof agent.reputation === "number" && Number.isFinite(agent.reputation)
+        ? clamp(agent.reputation, 0, 100)
+        : typeof agent.score === "number" && Number.isFinite(agent.score)
+          ? clamp(agent.score, 0, 100)
+          : 0;
+    const rawYield = typeof agent.yield === "number" && Number.isFinite(agent.yield) ? Math.max(0, agent.yield) : 0;
+    const rawUptime = typeof agent.uptime === "number" && Number.isFinite(agent.uptime) ? clamp(agent.uptime, 0, 100) : 0;
+    const isClaimed = statusIndicatesClaimed(agent.status) || rawYield > 0 || rawUptime > 0;
+    const rankScore =
+      typeof agent.rankScore === "number" && Number.isFinite(agent.rankScore)
+        ? clamp(agent.rankScore, 0, 100)
+        : roundToTwo(rawReputation * 0.7 + velocity * 0.3);
     const agentId = deriveAgentId(agent);
 
     return {
       agentId,
       displayName: normalizeDisplayName(agent, agentId),
       owner: isHexAddress(agent.creator) ? agent.creator.toLowerCase() : agent.creator,
-      tier: getLeadTier(txCount),
+      tier: parseTier(agent.tier, txCount, isClaimed),
       txCount,
       velocity,
       isClaimed,
-      reputationScore,
-      rankScore: 0,
-      yieldEth: null,
-      uptimePct: null,
+      reputationScore: rawReputation,
+      rankScore,
+      yieldEth: isClaimed ? rawYield : null,
+      uptimePct: isClaimed ? rawUptime : null,
     };
   });
 
-  const maxTxCount = Math.max(0, ...seeded.map((lead) => lead.txCount));
-
   return seeded
-    .map((lead) => {
-      const txScore = normalizeTxScore(lead.txCount, maxTxCount);
-      const rankScore = roundToTwo(lead.reputationScore * 0.7 + txScore * 0.3);
-
-      return {
-        ...lead,
-        rankScore,
-      };
-    })
     .sort((a, b) => b.rankScore - a.rankScore || b.reputationScore - a.reputationScore || b.txCount - a.txCount);
 };
 
@@ -141,6 +162,7 @@ const tierClassName: Record<LeadTier, string> = {
     "border-neon-purple border-violet-400 bg-emerald-500/20 text-emerald-300 animate-pulse shadow-[0_0_10px_rgba(139,92,246,0.5)]",
   ACTIVE: "border-amber-400/40 bg-amber-500/20 text-amber-300",
   NEW: "border-slate-500/40 bg-slate-500/20 text-slate-300",
+  GHOST: "border-slate-700/60 bg-slate-800/40 text-slate-500",
 };
 
 export default function Home() {

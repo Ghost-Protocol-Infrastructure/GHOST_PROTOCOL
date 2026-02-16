@@ -8,6 +8,13 @@ datasource db {
   directUrl = env("POSTGRES_URL_NON_POOLING")
 }
 
+enum AgentTier {
+  WHALE
+  ACTIVE
+  NEW
+  GHOST
+}
+
 model CreditBalance {
   walletAddress   String   @id
   credits         Int      @default(0)
@@ -27,6 +34,12 @@ model Agent {
   status      String   @default("active")
   volume      BigInt   @default(0)
   score       Int      @default(0)
+  reputation  Float    @default(0)
+  rankScore   Float    @default(0)
+  tier        AgentTier @default(NEW)
+  txCount     Int      @default(0)
+  yield       Float    @default(0)
+  uptime      Float    @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
