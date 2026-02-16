@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { Shield, ChevronRight, Activity, Lock } from 'lucide-react';
 
 const HomePage = () => {
@@ -104,7 +105,10 @@ const HomePage = () => {
           </div>
 
           <div className="col-span-1 lg:col-span-5 grid grid-rows-2">
-            <div className="border-b border-neutral-900 p-8 md:p-12 hover:bg-neutral-900/30 transition-colors group cursor-pointer">
+            <Link
+              href="/rank"
+              className="block border-b border-neutral-900 p-8 md:p-12 hover:bg-neutral-900/30 transition-colors group cursor-pointer"
+            >
               <div className="flex justify-between items-start mb-6">
                 <Activity className="w-8 h-8 text-neutral-600 group-hover:text-neutral-100 transition-colors" />
                 <span className="text-[10px] border border-neutral-800 px-2 py-1 text-neutral-500">
@@ -118,7 +122,7 @@ const HomePage = () => {
               <div className="flex items-center gap-2 text-red-600 text-xs font-bold uppercase tracking-wider group-hover:gap-4 transition-all">
                 Access_Terminal <ChevronRight className="w-4 h-4" />
               </div>
-            </div>
+            </Link>
 
             <div className="p-8 md:p-12 hover:bg-neutral-900/30 transition-colors group cursor-pointer">
               <div className="flex justify-between items-start mb-6">
