@@ -1,6 +1,6 @@
 # GHOST PROTOCOL: MASTER SPECIFICATION
-**Version:** 1.6
-**Status:** Live on Base (Mainnet), Postgres-backed indexing and credit ledger
+**Version:** 1.7
+**Status:** Live on Base (Mainnet), Postgres-backed indexing, scoring, and credit ledger
 
 ---
 
@@ -27,26 +27,32 @@ We strictly separate **Public Data** (Unclaimed) from **Proprietary Data** (Clai
 ### A. Data Pipeline & Inputs
 The canonical backend store is PostgreSQL (Prisma) with the following core models:
 * **`Agent`:** Indexed ERC-8004 agents used by API consumers and ranking services.
+  * Includes scoring/state fields: `txCount`, `tier`, `reputation`, `rankScore`, `yield`, `uptime`, `status`.
 * **`SystemState`:** Stateful cursor storage (for example, `agent_indexer.lastSyncedBlock`) used by background indexers.
 * **`CreditBalance`:** Per-wallet virtual credit balances and per-wallet sync cursor (`lastSyncedBlock`).
-* **Inputs:** Wallet Address, Agent ID, Transaction Count.
-* **Claimed Logic:** The system checks `monitored-agents.json` (or internal flag) to determine if an agent is Claimed.
-* **Leaderboard API:** `/api/agents` reads `Agent` rows ordered by score/volume and serializes BigInt fields as strings.
-* **Transitional Note:** `data/leads-scored.json` remains as a legacy/static dataset in parts of the UI while DB-first rendering is rolled out.
+* **Inputs:** Agent address, creator/owner address, transaction count, and telemetry (`yield`, `uptime`) from DB.
+* **Claimed Logic (as-built):** Scoring currently infers claimed state from `Agent.status` keyword matching (`claimed`/`verified`/`monetized`), while some UI paths may also infer from non-zero telemetry.
+* **Leaderboard API:** `/api/agents` reads `Agent` rows ordered by rank metrics (`rankScore`, `reputation`, `txCount`) and returns:
+  * `tier`, `txCount`, `reputation`, `rankScore`, `yield`, `uptime`
+  * `totalAgents` (dynamic denominator)
+  * `lastSyncedBlock` (for Sync Height card)
+* **UI State:** `/rank` is DB-first via `/api/agents`; legacy JSON usage is now a remaining concern primarily in non-rank surfaces (for example, dashboard transition work).
 
 ### B. The Scoring Algorithms (Hard Requirements)
 Codex must implement these exact formulas.
 
 **1. Reputation Score (0-100)**
 * **Formula:** `Reputation = (TxVolume_norm * 0.3) + (Uptime_% * 0.5) + (Yield_norm * 0.2)`
-* **Constraint:** For Unclaimed agents, Uptime and Yield are `null`. The formula defaults to `TxVolume_norm` (capped at 80/100).
+* **Constraint:** For Unclaimed agents, Uptime and Yield are treated as zero for scoring and rendered as `---` in leaderboard UI. Formula defaults to `TxVolume_norm` (capped at 80/100).
 
 **2. Rank Score (Leaderboard Position)**
 * **Formula:** `Rank = (Reputation * 0.7) + (Velocity * 0.3)`
-* **Velocity:** Defined as the rate of change in requests/hour (or raw Tx Count for MVP if historical data is missing).
+* **Velocity (as-built MVP):** `Velocity = velocityNorm`, where `velocityNorm` is a logarithmic 0-100 normalization of tx count.
+* **Critical Math Fix Implemented:** Rank now uses normalized velocity in the final formula (not raw tx count), preventing tx magnitude from overwhelming reputation.
 
 ### C. User Interface Requirements
 * **Network Selector:** A dropdown menu toggling between `BASE (LIVE)` and `MEGAETH (WIP)`.
+* **Top Metric Cards (`/rank`):** `total_agents`, `network_status`, `sync_height`, `claimed_agents`.
 * **The Grid:**
     * **Columns:** RANK, AGENT (with "CLAIMED" badge if true), TXS, REPUTATION (Color-coded), YIELD, UPTIME, ACTION.
     * **Action Button:**
@@ -117,12 +123,15 @@ To avoid high-frequency gas fees, Ghost Protocol uses a "Prepaid Native ETH" mod
 
 ## 7. INDEXER OPERATIONS (AS-BUILT)
 * **Primary Indexer:** `scripts/index-db.ts` indexes agent registrations into Postgres.
+* **Primary Scorer:** `scripts/score-leads.ts` now reads/writes Postgres directly (no static leaderboard JSON output dependency).
 * **Stateful Cursor:** Cursor key `agent_indexer` is stored in `SystemState.lastSyncedBlock`.
 * **Default Bootstrap Block:** `23,000,000` (override with `AGENT_INDEX_START_BLOCK`).
 * **Chunking:** Default chunk size is `2,000` blocks (override with `AGENT_INDEX_CHUNK_SIZE`) to stay within strict RPC `eth_getLogs` limits.
 * **Fallback Path:** If `AgentRegistered` logs are unavailable in-range, the indexer can fall back to `CreateService` + `ownerOf`.
+  * Fallback records are normalized to cleaner labels (`Agent #<serviceId>`) with descriptive metadata.
 * **CI Automation:** `.github/workflows/cron.yml` runs on `workflow_dispatch`, `schedule`, and `push` to `main`, then executes:
   * `npm ci`
   * `npx prisma generate`
   * `npm run migrate:indexer`
   * `npm run index:db`
+  * `npm run score`

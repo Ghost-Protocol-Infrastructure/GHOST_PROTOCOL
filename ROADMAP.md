@@ -41,3 +41,7 @@
 - **Fix:** Continue tuning `AGENT_INDEX_CHUNK_SIZE`, RPC fallback ordering, and operational observability (checkpoint logs/metrics/alerts).
 
 ## 11. Next.js server for data storage
+
+## 12. Launch-Accepted Technical Debt (Deferred)
+- **Velocity Proxy Decision:** Keep using normalized total transaction count as the velocity proxy during the current Vampire Attack phase. This intentionally favors historically high-value agents ("Whales") over short-term burst activity.
+- **Claimed-State Consistency:** Scorer currently infers claimed state from `status`, while UI can infer claimed from `status` OR telemetry presence. This is acceptable for launch and will be unified under one canonical signal when Transfer/claim event listener support is added.
