@@ -4,7 +4,6 @@
   "type": "module",
   "packageManager": "npm@10.8.2",
   "scripts": {
-    "index:base": "npx tsx scripts/index-base.ts",
     "index:db": "npx tsx scripts/index-db.ts",
     "score": "npx tsx scripts/score-leads.ts",
     "typecheck": "tsc --noEmit",
