@@ -2,11 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAddress } from "viem";
 import { prisma } from "@/lib/db";
+import IntegrationTabs from "./IntegrationTabs";
 
 export const dynamic = "force-dynamic";
 
 type AgentPageProps = {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ sdk?: string }>;
 };
 
 type AgentSummary = {
@@ -113,8 +115,9 @@ const toTitleCase = (value: string): string =>
 
 const truncateAddress = (address: string): string => `${address.slice(0, 6)}...${address.slice(-4)}`;
 
-export default async function AgentProfilePage({ params }: AgentPageProps) {
+export default async function AgentProfilePage({ params, searchParams }: AgentPageProps) {
   const { id } = await params;
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const agent = await resolveAgentByRouteId(id);
 
   if (!agent) {
@@ -123,6 +126,7 @@ export default async function AgentProfilePage({ params }: AgentPageProps) {
 
   const agentId = deriveAgentId(agent);
   const statusLabel = toTitleCase(agent.status);
+  const initialSdkTab = resolvedSearchParams?.sdk?.toLowerCase() === "python" ? "python" : "node";
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-300 font-mono">
@@ -179,14 +183,17 @@ export default async function AgentProfilePage({ params }: AgentPageProps) {
         <section className="border border-emerald-500/25 bg-emerald-950/10 p-6">
           <h3 className="mb-3 text-sm uppercase tracking-[0.16em] text-emerald-300">Connect</h3>
           <p className="mb-3 text-sm text-slate-400">
-            Use this Agent ID in your SDK and dashboard flow.
+            Choose your SDK runtime and copy the integration starter below.
           </p>
           <div className="border border-emerald-500/30 bg-slate-950 p-4">
             <p className="mb-2 text-xs uppercase tracking-[0.16em] text-slate-500">Agent ID</p>
             <code className="block break-all text-lg text-emerald-300">{agentId}</code>
           </div>
+          <div className="mt-4">
+            <IntegrationTabs agentId={agentId} initialTab={initialSdkTab} />
+          </div>
           <p className="mt-3 text-xs text-slate-500">
-            Copy the ID above and pass it through your integration params when opening `/dashboard`.
+            The snippets above are pre-filled with this agent identifier so onboarding stays consistent.
           </p>
         </section>
       </div>

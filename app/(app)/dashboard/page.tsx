@@ -367,6 +367,12 @@ https://ghost-rank.vercel.app/api/gate/<your-service-name>.`,
     return `sk_live_${selectedOwnedAgent.agentId}_${address.slice(2, 10)}...`;
   }, [address, selectedOwnedAgent]);
 
+  const selectedAgentProfileHref = selectedOwnedAgent
+    ? `/agent/${encodeURIComponent(selectedOwnedAgent.agentId)}`
+    : "/rank";
+  const nodeGuideHref = `${selectedAgentProfileHref}?sdk=node`;
+  const pythonGuideHref = `${selectedAgentProfileHref}?sdk=python`;
+
   const merchantSdkExample = useMemo(
     () =>
       `from ghostgate import GhostGate
@@ -554,17 +560,22 @@ def my_agent():
 
             <div className="flex flex-col gap-3 border border-slate-800 bg-slate-900 p-5 sm:flex-row">
               <a
-                href="#"
+                href={selectedAgentProfileHref}
                 className="inline-flex items-center justify-center border border-emerald-500/40 bg-emerald-950/20 px-4 py-2 text-xs uppercase tracking-[0.16em] text-emerald-300 transition hover:bg-emerald-900/30"
               >
-                VIEW DEVELOPER DOCS
+                OPEN INTEGRATION GUIDE
               </a>
               <a
-                href="/sdk/ghostgate.py"
-                download
+                href={nodeGuideHref}
                 className="inline-flex items-center justify-center border border-cyan-500/40 bg-cyan-950/20 px-4 py-2 text-xs uppercase tracking-[0.16em] text-cyan-300 transition hover:bg-cyan-900/30"
               >
-                DOWNLOAD SDK (.PY)
+                NODE.JS SETUP
+              </a>
+              <a
+                href={pythonGuideHref}
+                className="inline-flex items-center justify-center border border-cyan-500/40 bg-cyan-950/20 px-4 py-2 text-xs uppercase tracking-[0.16em] text-cyan-300 transition hover:bg-cyan-900/30"
+              >
+                PYTHON SETUP
               </a>
               <div className="inline-flex flex-col items-start">
                 <button
