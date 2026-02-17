@@ -13,16 +13,42 @@ const parseLimit = (rawLimit: string | null): number => {
   return Math.min(parsed, MAX_LIMIT);
 };
 
+const parseOwner = (rawOwner: string | null): string | null => {
+  if (!rawOwner) return null;
+  const normalized = rawOwner.trim().toLowerCase();
+  if (!/^0x[a-f0-9]{40}$/.test(normalized)) return null;
+  return normalized;
+};
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const sort = request.nextUrl.searchParams.get("sort");
   const limit = parseLimit(request.nextUrl.searchParams.get("limit"));
+  const ownerQuery = request.nextUrl.searchParams.get("owner");
+  const owner = parseOwner(ownerQuery);
+
+  if (ownerQuery && !owner) {
+    return NextResponse.json(
+      { error: "Invalid owner address." },
+      { status: 400, headers: { "cache-control": "no-store" } },
+    );
+  }
+
   const orderBy =
     sort === "volume"
       ? [{ txCount: "desc" as const }, { rankScore: "desc" as const }]
       : [{ rankScore: "desc" as const }, { reputation: "desc" as const }, { txCount: "desc" as const }];
+  const where = owner
+    ? {
+        creator: {
+          equals: owner,
+          mode: "insensitive" as const,
+        },
+      }
+    : undefined;
 
   const [agents, totalAgents, indexerState] = await prisma.$transaction([
     prisma.agent.findMany({
+      where,
       orderBy,
       take: limit,
     }),
@@ -35,6 +61,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   return NextResponse.json(
     {
       totalAgents,
+      filteredAgents: agents.length,
       lastSyncedBlock: indexerState?.lastSyncedBlock?.toString() ?? null,
       agents: agents.map((agent) => ({
         address: agent.address,

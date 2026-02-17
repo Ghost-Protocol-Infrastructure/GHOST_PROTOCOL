@@ -3,6 +3,7 @@
 ## 1. Scoring Engine (Active)
 - **Issue:** Transaction count is still derived from owner wallet nonce, not strictly from the agent contract.
 - **Fix:** Implement agent-level transaction indexing for accurate per-agent activity scoring.
+- **Performance Upgrade (Deferred):** Keep creator-wallet nonce as the launch metric for Whale acquisition, then add an agent-contract activity metric as a post-launch scoring upgrade.
 
 ## 2. Merchant UI (Active)
 - **Issue:** Financials (Earnings/Withdrawals) remain partially placeholder.

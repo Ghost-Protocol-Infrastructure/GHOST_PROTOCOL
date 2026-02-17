@@ -18,7 +18,7 @@ import {
   GHOST_VAULT_ADDRESS,
   PROTOCOL_TREASURY_FALLBACK_ADDRESS,
 } from "@/lib/constants";
-import baseAgents from "@/data/leads-scored.json";
+import { isClaimedAgent } from "@/lib/agent-claim";
 
 const CREDIT_PRICE_WEI = parseEther("0.00001");
 const SUPPORTED_CHAIN_IDS = new Set<number>([base.id]);
@@ -27,14 +27,42 @@ const PREFERRED_CHAIN_ID = base.id;
 type CopyState = "idle" | "copied" | "error";
 type CreditSyncState = "idle" | "syncing" | "synced" | "error";
 
-type BaseAgentLead = {
-  agentId: string;
-  owner: string;
-  txCount: number;
-  tier: "WHALE" | "ACTIVE" | "NEW";
+type AgentApiRow = {
+  address: string;
+  creator: string;
+  name: string;
+  status: string;
+  tier?: string;
+  yield?: number;
+  uptime?: number;
 };
 
-const indexedBaseAgents = baseAgents as BaseAgentLead[];
+type AgentApiResponse = {
+  agents: AgentApiRow[];
+};
+
+type OwnedAgent = {
+  agentId: string;
+  address: string;
+  owner: string;
+  name: string;
+  status: string;
+  tier?: string;
+  isClaimed: boolean;
+};
+
+const isHexAddress = (value: string): boolean => /^0x[a-fA-F0-9]{40}$/.test(value);
+
+const deriveAgentId = (agent: Pick<AgentApiRow, "address" | "name">): string => {
+  const fromAddress = agent.address.match(/(?:service|agent)[:_-](\d+)/i)?.[1];
+  if (fromAddress) return fromAddress;
+
+  const fromName = agent.name.match(/(?:agent|service)\s*#?\s*(\d+)/i)?.[1];
+  if (fromName) return fromName;
+
+  if (isHexAddress(agent.address)) return agent.address.slice(2, 8).toUpperCase();
+  return agent.name.trim().slice(0, 12).toUpperCase() || "UNKNOWN";
+};
 
 const normalizeAddress = (rawAddress: string | null | undefined): Address | null => {
   if (!rawAddress) return null;
@@ -92,6 +120,9 @@ function DashboardPageContent() {
   const [creditSyncState, setCreditSyncState] = useState<CreditSyncState>("idle");
   const [creditSyncError, setCreditSyncError] = useState<string | null>(null);
   const [syncedCredits, setSyncedCredits] = useState<string | null>(null);
+  const [ownedAgents, setOwnedAgents] = useState<OwnedAgent[]>([]);
+  const [isLoadingOwnedAgents, setIsLoadingOwnedAgents] = useState(false);
+  const [ownedAgentsError, setOwnedAgentsError] = useState<string | null>(null);
   const syncedHashesRef = useRef<Set<string>>(new Set());
 
   const amountWei = useMemo(() => parseInputWei(ethAmount), [ethAmount]);
@@ -101,13 +132,10 @@ function DashboardPageContent() {
   }, [amountWei]);
 
   const requestedAgentId = searchParams.get("agentId");
-  const requestedAgentWallet = useMemo(
-    () => indexedBaseAgents.find((agent) => agent.agentId === requestedAgentId)?.owner ?? null,
-    [requestedAgentId],
-  );
+  const requestedOwner = searchParams.get("owner");
   const requestedAgentAddress = useMemo(
-    () => normalizeAddress(requestedAgentWallet),
-    [requestedAgentWallet],
+    () => normalizeAddress(requestedOwner),
+    [requestedOwner],
   );
   const targetAgentAddress = requestedAgentAddress ?? PROTOCOL_TREASURY_FALLBACK_ADDRESS;
   const usesFallbackAgentAddress = requestedAgentAddress == null;
@@ -232,9 +260,72 @@ https://ghost-rank.vercel.app/api/gate/<your-service-name>.`,
     [],
   );
 
-  const ownedAgents = useMemo(() => {
-    if (!address) return [];
-    return indexedBaseAgents.filter((a) => a.owner.toLowerCase() === address.toLowerCase());
+  useEffect(() => {
+    if (!address) {
+      setOwnedAgents([]);
+      setOwnedAgentsError(null);
+      setIsLoadingOwnedAgents(false);
+      return;
+    }
+
+    let isActive = true;
+
+    const loadOwnedAgents = async () => {
+      setIsLoadingOwnedAgents(true);
+      setOwnedAgentsError(null);
+
+      try {
+        const params = new URLSearchParams({
+          owner: address,
+          limit: "1000",
+        });
+        const response = await fetch(`/api/agents?${params.toString()}`, {
+          cache: "no-store",
+          headers: {
+            "cache-control": "no-cache",
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to load owned agents (${response.status}).`);
+        }
+
+        const payload = (await response.json()) as AgentApiResponse;
+        const agents = Array.isArray(payload.agents) ? payload.agents : [];
+        const normalizedAgents: OwnedAgent[] = agents.map((agent) => {
+          const owner = isHexAddress(agent.creator) ? agent.creator.toLowerCase() : agent.creator;
+          return {
+            agentId: deriveAgentId(agent),
+            address: agent.address,
+            owner,
+            name: agent.name,
+            status: agent.status,
+            tier: agent.tier,
+            isClaimed: isClaimedAgent({
+              status: agent.status,
+              tier: agent.tier,
+              yieldValue: agent.yield,
+              uptimeValue: agent.uptime,
+            }),
+          };
+        });
+
+        if (!isActive) return;
+        setOwnedAgents(normalizedAgents);
+      } catch (error) {
+        if (!isActive) return;
+        setOwnedAgents([]);
+        setOwnedAgentsError(getErrorMessage(error, "Failed to load merchant agents."));
+      } finally {
+        if (isActive) setIsLoadingOwnedAgents(false);
+      }
+    };
+
+    void loadOwnedAgents();
+
+    return () => {
+      isActive = false;
+    };
   }, [address]);
 
   const selectedOwnedAgent = useMemo(() => {
@@ -376,6 +467,12 @@ def my_agent():
           </section>
         )}
 
+        {isConnected && !forceConsumerView && ownedAgentsError && (
+          <section className="mb-6 border border-rose-500/40 bg-rose-950/10 p-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-rose-300">{ownedAgentsError}</p>
+          </section>
+        )}
+
         {showMerchantView ? (
           <section className="space-y-6">
             <div className="border border-emerald-500/40 bg-emerald-950/10 p-4">
@@ -392,7 +489,7 @@ def my_agent():
                   >
                     {ownedAgents.map((agent) => (
                       <option key={`${agent.agentId}-${agent.owner}`} value={agent.agentId}>
-                        AGENT #{agent.agentId}
+                        AGENT #{agent.agentId} {agent.isClaimed ? "[CLAIMED]" : "[UNCLAIMED]"}
                       </option>
                     ))}
                   </select>
@@ -483,6 +580,12 @@ def my_agent():
                 </p>
               </div>
             </div>
+          </section>
+        ) : isConnected && !forceConsumerView && isLoadingOwnedAgents ? (
+          <section className="border border-cyan-500/30 bg-slate-900 p-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-cyan-300">
+              Loading owned agents from live Postgres index...
+            </p>
           </section>
         ) : (
           <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">

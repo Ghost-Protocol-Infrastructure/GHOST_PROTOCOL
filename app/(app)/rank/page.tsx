@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
 import { Check, Copy } from "lucide-react";
 import Navbar from "@/components/Navbar";
+import { isClaimedAgent } from "@/lib/agent-claim";
 
 type Network = "MEGAETH" | "BASE";
 type LeadTier = "WHALE" | "ACTIVE" | "NEW" | "GHOST";
@@ -103,12 +104,6 @@ const parseTier = (tier: string | undefined, txCount: number, isClaimed: boolean
   return getLeadTier(txCount, isClaimed);
 };
 
-const statusIndicatesClaimed = (status: string): boolean => {
-  const normalized = status.trim().toLowerCase();
-  if (normalized.length === 0) return false;
-  return normalized.includes("claimed") || normalized.includes("verified") || normalized.includes("monetized");
-};
-
 const buildLeadsFromApi = (agents: ApiAgent[]): ProcessedLead[] => {
   const maxTxCount = Math.max(
     0,
@@ -131,7 +126,12 @@ const buildLeadsFromApi = (agents: ApiAgent[]): ProcessedLead[] => {
           : 0;
     const rawYield = typeof agent.yield === "number" && Number.isFinite(agent.yield) ? Math.max(0, agent.yield) : 0;
     const rawUptime = typeof agent.uptime === "number" && Number.isFinite(agent.uptime) ? clamp(agent.uptime, 0, 100) : 0;
-    const isClaimed = statusIndicatesClaimed(agent.status) || rawYield > 0 || rawUptime > 0;
+    const isClaimed = isClaimedAgent({
+      status: agent.status,
+      tier: agent.tier,
+      yieldValue: rawYield,
+      uptimeValue: rawUptime,
+    });
     const rankScore =
       typeof agent.rankScore === "number" && Number.isFinite(agent.rankScore)
         ? clamp(agent.rankScore, 0, 100)
@@ -183,7 +183,7 @@ export default function Home() {
 
     const loadLeads = async () => {
       try {
-        const response = await fetch("/api/agents?limit=1000&sort=score", {
+        const response = await fetch("/api/agents?limit=1000", {
           cache: "no-store",
           headers: {
             "cache-control": "no-cache",
@@ -260,8 +260,8 @@ export default function Home() {
     return "text-slate-400";
   };
 
-  const handleOpenDashboard = (mode: "merchant" | "consumer", agentId: string) => {
-    const params = new URLSearchParams({ mode, agentId });
+  const handleOpenDashboard = (mode: "merchant" | "consumer", agentId: string, owner: string) => {
+    const params = new URLSearchParams({ mode, agentId, owner });
     router.push(`/dashboard?${params.toString()}`);
   };
 
@@ -325,7 +325,7 @@ export default function Home() {
             <span className="relative text-white text-[10px] tracking-[0.2em]">{"//total_agents"}</span>
           </div>
           <div className="text-3xl text-white font-regular drop-shadow-[0_0_5px_rgba(255,255,255,0.3)]">
-            {network === "BASE" ? (isLoadingLeads ? "--" : baseLeads.length) : 0}
+            {network === "BASE" ? (isLoadingLeads ? "--" : totalAgentsCount) : 0}
           </div>
         </div>
         <div className="p-4 rounded-sm bg-slate-950/50 border border-violet-500/20 backdrop-blur-sm transform-gpu group hover:border-violet-500/40 transition-colors">
@@ -457,7 +457,7 @@ export default function Home() {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => handleOpenDashboard(isOwner ? "merchant" : "consumer", agent.agentId)}
+                        onClick={() => handleOpenDashboard(isOwner ? "merchant" : "consumer", agent.agentId, agent.owner)}
                         className={`inline-flex min-w-[132px] items-center justify-center px-3 py-2 text-xs uppercase tracking-[0.12em] font-mono border transition ${
                           isOwner
                             ? "bg-emerald-500 text-black border-emerald-400/40 hover:bg-emerald-400"
