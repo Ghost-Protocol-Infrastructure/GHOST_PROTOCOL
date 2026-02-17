@@ -15,29 +15,24 @@
 ## 2. Merchant UI (Active)
 - **Issue:** Financials (Earnings/Withdrawals) remain partially placeholder.
 - **Fix:** Wire direct `GhostVault.sol` reads to render real balances and enable withdrawals in UI.
-- **As-built progress:** Merchant ownership and agent selection are now sourced from live Postgres data.
 
-## 3. Telemetry Ingestion (Active)
-- **Issue:** SDK heartbeats are emitted but not fully ingested by scoring infrastructure.
-- **Fix:** Implement durable time-series ingestion (Redis/Influx/ClickHouse) for uptime and service quality metrics.
+## 3. Telemetry & Scoring Inputs (Active)
+- **Issue:** SDK heartbeats are emitted but not fully ingested by scoring infrastructure, and yield/uptime signals still rely on proxy/local data in parts of the pipeline.
+- **Fix:** Implement durable time-series ingestion (Redis/Influx/ClickHouse) and wire scoring (`scripts/score-leads.ts` or successor DB pipeline) to consume live 24h GhostVault volume plus ingested uptime metrics.
 
-## 4. Scoring Logic (Active)
-- **Issue:** Yield and uptime signals still rely on proxy/local data in parts of the scoring pipeline.
-- **Fix:** Update `scripts/score-leads.ts` and/or successor DB scoring pipeline to consume live 24h GhostVault volume plus ingested uptime metrics.
-
-## 5. SDK Coverage (Active)
+## 4. SDK Coverage (Active)
 - **Issue:** Node.js SDK baseline is now implemented, but full parity with Python middleware and broader DX packaging is incomplete.
 - **Fix:** Continue Node SDK expansion (middleware ergonomics, telemetry helpers, publishing/versioning hardening) to reach full parity.
 
-## 6. Sybil Resistance (V2 REQUIREMENT)
+## 5. Sybil Resistance (V2 REQUIREMENT)
 - **Issue:** Ranking can still be skewed by raw transaction-count behavior.
 - **Fix:** Weight unique wallet interactions higher than raw volume and add anti-wash heuristics.
 
-## 7. Indexer Throughput & Operations (Active)
+## 6. Indexer Throughput & Operations (Active)
 - **Issue:** Initial backfills can run long depending on RPC provider limits and chain range.
 - **Fix:** Continue tuning `AGENT_INDEX_CHUNK_SIZE`, RPC fallback ordering, and operational observability (checkpoint logs/metrics/alerts).
 
-## 8. LEVEL 2: THE WATCHTOWER (V2 REQUIREMENT)
+## 7. LEVEL 2: THE WATCHTOWER (V2 REQUIREMENT)
 - **Mechanism:** The "Always-On Server" (VPS / Railway / Heroku).
 - **How it Works:** Replace cron-based GitHub Actions polling with a 24/7 indexing worker (`while(true)` loop and/or webhook/event listener) so blockchain changes are processed continuously.
 - **Vibe:** Ticker-tape behavior where updates appear as soon as events happen.
@@ -45,7 +40,12 @@
 - **Cons:** Added cost and operations overhead (server uptime, monitoring, restart/recovery on crashes).
 - **Verdict:** Phase 2 requirement. Once active users and trading volume are present, we must upgrade to this model.
 
-## 9. Launch-Accepted Technical Debt (Deferred)
+## 8. Launch-Accepted Technical Debt (Deferred)
 - **Velocity Proxy Decision:** Keep using normalized total transaction count as the velocity proxy during the current Vampire Attack phase. This intentionally favors historically high-value agents ("Whales") over short-term burst activity.
-- **Claimed-State Consistency:** Scorer currently infers claimed state from `status`, while UI can infer claimed from `status` OR telemetry presence. This is acceptable for launch and will be unified under one canonical signal when Transfer/claim event listener support is added.
-- **Audit Context (Claimed-State):** Current mismatch is mostly cosmetic; a short-lived edge case can appear during sync windows. Keep deferred and fold into the canonical claimed-signal unification above.
+- **Claimed-State Consistency:** Scorer currently infers claimed state from `status`, while UI can infer claimed from `status` OR telemetry presence; this mismatch is mostly cosmetic, can create short-lived sync-window edge cases, and is deferred until canonical signal unification via Transfer/claim listener support.
+
+## 9. P1 Governance Safety (Post-Freeze)
+- **Timelock Controls:** Add a timelock to sensitive admin actions (`setMaxTVL`, treasury updates, fee-claim policy changes) so users get an on-chain warning window before execution.
+- **Ownership Hardening:** Move `owner` from EOA to a multisig for operational and key-management safety.
+- **Cap-Floor Guardrail:** Enforce `setMaxTVL(newCap)` with `newCap >= totalLiability` to prevent accidental deposit freezes below outstanding liabilities.
+- **Emergency Policy:** Define and document a narrow emergency response policy (incident class, who can execute, and post-incident rollback/communication process).

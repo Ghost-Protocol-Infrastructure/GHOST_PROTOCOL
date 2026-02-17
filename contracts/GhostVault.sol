@@ -8,18 +8,23 @@ contract GhostVault is Ownable, ReentrancyGuard {
     uint256 public constant FEE_BASIS_POINTS = 250; // 2.5%
     uint256 private constant BPS_DENOMINATOR = 10_000;
     uint256 public maxTVL;
+    uint256 public totalLiability;
+    uint256 public accruedFees;
 
     address public treasury;
     mapping(address => uint256) public balances;
 
     event Deposited(address indexed agent, address indexed payer, uint256 amount, uint256 fee);
     event Withdrawn(address indexed agent, uint256 amount);
+    event FeesClaimed(address indexed recipient, uint256 amount);
+    event TreasuryUpdated(address indexed previousTreasury, address indexed newTreasury);
     event MaxTVLUpdated(uint256 previousCap, uint256 newCap);
 
     error InvalidAddress();
     error InvalidAmount();
     error TransferFailed();
     error NoBalance();
+    error NoFees();
 
     constructor(address treasuryWallet) Ownable(msg.sender) {
         if (treasuryWallet == address(0)) revert InvalidAddress();
@@ -31,18 +36,14 @@ contract GhostVault is Ownable, ReentrancyGuard {
         if (agent == address(0)) revert InvalidAddress();
         if (msg.value == 0) revert InvalidAmount();
 
-        uint256 currentTVL = address(this).balance - msg.value;
-        require(currentTVL + msg.value <= maxTVL, "Global Deposit Cap Reached");
-
         uint256 fee = (msg.value * FEE_BASIS_POINTS) / BPS_DENOMINATOR;
-        uint256 agentShare = msg.value - fee;
+        uint256 netAmount = msg.value - fee;
+        uint256 nextLiability = totalLiability + netAmount;
+        require(nextLiability <= maxTVL, "Global Cap Reached");
 
-        if (fee > 0) {
-            (bool feeTransferOk, ) = payable(treasury).call{value: fee}("");
-            if (!feeTransferOk) revert TransferFailed();
-        }
-
-        balances[agent] += agentShare;
+        accruedFees += fee;
+        totalLiability = nextLiability;
+        balances[agent] += netAmount;
         emit Deposited(agent, msg.sender, msg.value, fee);
     }
 
@@ -52,15 +53,48 @@ contract GhostVault is Ownable, ReentrancyGuard {
         emit MaxTVLUpdated(previousCap, _newCap);
     }
 
-    function withdraw() external nonReentrant {
-        uint256 amount = balances[msg.sender];
-        if (amount == 0) revert NoBalance();
+    function setTreasury(address newTreasury) external onlyOwner {
+        if (newTreasury == address(0)) revert InvalidAddress();
 
-        balances[msg.sender] = 0;
+        address previousTreasury = treasury;
+        treasury = newTreasury;
+        emit TreasuryUpdated(previousTreasury, newTreasury);
+    }
 
-        (bool payoutOk, ) = payable(msg.sender).call{value: amount}("");
+    function claimFees(address recipient) external onlyOwner nonReentrant {
+        if (recipient == address(0)) revert InvalidAddress();
+
+        uint256 amount = accruedFees;
+        if (amount == 0) revert NoFees();
+
+        accruedFees = 0;
+
+        (bool payoutOk, ) = payable(recipient).call{value: amount}("");
         if (!payoutOk) revert TransferFailed();
 
-        emit Withdrawn(msg.sender, amount);
+        emit FeesClaimed(recipient, amount);
+    }
+
+    function withdraw() external nonReentrant {
+        _withdrawTo(msg.sender, msg.sender);
+    }
+
+    function withdrawTo(address recipient) external nonReentrant {
+        _withdrawTo(msg.sender, recipient);
+    }
+
+    function _withdrawTo(address agent, address recipient) internal {
+        if (recipient == address(0)) revert InvalidAddress();
+
+        uint256 amount = balances[agent];
+        if (amount == 0) revert NoBalance();
+
+        balances[agent] -= amount;
+        totalLiability -= amount;
+
+        (bool payoutOk, ) = payable(recipient).call{value: amount}("");
+        if (!payoutOk) revert TransferFailed();
+
+        emit Withdrawn(agent, amount);
     }
 }
