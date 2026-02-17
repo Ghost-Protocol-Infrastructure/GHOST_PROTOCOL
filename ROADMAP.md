@@ -17,32 +17,27 @@
 - **Issue:** Yield and uptime signals still rely on proxy/local data in parts of the scoring pipeline.
 - **Fix:** Update `scripts/score-leads.ts` and/or successor DB scoring pipeline to consume live 24h GhostVault volume plus ingested uptime metrics.
 
-## 5. Backend Scalability (Completed)
-- **Completed:** Credit sync no longer rescans full history per request; it uses `CreditBalance.lastSyncedBlock` as a wallet-level cursor.
-- **Completed:** Agent indexer is stateful through `SystemState` (`agent_indexer.lastSyncedBlock`) and only scans new ranges.
-
-## 6. SDK Coverage (Active)
+## 5. SDK Coverage (Active)
 - **Issue:** Node.js SDK is not yet feature-complete (Python-first rollout).
 - **Fix:** Publish Node.js GhostGate SDK with EIP-712 signing and parity with Python middleware features.
 
-## 7. Sybil Resistance (Active)
+## 6. Sybil Resistance (V2 REQUIREMENT)
 - **Issue:** Ranking can still be skewed by raw transaction-count behavior.
 - **Fix:** Weight unique wallet interactions higher than raw volume and add anti-wash heuristics.
 
-## 8. Data Persistence (Completed)
-- **Completed:** Credit ledger moved from file-based storage to Postgres (`CreditBalance` via Prisma).
-- **Completed:** Agent index persistence moved to Postgres (`Agent` + `SystemState`) with automated migration/index runs in CI.
-
-## 9. DB-First UI Integration (Active)
-- **Issue:** Some UI surfaces still read static `data/leads-scored.json`.
-- **Fix:** Migrate all leaderboard and dashboard reads to `/api/agents` (Postgres-backed), then retire legacy JSON dependencies.
-
-## 10. Indexer Throughput & Operations (Active)
+## 7. Indexer Throughput & Operations (Active)
 - **Issue:** Initial backfills can run long depending on RPC provider limits and chain range.
 - **Fix:** Continue tuning `AGENT_INDEX_CHUNK_SIZE`, RPC fallback ordering, and operational observability (checkpoint logs/metrics/alerts).
 
-## 11. Next.js server for data storage
+## 8. LEVEL 2: THE WATCHTOWER (V2 REQUIREMENT)
+- **Mechanism:** The "Always-On Server" (VPS / Railway / Heroku).
+- **How it Works:** Replace cron-based GitHub Actions polling with a 24/7 indexing worker (`while(true)` loop and/or webhook/event listener) so blockchain changes are processed continuously.
+- **Vibe:** Ticker-tape behavior where updates appear as soon as events happen.
+- **Pros:** Real-time updates. "Claim" to dashboard state becomes near-instant. Required for Marketplace flows and Transfer Listener support.
+- **Cons:** Added cost and operations overhead (server uptime, monitoring, restart/recovery on crashes).
+- **Verdict:** Phase 2 requirement. Once active users and trading volume are present, we must upgrade to this model.
 
-## 12. Launch-Accepted Technical Debt (Deferred)
+## 9. Launch-Accepted Technical Debt (Deferred)
 - **Velocity Proxy Decision:** Keep using normalized total transaction count as the velocity proxy during the current Vampire Attack phase. This intentionally favors historically high-value agents ("Whales") over short-term burst activity.
 - **Claimed-State Consistency:** Scorer currently infers claimed state from `status`, while UI can infer claimed from `status` OR telemetry presence. This is acceptable for launch and will be unified under one canonical signal when Transfer/claim event listener support is added.
+- **Audit Context (Claimed-State):** Current mismatch is mostly cosmetic; a short-lived edge case can appear during sync windows. Keep deferred and fold into the canonical claimed-signal unification above.
