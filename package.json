@@ -18,6 +18,7 @@
     "migrate:indexer": "npx tsx scripts/migrate-indexer.ts",
     "check:lock": "npx npm@10.8.2 ci --ignore-scripts --no-audit --no-fund",
     "update-data": "npm run index:db",
+    "postinstall": "prisma generate",
     "prepare": "husky"
   },
   "dependencies": {
