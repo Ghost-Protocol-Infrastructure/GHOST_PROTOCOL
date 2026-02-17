@@ -21,10 +21,7 @@ from eth_account.messages import encode_typed_data
 class GhostGate:
     """Credit-gate helper for Python APIs."""
 
-    BASE_URL = os.getenv("GHOST_GATE_BASE_URL", "https://ghost-rank.vercel.app").rstrip("/")
-    GATE_URL = f"{BASE_URL}/api/gate"
-    PULSE_URL = "https://ghost-rank.vercel.app/api/telemetry/pulse"
-    OUTCOME_URL = "https://ghost-rank.vercel.app/api/telemetry/outcome"
+    DEFAULT_BASE_URL = "https://ghostprotocol.cc"
     DOMAIN_NAME = "GhostGate"
     DOMAIN_VERSION = "1"
 
@@ -34,12 +31,19 @@ class GhostGate:
         *,
         private_key: Optional[str] = None,
         chain_id: int = 8453,
+        base_url: str = DEFAULT_BASE_URL,
     ) -> None:
         if not api_key:
             raise ValueError("api_key is required")
 
         self.api_key = api_key
         self.chain_id = chain_id
+        env_base_url = os.getenv("GHOST_GATE_BASE_URL", "").strip()
+        candidate_base_url = env_base_url or base_url
+        self.base_url = candidate_base_url.rstrip("/")
+        self.gate_url = f"{self.base_url}/api/gate"
+        self.pulse_url = f"{self.base_url}/api/telemetry/pulse"
+        self.outcome_url = f"{self.base_url}/api/telemetry/outcome"
         self.private_key = private_key or os.getenv("GHOST_SIGNER_PRIVATE_KEY") or os.getenv("PRIVATE_KEY")
         if not self.private_key:
             raise ValueError("A signing private key is required (private_key arg or GHOST_SIGNER_PRIVATE_KEY/PRIVATE_KEY).")
@@ -115,7 +119,7 @@ class GhostGate:
             "x-ghost-credit-cost": str(cost),
             "accept": "application/json, text/plain;q=0.9, */*;q=0.8",
         }
-        target = f"{self.GATE_URL}/{service}"
+        target = f"{self.gate_url}/{service}"
 
         try:
             response = requests.request(method=method.upper(), url=target, headers=headers, timeout=10)
@@ -133,7 +137,7 @@ class GhostGate:
             "apiKey": self.api_key,
             "agentId": agent_id,
         }
-        return self._post_optional(self.PULSE_URL, payload)
+        return self._post_optional(self.pulse_url, payload)
 
     def report_consumer_outcome(
         self,
@@ -149,7 +153,7 @@ class GhostGate:
             "statusCode": status_code,
             "agentId": agent_id,
         }
-        return self._post_optional(self.OUTCOME_URL, payload)
+        return self._post_optional(self.outcome_url, payload)
 
     @staticmethod
     def _extract_status_code(result: Any) -> Optional[int]:
