@@ -24,8 +24,10 @@ model CreditBalance {
 
 model Agent {
   address     String   @id
+  agentId     String   @unique
   name        String
   creator     String
+  owner       String
   image       String?
   description String?
   telegram    String?

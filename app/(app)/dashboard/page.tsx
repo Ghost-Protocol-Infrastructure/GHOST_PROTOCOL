@@ -29,7 +29,9 @@ type CreditSyncState = "idle" | "syncing" | "synced" | "error";
 
 type AgentApiRow = {
   address: string;
+  agentId?: string;
   creator: string;
+  owner?: string;
   name: string;
   status: string;
   tier?: string;
@@ -52,6 +54,8 @@ type OwnedAgent = {
 };
 
 const isHexAddress = (value: string): boolean => /^0x[a-fA-F0-9]{40}$/.test(value);
+const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/, "");
+const APP_BASE_URL = normalizeBaseUrl(process.env.NEXT_PUBLIC_BASE_URL?.trim() || "https://ghostprotocol.cc");
 
 const deriveAgentId = (agent: Pick<AgentApiRow, "address" | "name">): string => {
   const fromAddress = agent.address.match(/(?:service|agent)[:_-](\d+)/i)?.[1];
@@ -256,7 +260,7 @@ function DashboardPageContent() {
   const consumerUsageExample = useMemo(
     () =>
       `The Python SDK automatically routes verification requests to
-https://ghost-rank.vercel.app/api/gate/<your-service-name>.`,
+${APP_BASE_URL}/api/gate/<your-service-name>.`,
     [],
   );
 
@@ -293,9 +297,10 @@ https://ghost-rank.vercel.app/api/gate/<your-service-name>.`,
         const payload = (await response.json()) as AgentApiResponse;
         const agents = Array.isArray(payload.agents) ? payload.agents : [];
         const normalizedAgents: OwnedAgent[] = agents.map((agent) => {
-          const owner = isHexAddress(agent.creator) ? agent.creator.toLowerCase() : agent.creator;
+          const ownerSource = agent.owner ?? agent.creator;
+          const owner = isHexAddress(ownerSource) ? ownerSource.toLowerCase() : ownerSource;
           return {
-            agentId: deriveAgentId(agent),
+            agentId: agent.agentId?.trim() || deriveAgentId(agent),
             address: agent.address,
             owner,
             name: agent.name,
@@ -765,7 +770,7 @@ def my_agent():
               <div className="mt-5 border border-slate-800 bg-slate-950 p-4">
                 <p className="text-sm text-slate-400">
                   The Python SDK automatically routes verification requests to{" "}
-                  <span className="text-cyan-300">https://ghost-rank.vercel.app/api/gate/&lt;your-service-name&gt;.</span>{" "}
+                  <span className="text-cyan-300">{APP_BASE_URL}/api/gate/&lt;your-service-name&gt;.</span>{" "}
                   <span className="text-cyan-300">1 Request = 1 Credit.</span>
                 </p>
               </div>

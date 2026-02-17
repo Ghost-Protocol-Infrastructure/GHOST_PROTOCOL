@@ -74,8 +74,6 @@ export class GhostAgent {
       );
     }
 
-    this.apiKey = normalizedApiKey;
-
     const timestamp = BigInt(Math.floor(Date.now() / 1000));
     const signedPayload = {
       service: this.serviceSlug,
@@ -107,13 +105,15 @@ export class GhostAgent {
         "x-ghost-sig": signature,
         "x-ghost-payload": JSON.stringify(headerPayload),
         "x-ghost-credit-cost": String(this.creditCost),
-        "x-ghost-api-key": normalizedApiKey,
         accept: "application/json, text/plain;q=0.9, */*;q=0.8",
       },
       cache: "no-store",
     });
 
     const responsePayload = await parsePayload(response);
+    if (response.ok) {
+      this.apiKey = normalizedApiKey;
+    }
 
     return {
       connected: response.ok,

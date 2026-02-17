@@ -55,6 +55,41 @@ const fallbackServiceName = (serviceId: string): string => `Agent #${serviceId}`
 const fallbackServiceDescription = (serviceId: string): string =>
   `Fallback-indexed registry service ${serviceId} (CreateService + ownerOf).`;
 
+const isHexAddress = (value: string): boolean => /^0x[a-fA-F0-9]{40}$/.test(value);
+
+const deriveAgentId = (record: Pick<IndexedAgentRecord, "address" | "name">): string => {
+  const fromAddress = record.address.match(/(?:service|agent)[:_-](\d+)/i)?.[1];
+  if (fromAddress) return fromAddress;
+
+  const fromName = record.name.match(/(?:agent|service)\s*#?\s*(\d+)/i)?.[1];
+  if (fromName) return fromName;
+
+  if (isHexAddress(record.address)) return record.address.slice(2, 8).toUpperCase();
+  return record.name.trim().slice(0, 12).toUpperCase() || record.address.toLowerCase();
+};
+
+const allocateUniqueAgentId = (candidate: string, address: string, usedIds: Set<string>): string => {
+  const trimmed = candidate.trim();
+  if (trimmed.length > 0 && !usedIds.has(trimmed)) {
+    usedIds.add(trimmed);
+    return trimmed;
+  }
+
+  const fallback = address.toLowerCase();
+  if (!usedIds.has(fallback)) {
+    usedIds.add(fallback);
+    return fallback;
+  }
+
+  let suffix = 2;
+  while (usedIds.has(`${fallback}-${suffix}`)) {
+    suffix += 1;
+  }
+  const next = `${fallback}-${suffix}`;
+  usedIds.add(next);
+  return next;
+};
+
 const getFromBlock = async (): Promise<bigint> => {
   const state = await prisma.systemState.findUnique({ where: { key: CURSOR_KEY } });
   if (!state || state.lastSyncedBlock <= 0n) {
@@ -297,24 +332,45 @@ const normalizeLegacyFallbackRows = async (): Promise<number> => {
   return updatedCount;
 };
 
+const collectUsedAgentIds = async (): Promise<Set<string>> => {
+  const rows = await prisma.agent.findMany({
+    select: { agentId: true },
+  });
+
+  return new Set(
+    rows
+      .map((row) => row.agentId.trim())
+      .filter((value): value is string => Boolean(value)),
+  );
+};
+
 const upsertAgents = async (records: Map<string, IndexedAgentRecord>): Promise<number> => {
   if (records.size === 0) return 0;
 
   const addresses = Array.from(records.keys());
   const existing = await prisma.agent.findMany({
     where: { address: { in: addresses } },
-    select: { address: true },
+    select: { address: true, agentId: true },
   });
   const existingSet = new Set(existing.map((row) => row.address));
+  const existingByAddress = new Map(existing.map((row) => [row.address, row]));
+  const usedAgentIds = await collectUsedAgentIds();
   const newCount = addresses.filter((address) => !existingSet.has(address)).length;
 
   for (const record of records.values()) {
+    const current = existingByAddress.get(record.address);
+    const resolvedAgentId = current?.agentId
+      ? current.agentId
+      : allocateUniqueAgentId(deriveAgentId(record), record.address, usedAgentIds);
+
     await prisma.agent.upsert({
       where: { address: record.address },
       create: {
         address: record.address,
+        agentId: resolvedAgentId,
         name: record.name,
         creator: record.creator,
+        owner: record.creator,
         image: record.image,
         description: record.description,
         telegram: record.telegram,
@@ -322,8 +378,10 @@ const upsertAgents = async (records: Map<string, IndexedAgentRecord>): Promise<n
         website: record.website,
       },
       update: {
+        agentId: resolvedAgentId,
         name: record.name,
         creator: record.creator,
+        owner: record.creator,
         image: record.image,
         description: record.description,
         telegram: record.telegram,
@@ -336,14 +394,59 @@ const upsertAgents = async (records: Map<string, IndexedAgentRecord>): Promise<n
   return newCount;
 };
 
+const backfillAgentIdentityColumns = async (): Promise<number> => {
+  const rows = await prisma.agent.findMany({
+    where: {
+      OR: [{ agentId: "" }, { owner: "" }],
+    },
+    select: {
+      address: true,
+      name: true,
+      creator: true,
+      owner: true,
+      agentId: true,
+    },
+  });
+
+  if (rows.length === 0) return 0;
+
+  const usedAgentIds = await collectUsedAgentIds();
+  let updatedCount = 0;
+
+  for (const row of rows) {
+    const resolvedAgentId = row.agentId.trim()
+      ? row.agentId
+      : allocateUniqueAgentId(deriveAgentId({ address: row.address, name: row.name }), row.address, usedAgentIds);
+    const resolvedOwner = row.owner.trim() ? row.owner : row.creator;
+
+    if (row.agentId === resolvedAgentId && row.owner === resolvedOwner) continue;
+
+    await prisma.agent.update({
+      where: { address: row.address },
+      data: {
+        agentId: resolvedAgentId,
+        owner: resolvedOwner,
+      },
+    });
+
+    updatedCount += 1;
+  }
+
+  return updatedCount;
+};
+
 async function main(): Promise<void> {
   const client = buildClient();
   const latestBlock = await client.getBlockNumber();
   const fromBlock = await getFromBlock();
 
   if (fromBlock > latestBlock) {
+    const backfilledIdentityCount = await backfillAgentIdentityColumns();
     await persistCursor(latestBlock);
     console.log(`Indexed 0 new agents from block ${fromBlock.toString()} to ${latestBlock.toString()}.`);
+    if (backfilledIdentityCount > 0) {
+      console.log(`Backfilled identity fields for ${backfilledIdentityCount} existing agents.`);
+    }
     return;
   }
 
@@ -354,10 +457,14 @@ async function main(): Promise<void> {
   }
 
   const newCount = await upsertAgents(records);
+  const backfilledIdentityCount = await backfillAgentIdentityColumns();
   const normalizedLegacyCount = await normalizeLegacyFallbackRows();
   await persistCursor(latestBlock);
 
   console.log(`Indexed ${newCount} new agents from block ${fromBlock.toString()} to ${latestBlock.toString()}.`);
+  if (backfilledIdentityCount > 0) {
+    console.log(`Backfilled identity fields for ${backfilledIdentityCount} existing agents.`);
+  }
   if (normalizedLegacyCount > 0) {
     console.log(`Normalized ${normalizedLegacyCount} legacy fallback agent labels.`);
   }

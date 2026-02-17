@@ -12,8 +12,10 @@ type LeadTier = "WHALE" | "ACTIVE" | "NEW" | "GHOST";
 
 type ApiAgent = {
   address: string;
+  agentId?: string;
   name: string;
   creator: string;
+  owner?: string;
   status: string;
   tier?: string;
   txCount?: number;
@@ -77,6 +79,8 @@ const parseTxCount = (rawVolume: string): number => {
 };
 
 const deriveAgentId = (agent: ApiAgent): string => {
+  if (agent.agentId?.trim()) return agent.agentId.trim();
+
   const fromAddress = agent.address.match(/(?:service|agent)[:_-](\d+)/i)?.[1];
   if (fromAddress) return fromAddress;
 
@@ -137,11 +141,12 @@ const buildLeadsFromApi = (agents: ApiAgent[]): ProcessedLead[] => {
         ? clamp(agent.rankScore, 0, 100)
         : roundToTwo(rawReputation * 0.7 + velocity * 0.3);
     const agentId = deriveAgentId(agent);
+    const ownerSource = agent.owner ?? agent.creator;
 
     return {
       agentId,
       displayName: normalizeDisplayName(agent, agentId),
-      owner: isHexAddress(agent.creator) ? agent.creator.toLowerCase() : agent.creator,
+      owner: isHexAddress(ownerSource) ? ownerSource.toLowerCase() : ownerSource,
       tier: parseTier(agent.tier, txCount, isClaimed),
       txCount,
       velocity,

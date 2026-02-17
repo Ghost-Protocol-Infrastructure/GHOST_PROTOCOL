@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -33,13 +34,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const orderBy =
+  const orderBy: Prisma.AgentOrderByWithRelationInput[] =
     sort === "volume"
       ? [{ txCount: "desc" as const }, { rankScore: "desc" as const }]
       : [{ rankScore: "desc" as const }, { reputation: "desc" as const }, { txCount: "desc" as const }];
-  const where = owner
+  const where: Prisma.AgentWhereInput | undefined = owner
     ? {
-        creator: {
+        owner: {
           equals: owner,
           mode: "insensitive" as const,
         },
@@ -65,8 +66,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       lastSyncedBlock: indexerState?.lastSyncedBlock?.toString() ?? null,
       agents: agents.map((agent) => ({
         address: agent.address,
+        agentId: agent.agentId ?? agent.address,
         name: agent.name,
         creator: agent.creator,
+        owner: agent.owner ?? agent.creator,
         image: agent.image,
         description: agent.description,
         telegram: agent.telegram,
