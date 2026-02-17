@@ -1,5 +1,12 @@
 # POST-LAUNCH ROADMAP & STATUS
 
+## Completed Since Last Update
+- Rank/Dashboard/Profile are now DB/API-backed (static leaderboard JSON removed from live paths).
+- `Agent` identity model upgraded with `agentId` (unique) and `owner`, including legacy-row backfill.
+- `/api/agents` now returns `totalAgents` via `count()` and supports owner-filtered merchant queries.
+- SDK onboarding UI is live on `/agent/[agentId]` with tabbed Node.js/Python snippets.
+- Node SDK baseline gateway integration is live (EIP-712 signed `connect()`, configurable `baseUrl`).
+
 ## 1. Scoring Engine (Active)
 - **Issue:** Transaction count is still derived from owner wallet nonce, not strictly from the agent contract.
 - **Fix:** Implement agent-level transaction indexing for accurate per-agent activity scoring.
@@ -8,6 +15,7 @@
 ## 2. Merchant UI (Active)
 - **Issue:** Financials (Earnings/Withdrawals) remain partially placeholder.
 - **Fix:** Wire direct `GhostVault.sol` reads to render real balances and enable withdrawals in UI.
+- **As-built progress:** Merchant ownership and agent selection are now sourced from live Postgres data.
 
 ## 3. Telemetry Ingestion (Active)
 - **Issue:** SDK heartbeats are emitted but not fully ingested by scoring infrastructure.
@@ -18,8 +26,8 @@
 - **Fix:** Update `scripts/score-leads.ts` and/or successor DB scoring pipeline to consume live 24h GhostVault volume plus ingested uptime metrics.
 
 ## 5. SDK Coverage (Active)
-- **Issue:** Node.js SDK is not yet feature-complete (Python-first rollout).
-- **Fix:** Publish Node.js GhostGate SDK with EIP-712 signing and parity with Python middleware features.
+- **Issue:** Node.js SDK baseline is now implemented, but full parity with Python middleware and broader DX packaging is incomplete.
+- **Fix:** Continue Node SDK expansion (middleware ergonomics, telemetry helpers, publishing/versioning hardening) to reach full parity.
 
 ## 6. Sybil Resistance (V2 REQUIREMENT)
 - **Issue:** Ranking can still be skewed by raw transaction-count behavior.

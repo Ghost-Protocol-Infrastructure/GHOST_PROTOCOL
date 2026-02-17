@@ -1,6 +1,6 @@
 # GHOST PROTOCOL: MASTER SPECIFICATION
-**Version:** 1.7
-**Status:** Live on Base (Mainnet), Postgres-backed indexing, scoring, and credit ledger
+**Version:** 1.8
+**Status:** Live on Base (Mainnet), Postgres-backed indexing/scoring/credit ledger, DB-native rank/dashboard/profile routes
 
 ---
 
@@ -27,16 +27,19 @@ We strictly separate **Public Data** (Unclaimed) from **Proprietary Data** (Clai
 ### A. Data Pipeline & Inputs
 The canonical backend store is PostgreSQL (Prisma) with the following core models:
 * **`Agent`:** Indexed ERC-8004 agents used by API consumers and ranking services.
+  * Includes identity fields: `address`, `agentId` (unique), `creator`, `owner`.
   * Includes scoring/state fields: `txCount`, `tier`, `reputation`, `rankScore`, `yield`, `uptime`, `status`.
 * **`SystemState`:** Stateful cursor storage (for example, `agent_indexer.lastSyncedBlock`) used by background indexers.
 * **`CreditBalance`:** Per-wallet virtual credit balances and per-wallet sync cursor (`lastSyncedBlock`).
 * **Inputs:** Agent address, creator/owner address, transaction count, and telemetry (`yield`, `uptime`) from DB.
 * **Claimed Logic (as-built):** Scoring currently infers claimed state from `Agent.status` keyword matching (`claimed`/`verified`/`monetized`), while some UI paths may also infer from non-zero telemetry.
 * **Leaderboard API:** `/api/agents` reads `Agent` rows ordered by rank metrics (`rankScore`, `reputation`, `txCount`) and returns:
+  * `agentId`, `owner`, `creator`, `name`, `status`
   * `tier`, `txCount`, `reputation`, `rankScore`, `yield`, `uptime`
   * `totalAgents` (dynamic denominator)
   * `lastSyncedBlock` (for Sync Height card)
-* **UI State:** `/rank` is DB-first via `/api/agents`; legacy JSON usage is now a remaining concern primarily in non-rank surfaces (for example, dashboard transition work).
+* **Owner Filtering:** `/api/agents` supports `owner` query filtering (case-insensitive) for merchant workflows.
+* **UI State:** `/rank`, `/dashboard`, and `/agent/[id]` are DB/API-backed and no longer depend on legacy static leaderboard JSON files.
 
 ### B. The Scoring Algorithms (Hard Requirements)
 Codex must implement these exact formulas.
@@ -64,9 +67,10 @@ Codex must implement these exact formulas.
 ## 3. GHOSTGATE SPECIFICATION (SDK & Gateway)
 
 ### A. System Architecture
-* **SDKs:** Python (Available), Node.js (Roadmap).
-* **Role:** Middleware/Decorator for Python integrations (Flask/FastAPI), with Node.js SDK support planned.
-* **Function:** Intercepts HTTP requests and verifies EIP-712 headers (`x-ghost-sig`, `x-ghost-payload`). The Gateway cryptographically recovers the signer address to authorize access.
+* **SDKs:** Python (Available), Node.js (Available, beta/in-progress parity).
+* **Role:** SDK clients prepare signed access requests against GhostGate (`/api/gate/[...slug]`) for protected services.
+* **Node SDK (as-built):** `GhostAgent` supports configurable `baseUrl`, `privateKey`, `serviceSlug`, and credit-cost header; `connect(apiKey)` performs EIP-712 signing and gateway auth.
+* **Function:** Gateway verifies EIP-712 headers (`x-ghost-sig`, `x-ghost-payload`) and cryptographically recovers signer address to authorize/charge access.
 
 ### B. Telemetry & Metrics Generation
 * **YIELD:** Calculated as `Total ETH Volume processed via GhostVault / 24h`.
@@ -103,7 +107,8 @@ To avoid high-frequency gas fees, Ghost Protocol uses a "Prepaid Native ETH" mod
 * **Access:** Unlocked by connecting a wallet that owns an ERC-8004 agent indexed in the Postgres `Agent` table.
 * **Features:**
     * **Portfolio View:** Dropdown to manage multiple agents.
-    * **Installation:** Display API Key and dynamic code snippets (`@gate.guard`).
+    * **Installation:** Display API Key and dynamic integration snippets (Node.js + Python tabs) with prefilled `agentId`.
+    * **Profile Route:** `/agent/[agentId]` resolves via unique `Agent.agentId` for deterministic profile/integration lookup.
     * **Financials:** View earnings and "Withdraw" (disabled if < threshold).
 
 ## 5. RISK MANAGEMENT
@@ -124,6 +129,7 @@ To avoid high-frequency gas fees, Ghost Protocol uses a "Prepaid Native ETH" mod
 ## 7. INDEXER OPERATIONS (AS-BUILT)
 * **Primary Indexer:** `scripts/index-db.ts` indexes agent registrations into Postgres.
 * **Primary Scorer:** `scripts/score-leads.ts` now reads/writes Postgres directly (no static leaderboard JSON output dependency).
+* **Identity Backfill:** Indexer now maintains/backfills `agentId` (unique) and `owner` for legacy rows to keep profile and merchant routing consistent.
 * **Stateful Cursor:** Cursor key `agent_indexer` is stored in `SystemState.lastSyncedBlock`.
 * **Default Bootstrap Block:** `23,000,000` (override with `AGENT_INDEX_START_BLOCK`).
 * **Chunking:** Default chunk size is `2,000` blocks (override with `AGENT_INDEX_CHUNK_SIZE`) to stay within strict RPC `eth_getLogs` limits.
