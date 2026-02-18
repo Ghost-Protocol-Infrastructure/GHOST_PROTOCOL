@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #020617;
-  --foreground: #94a3b8;
+  --background: #0a0a0a;
+  --foreground: #a3a3a3;
 }
 
 @theme inline {
@@ -16,6 +16,7 @@ body {
   min-height: 100vh;
   overflow-x: hidden;
   background-color: var(--background);
+  background-image: none !important;
   color: var(--foreground);
   font-family: var(--font-geist-sans);
 }
@@ -23,59 +24,39 @@ body {
 .app-shell {
   min-height: 100vh;
   position: relative;
-  background-image:
-    linear-gradient(rgba(139, 92, 246, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(139, 92, 246, 0.03) 1px, transparent 1px);
-  background-size: 40px 40px, 40px 40px;
+  background-image: none !important;
 }
 
+html {
+  background-color: var(--background);
+  background-image: none !important;
+}
+
+body::before,
+body::after,
+.app-shell::before,
 .app-shell::after {
-  content: "";
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background:
-    linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.15) 50%),
-    linear-gradient(
-      90deg,
-      rgba(255, 0, 0, 0.02),
-      rgba(0, 255, 0, 0.01),
-      rgba(0, 0, 255, 0.02)
-    );
-  background-size: 100% 4px, 2px 100%;
-  pointer-events: none;
-  z-index: 0;
-  animation: scanline 10s linear infinite;
-  opacity: 0.6;
+  content: none !important;
+  background-image: none !important;
 }
 
-@keyframes scanline {
-  0% {
-    background-position: 0 0;
-  }
 
-  100% {
-    background-position: 0 100%;
-  }
-}
 
 ::-webkit-scrollbar {
   width: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #020617;
+  background: #0a0a0a;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 4px;
+  background: #262626;
+  border-radius: 0;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #404040;
 }
 
 .border-neon-purple {

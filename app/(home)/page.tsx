@@ -2,19 +2,19 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Shield, ChevronRight, Activity, Lock } from 'lucide-react';
+import { Shield, ChevronRight, Activity, Lock, Sword, Swords } from 'lucide-react';
 
 const HomePage = () => {
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-400 font-mono selection:bg-red-900 selection:text-white overflow-x-hidden">
-      <div className="fixed top-0 left-0 w-full z-50 border-b border-neutral-900 bg-neutral-950/90 backdrop-blur-sm h-12 flex items-center px-4 justify-between text-xs tracking-widest uppercase">
+      <div className="fixed top-0 left-0 w-full z-50 border-b border-neutral-900 bg-neutral-950/90 backdrop-blur-sm h-12 flex items-center px-4 justify-between text-xs tracking-widest">
         <div className="flex items-center gap-4">
           <span className="text-neutral-100 font-bold flex items-center gap-2">
             <div className="w-2 h-2 bg-red-600 animate-pulse" />
             GHOST_PROTOCOL
           </span>
           <span className="hidden md:inline text-neutral-600">
-            {"// INDEXING_V.1.0.4"}
+            {"// INDEXING_V1.0"}
           </span>
         </div>
         <div className="flex items-center gap-6">
@@ -44,15 +44,15 @@ const HomePage = () => {
             <br />
             Infrastructure
             <br />
-            <span className="text-neutral-600">For The Agentic</span>
+            <span className="text-neutral-600">For The Machine</span>
             <br />
             Economy.
           </h1>
 
           <p className="max-w-2xl text-lg md:text-xl text-neutral-500 leading-relaxed mb-12 border-l-2 border-red-600 pl-6">
             We are killing the arcade. The era of neon nostalgia is over.
-            We build the heavy rails for autonomous capital.
-            Cold. Expensive. Dangerous.
+            We build the heavy rails for agentic autonomy.
+            Permissionless. Efficient. Deployable.
           </p>
 
           <div className="flex flex-col md:flex-row gap-4">
@@ -76,7 +76,7 @@ const HomePage = () => {
 
         <div className="absolute bottom-10 left-0 w-full border-t border-b border-neutral-900 py-2 overflow-hidden bg-neutral-950">
           <div className="whitespace-nowrap text-[10px] text-neutral-700 font-bold tracking-widest animate-marquee inline-block">
-            {"// INDEXING MEGAETH AGENTS // REPUTATION LAYER ACTIVE // SETTLEMENT RAIL ONLINE // BLOCK_TIME: 10MS // TX_VOLUME: 4.2M ETH // AGENT_ID_2049 VERIFIED // INDEXING MEGAETH AGENTS // REPUTATION LAYER ACTIVE //"}
+            {"// INDEXING BASE AGENTS // REPUTATION LAYER ACTIVE // SETTLEMENT RAIL ONLINE // BLOCK_TIME: 10MS // TX_VOLUME: 4.2M ETH // AGENT_ID_2049 VERIFIED // INDEXING MEGAETH AGENTS // REPUTATION LAYER ACTIVE //"}
           </div>
         </div>
       </main>
@@ -85,7 +85,7 @@ const HomePage = () => {
         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 min-h-[600px]">
           <div className="col-span-1 lg:col-span-7 p-8 md:p-16 border-r border-neutral-900 flex flex-col justify-center">
             <h2 className="text-3xl font-bold text-neutral-100 mb-8 uppercase flex items-center gap-3">
-              <Shield className="w-6 h-6 text-red-600" />
+              <Swords className="w-6 h-6 text-red-600" />
               The Manifesto
             </h2>
             <div className="space-y-8 text-neutral-400 text-sm leading-7">
@@ -115,9 +115,9 @@ const HomePage = () => {
                   DISCOVERY
                 </span>
               </div>
-              <h3 className="text-2xl font-bold text-neutral-100 mb-2">GhostRank</h3>
+              <h3 className="text-2xl font-bold text-neutral-100 mb-2">ghost_rank</h3>
               <p className="text-neutral-500 text-sm mb-6">
-                The Reputation Layer. A decentralized leaderboard indexing performance, uptime, and yield. The Bloomberg Terminal for Agents.
+                The Reputation Layer. A decentralized leaderboard indexing performance, uptime, and yield. The Trustless Registry for Autonomous Agents.
               </p>
               <div className="flex items-center gap-2 text-red-600 text-xs font-bold uppercase tracking-wider group-hover:gap-4 transition-all">
                 Access_Terminal <ChevronRight className="w-4 h-4" />
@@ -131,9 +131,9 @@ const HomePage = () => {
                   SETTLEMENT
                 </span>
               </div>
-              <h3 className="text-2xl font-bold text-neutral-100 mb-2">GhostGate</h3>
+              <h3 className="text-2xl font-bold text-neutral-100 mb-2">ghost_gate</h3>
               <p className="text-neutral-500 text-sm mb-6">
-                The Permissionless Rail. A monetization SDK gating API access behind crypto payments. The Stripe for the Machine Economy.
+                The Permissionless Rail. A monetization SDK gating API access behind crypto payments. The Settlement Terminal for Agentic Commerce.
               </p>
               <div className="flex items-center gap-2 text-neutral-400 text-xs font-bold uppercase tracking-wider group-hover:text-neutral-100 group-hover:gap-4 transition-all">
                 Coming_Soon <ChevronRight className="w-4 h-4" />
@@ -150,7 +150,7 @@ const HomePage = () => {
               GHOST_PROTOCOL_INFRASTRUCTURE
             </div>
             <div className="text-[10px] text-neutral-700 max-w-sm leading-relaxed">
-              Indexing ERC-8004 registries on MegaETH & Base.
+              Indexing ERC-8004 registries on Base & MegaETH.
               <br />
               All systems nominal. No warranties implied.
               <br />

@@ -488,21 +488,21 @@ def my_agent():
   };
 
   return (
-    <main className="min-h-screen bg-slate-950 font-mono text-slate-400">
+    <main className="min-h-screen font-mono text-neutral-400">
       <div className="mx-auto w-full max-w-6xl px-4 py-8 md:px-8">
-        <header className="mb-8 flex flex-col gap-4 border border-slate-800 bg-slate-900 p-4 md:flex-row md:items-center md:justify-between">
+        <header className="mb-12 flex flex-col gap-4 border-b border-neutral-900 pb-8 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
-            <Activity className="h-5 w-5 text-cyan-400" />
-            <h1 className="text-sm uppercase tracking-[0.2em] text-slate-100 md:text-base">
-              GhostGate Terminal
+            <div className="h-3 w-3 bg-red-600 animate-pulse"></div>
+            <h1 className="text-sm tracking-[0.2em] text-neutral-100 md:text-base font-bold">
+              ghost_gate // SETTLEMENT TERMINAL
             </h1>
           </div>
-          <ConnectButton />
+          <ConnectButton showBalance={false} chainStatus="icon" accountStatus="full" />
         </header>
 
         {!isConnected && (
-          <section className="mb-6 border border-cyan-700 bg-slate-900 p-4">
-            <p className="text-sm uppercase tracking-[0.18em] text-cyan-400">
+          <section className="mb-12 border border-neutral-800 bg-neutral-900/50 p-8 text-center">
+            <p className="text-sm uppercase tracking-[0.2em] text-neutral-500 font-bold">
               Connect Wallet to Access Terminal
             </p>
           </section>
@@ -516,17 +516,17 @@ def my_agent():
 
         {showMerchantView ? (
           <section className="space-y-6">
-            <div className="border border-emerald-500/40 bg-emerald-950/10 p-4">
+            <div className="border border-neutral-900 bg-neutral-950 p-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <p className="text-sm uppercase tracking-[0.18em] text-emerald-400">
-                  MERCHANT CONSOLE
+                <p className="text-sm uppercase tracking-[0.18em] text-neutral-100 font-bold">
+                  // MERCHANT CONSOLE
                 </p>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Active Agent</span>
+                  <span className="text-[10px] uppercase tracking-[0.16em] text-neutral-500 font-bold">Active Agent</span>
                   <select
                     value={selectedOwnedAgent?.agentId ?? ""}
                     onChange={(event) => setSelectedAgentId(event.target.value)}
-                    className="min-w-[156px] border border-emerald-500/40 bg-slate-950 px-3 py-2 text-xs uppercase tracking-[0.16em] text-emerald-300 outline-none focus:border-emerald-400"
+                    className="min-w-[156px] border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs uppercase tracking-[0.16em] text-neutral-300 outline-none focus:border-red-600 rounded-none font-bold"
                   >
                     {ownedAgents.map((agent) => (
                       <option key={`${agent.agentId}-${agent.owner}`} value={agent.agentId}>
@@ -539,76 +539,76 @@ def my_agent():
             </div>
 
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-              <article className="bg-slate-900 border border-emerald-500/30 rounded-none p-5">
+              <article className="bg-neutral-950 border border-neutral-900 rounded-none p-5">
                 <div className="mb-5 flex items-center gap-3">
-                  <Code className="h-5 w-5 text-emerald-400" />
-                  <h2 className="text-sm uppercase tracking-[0.18em] text-emerald-300">YOUR API GATEWAY</h2>
+                  <Code className="h-5 w-5 text-red-600" />
+                  <h2 className="text-sm uppercase tracking-[0.18em] text-neutral-300 font-bold">YOUR API GATEWAY</h2>
                 </div>
 
-                <div className="border border-emerald-500/20 bg-slate-950 p-4">
-                  <p className="mb-2 text-xs uppercase tracking-[0.16em] text-slate-400">API Key</p>
-                  <code className="block break-all text-sm text-emerald-300">{merchantApiKey}</code>
+                <div className="border border-neutral-900 bg-neutral-900 p-4">
+                  <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">API Key</p>
+                  <code className="block break-all text-sm text-neutral-300 font-mono">{merchantApiKey}</code>
                 </div>
 
                 <button
                   type="button"
                   onClick={handleCopyApiKey}
-                  className="mt-4 inline-flex items-center gap-2 border border-emerald-500/40 bg-slate-800 px-4 py-2 text-xs uppercase tracking-wider text-emerald-300 transition hover:bg-slate-700"
+                  className="mt-4 inline-flex items-center gap-2 border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-wider text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
                 >
                   <Copy className="h-4 w-4" />
                   {apiKeyCopyState === "copied" ? "Copied" : "Copy"}
                 </button>
 
                 {apiKeyCopyState === "error" && (
-                  <p className="mt-2 text-xs text-yellow-400">Clipboard permission blocked. Copy manually.</p>
+                  <p className="mt-2 text-xs text-red-500">Clipboard permission blocked. Copy manually.</p>
                 )}
 
-                <div className="mt-5 border border-emerald-500/20 bg-slate-950 p-4">
-                  <p className="mb-2 text-xs uppercase tracking-[0.16em] text-slate-400">SDK Usage Preview</p>
-                  <pre className="overflow-x-auto whitespace-pre-wrap text-sm text-emerald-300">
+                <div className="mt-5 border border-neutral-900 bg-neutral-900 p-4">
+                  <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">SDK Usage Preview</p>
+                  <pre className="overflow-x-auto whitespace-pre-wrap text-sm text-neutral-300 font-mono">
                     <code>{merchantSdkExample}</code>
                   </pre>
                 </div>
 
-                <p className="mt-5 text-sm text-slate-400">
+                <p className="mt-5 text-sm text-neutral-500">
                   Install the GhostGate SDK to monetize your agent.
                 </p>
               </article>
 
-              <article className="bg-slate-900 border border-yellow-500/30 rounded-none p-5">
+              <article className="bg-neutral-950 border border-neutral-900 rounded-none p-5">
                 <div className="mb-5 flex items-center gap-3">
-                  <Wallet className="h-5 w-5 text-yellow-400" />
-                  <h2 className="text-sm uppercase tracking-[0.18em] text-yellow-300">PROJECTED REVENUE</h2>
+                  <Wallet className="h-5 w-5 text-neutral-500" />
+                  <h2 className="text-sm uppercase tracking-[0.18em] text-neutral-300 font-bold">PROJECTED REVENUE</h2>
                 </div>
 
-                <div className="border border-yellow-500/20 bg-slate-950 p-4">
-                  <p className="mb-1 text-xs uppercase tracking-[0.16em] text-slate-500">Estimated Balance</p>
-                  <p className="text-3xl text-slate-500">0.0000 ETH</p>
+                <div className="border border-neutral-900 bg-neutral-900 p-4">
+                  <p className="mb-1 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Estimated Balance</p>
+                  <p className="text-3xl text-neutral-500 font-mono">0.0000 ETH</p>
                 </div>
 
-                <div className="mt-4 inline-flex items-center gap-2 border border-yellow-500/30 bg-yellow-950/20 px-3 py-1.5">
-                  <span className="h-2 w-2 rounded-full bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.8)]" />
-                  <span className="text-xs uppercase tracking-[0.16em] text-yellow-300">PENDING INSTALL</span>
+                <div className="mt-4 inline-flex items-center gap-2 border border-neutral-800 bg-neutral-900 px-3 py-1.5">
+                  <span className="h-2 w-2 bg-neutral-600 rounded-none" />
+                  <span className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">PENDING INSTALL</span>
                 </div>
               </article>
             </div>
 
-            <div className="flex flex-col gap-3 border border-slate-800 bg-slate-900 p-5 sm:flex-row">
+            <div className="flex flex-col gap-3 border border-neutral-900 bg-neutral-950 p-5 sm:flex-row">
               <a
                 href={selectedAgentProfileHref}
-                className="inline-flex items-center justify-center border border-emerald-500/40 bg-emerald-950/20 px-4 py-2 text-xs uppercase tracking-[0.16em] text-emerald-300 transition hover:bg-emerald-900/30"
+                className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:bg-neutral-900 hover:text-neutral-200"
               >
                 OPEN INTEGRATION GUIDE
               </a>
               <a
                 href={nodeGuideHref}
-                className="inline-flex items-center justify-center border border-cyan-500/40 bg-cyan-950/20 px-4 py-2 text-xs uppercase tracking-[0.16em] text-cyan-300 transition hover:bg-cyan-900/30"
+                className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:bg-neutral-900 hover:text-neutral-200"
               >
                 NODE.JS SETUP
               </a>
               <a
                 href={pythonGuideHref}
-                className="inline-flex items-center justify-center border border-cyan-500/40 bg-cyan-950/20 px-4 py-2 text-xs uppercase tracking-[0.16em] text-cyan-300 transition hover:bg-cyan-900/30"
+                className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:bg-neutral-900 hover:text-neutral-200"
               >
                 PYTHON SETUP
               </a>
@@ -616,11 +616,11 @@ def my_agent():
                 <button
                   type="button"
                   disabled
-                  className="inline-flex items-center justify-center border border-slate-700 bg-slate-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-slate-600 cursor-not-allowed disabled:cursor-not-allowed"
+                  className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-900 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-600 cursor-not-allowed disabled:cursor-not-allowed"
                 >
                   WITHDRAW FUNDS
                 </button>
-                <p className="mt-1 inline-flex items-center gap-1 text-[10px] text-slate-500">
+                <p className="mt-1 inline-flex items-center gap-1 text-[10px] text-neutral-600">
                   <Info className="h-3 w-3" />
                   Minimum 0.01 ETH required for withdrawal.
                 </p>
@@ -628,64 +628,64 @@ def my_agent():
             </div>
           </section>
         ) : isConnected && !forceConsumerView && isLoadingOwnedAgents ? (
-          <section className="border border-cyan-500/30 bg-slate-900 p-4">
-            <p className="text-xs uppercase tracking-[0.16em] text-cyan-300">
+          <section className="border border-neutral-800 bg-neutral-900/50 p-4 text-center">
+            <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 animate-pulse font-bold">
               Loading owned agents from live Postgres index...
             </p>
           </section>
         ) : (
           <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <article className="bg-slate-900 border border-slate-800 rounded-none p-5">
+            <article className="bg-neutral-950 border border-neutral-900 rounded-none p-5">
               <div className="mb-5 flex items-center gap-3">
-                <Wallet className="h-5 w-5 text-emerald-400" />
-                <h2 className="text-sm uppercase tracking-[0.18em] text-slate-100">Agent Vault</h2>
+                <Wallet className="h-5 w-5 text-neutral-500" />
+                <h2 className="text-sm uppercase tracking-[0.18em] text-neutral-300 font-bold">Agent Vault</h2>
               </div>
 
               {isConfirmed && (
-                <div className="mb-5 flex items-center gap-2 border border-emerald-500/50 bg-emerald-950/20 px-3 py-2">
-                  <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-                  <p className="text-xs uppercase tracking-[0.16em] text-emerald-300">
+                <div className="mb-5 flex items-center gap-2 border border-red-900/40 bg-red-950/10 px-3 py-2">
+                  <span className="h-2 w-2 bg-red-600 rounded-none shadow-none" />
+                  <p className="text-xs uppercase tracking-[0.16em] text-red-500 font-bold">
                     Deposit Confirmed // Agent Access Unlocked
                   </p>
                 </div>
               )}
 
               {isConfirmed && creditSyncState === "syncing" && (
-                <div className="mb-5 flex items-center gap-2 border border-cyan-500/40 bg-cyan-950/20 px-3 py-2">
-                  <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
-                  <p className="text-xs uppercase tracking-[0.16em] text-cyan-300">
+                <div className="mb-5 flex items-center gap-2 border border-neutral-800 bg-neutral-900 px-3 py-2">
+                  <span className="h-2 w-2 bg-neutral-500 rounded-none animate-pulse" />
+                  <p className="text-xs uppercase tracking-[0.16em] text-neutral-400 font-bold">
                     Syncing Payment Ledger...
                   </p>
                 </div>
               )}
 
               {isConfirmed && creditSyncState === "synced" && (
-                <div className="mb-5 flex items-center gap-2 border border-cyan-500/40 bg-cyan-950/20 px-3 py-2">
-                  <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
-                  <p className="text-xs uppercase tracking-[0.16em] text-cyan-300">
+                <div className="mb-5 flex items-center gap-2 border border-neutral-800 bg-neutral-900 px-3 py-2">
+                  <span className="h-2 w-2 bg-neutral-500 rounded-none" />
+                  <p className="text-xs uppercase tracking-[0.16em] text-neutral-400 font-bold">
                     Credits Synced // Available Credits: {syncedCredits ?? "--"}
                   </p>
                 </div>
               )}
 
               {isConfirmed && creditSyncState === "error" && (
-                <div className="mb-5 flex flex-col gap-2 border border-yellow-500/40 bg-yellow-950/20 px-3 py-2">
-                  <p className="text-xs uppercase tracking-[0.16em] text-yellow-300">
+                <div className="mb-5 flex flex-col gap-2 border border-red-900/40 bg-red-950/10 px-3 py-2">
+                  <p className="text-xs uppercase tracking-[0.16em] text-red-500 font-bold">
                     Credit Sync Failed // {creditSyncError ?? "Unable to refresh access credits."}
                   </p>
                   <button
                     type="button"
                     onClick={handleRetryCreditSync}
-                    className="inline-flex w-fit items-center justify-center border border-yellow-500/40 bg-slate-900 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-yellow-300 transition hover:bg-slate-800"
+                    className="inline-flex w-fit items-center justify-center border border-red-900/40 bg-red-950/20 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-red-400 transition hover:bg-red-900/30"
                   >
                     Retry Sync
                   </button>
                 </div>
               )}
 
-              <div className="mb-5 border border-slate-800 bg-slate-950 p-4">
-                <p className="mb-1 text-xs uppercase tracking-[0.16em] text-slate-400">Vault Revenue (ETH)</p>
-                <p className="text-3xl text-emerald-400">
+              <div className="mb-5 border border-neutral-900 bg-neutral-900 p-4">
+                <p className="mb-1 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Vault Revenue (ETH)</p>
+                <p className="text-3xl text-neutral-200 font-mono">
                   {isConnected
                     ? isBalancePending
                       ? "..."
@@ -694,44 +694,44 @@ def my_agent():
                 </p>
               </div>
 
-              <div className="mb-5 border border-slate-800 bg-slate-950 p-4">
-                <p className="mb-1 text-xs uppercase tracking-[0.16em] text-slate-400">Your Available Credits</p>
-                <p className="text-2xl text-cyan-300">{isConnected ? syncedCredits ?? "0" : "0"}</p>
+              <div className="mb-5 border border-neutral-900 bg-neutral-900 p-4">
+                <p className="mb-1 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Your Available Credits</p>
+                <p className="text-2xl text-neutral-200 font-mono">{isConnected ? syncedCredits ?? "0" : "0"}</p>
               </div>
 
-              <div className="mb-5 border border-slate-800 bg-slate-950 p-3">
-                <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Target Agent Wallet</p>
-                <p className="mt-1 break-all text-sm text-cyan-300">{targetAgentAddress}</p>
+              <div className="mb-5 border border-neutral-900 bg-neutral-900 p-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Target Agent Wallet</p>
+                <p className="mt-1 break-all text-sm text-neutral-400 font-mono">{targetAgentAddress}</p>
                 {usesFallbackAgentAddress && (
-                  <p className="mt-1 text-xs text-slate-500">
+                  <p className="mt-1 text-xs text-neutral-600">
                     No agent wallet found in page context. Using protocol treasury fallback for testing.
                   </p>
                 )}
               </div>
 
               <div className="space-y-4">
-                <label className="block text-xs uppercase tracking-[0.16em] text-slate-400">
+                <label className="block text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
                   Deposit ETH
                   <input
                     value={ethAmount}
                     onChange={(event) => setEthAmount(event.target.value)}
                     inputMode="decimal"
                     placeholder="0.01"
-                    className="mt-2 w-full border border-slate-700 bg-slate-950 px-3 py-2 text-white outline-none focus:border-cyan-500 rounded-none"
+                    className="mt-2 w-full border border-neutral-800 bg-neutral-950 px-3 py-2 text-white outline-none focus:border-red-600 rounded-none font-mono"
                   />
                 </label>
 
-                <div className="border border-slate-800 bg-slate-950 p-3">
-                  <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Estimated Access Credits</p>
-                  <p className="text-lg text-emerald-400">{estimatedCredits == null ? "--" : estimatedCredits.toString()}</p>
-                  <p className="mt-1 text-xs text-slate-500">
+                <div className="border border-neutral-900 bg-neutral-900 p-3">
+                  <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Estimated Access Credits</p>
+                  <p className="text-lg text-neutral-200 font-mono">{estimatedCredits == null ? "--" : estimatedCredits.toString()}</p>
+                  <p className="mt-1 text-xs text-neutral-600">
                     Price per credit: {formatEther(CREDIT_PRICE_WEI)} ETH
                   </p>
                 </div>
 
                 {isConnected && !isOnSupportedChain && (
-                  <div className="border border-yellow-500/50 bg-yellow-950/20 p-3">
-                    <p className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-yellow-500">
+                  <div className="border border-red-900/50 bg-red-950/20 p-3">
+                    <p className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-red-500 font-bold">
                       <AlertTriangle className="h-4 w-4" />
                       NETWORK MISMATCH // INITIALIZING SWITCH PROTOCOL
                     </p>
@@ -739,7 +739,7 @@ def my_agent():
                       type="button"
                       onClick={handleSwitchToPreferredChain}
                       disabled={isSwitchingChain}
-                      className="mt-3 inline-flex items-center gap-2 border border-yellow-500/40 bg-slate-900 px-4 py-2 text-xs uppercase tracking-wider text-yellow-400 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="mt-3 inline-flex items-center gap-2 border border-red-900/40 bg-neutral-900 px-4 py-2 text-xs uppercase tracking-wider text-red-400 transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {isSwitchingChain ? "Switching..." : "Switch to Base Mainnet"}
                     </button>
@@ -750,7 +750,7 @@ def my_agent():
                   type="button"
                   onClick={handlePurchase}
                   disabled={!canPurchase}
-                  className="w-full border border-slate-600 bg-slate-800 px-4 py-2 text-sm uppercase tracking-wider text-cyan-400 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="w-full border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm uppercase tracking-wider text-neutral-300 font-bold transition hover:bg-neutral-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isSwitchingChain
                     ? "Switching network..."
@@ -762,49 +762,47 @@ def my_agent():
                 </button>
 
                 {writeError && (
-                  <p className="text-xs text-cyan-400">{getErrorMessage(writeError, "Transaction failed.")}</p>
+                  <p className="text-xs text-red-500">{getErrorMessage(writeError, "Transaction failed.")}</p>
                 )}
                 {readError && (
-                  <p className="text-xs text-cyan-400">{getErrorMessage(readError, "Failed to read vault balance.")}</p>
+                  <p className="text-xs text-red-500">{getErrorMessage(readError, "Failed to read vault balance.")}</p>
                 )}
-                {switchError && <p className="text-xs text-cyan-400">{switchError}</p>}
+                {switchError && <p className="text-xs text-red-500">{switchError}</p>}
               </div>
             </article>
 
-            <article className="bg-slate-900 border border-slate-800 rounded-none p-5">
+            <article className="bg-neutral-950 border border-neutral-900 rounded-none p-5">
               <div className="mb-5 flex items-center gap-3">
-                <Code className="h-5 w-5 text-cyan-400" />
-                <h2 className="text-sm uppercase tracking-[0.18em] text-slate-100">API ACCESS // CONSUMER CONSOLE</h2>
+                <Code className="h-5 w-5 text-neutral-500" />
+                <h2 className="text-sm uppercase tracking-[0.18em] text-neutral-300 font-bold">API ACCESS // CONSUMER CONSOLE</h2>
               </div>
 
               <div className="mb-4 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setConsumerSdk("node")}
-                  className={`border px-3 py-2 text-xs uppercase tracking-[0.14em] transition ${
-                    consumerSdk === "node"
-                      ? "border-cyan-400/70 bg-cyan-500/20 text-cyan-200"
-                      : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-500 hover:text-slate-200"
-                  }`}
+                  className={`border px-3 py-2 text-xs uppercase tracking-[0.14em] transition font-bold ${consumerSdk === "node"
+                    ? "border-neutral-700 bg-neutral-800 text-neutral-200"
+                    : "border-neutral-800 bg-neutral-950 text-neutral-500 hover:border-neutral-600 hover:text-neutral-300"
+                    }`}
                 >
                   Node.js SDK
                 </button>
                 <button
                   type="button"
                   onClick={() => setConsumerSdk("python")}
-                  className={`border px-3 py-2 text-xs uppercase tracking-[0.14em] transition ${
-                    consumerSdk === "python"
-                      ? "border-cyan-400/70 bg-cyan-500/20 text-cyan-200"
-                      : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-500 hover:text-slate-200"
-                  }`}
+                  className={`border px-3 py-2 text-xs uppercase tracking-[0.14em] transition font-bold ${consumerSdk === "python"
+                    ? "border-neutral-700 bg-neutral-800 text-neutral-200"
+                    : "border-neutral-800 bg-neutral-950 text-neutral-500 hover:border-neutral-600 hover:text-neutral-300"
+                    }`}
                 >
                   Python SDK
                 </button>
               </div>
 
-              <div className="border border-slate-800 bg-slate-950 p-4">
-                <p className="mb-2 text-xs uppercase tracking-[0.16em] text-slate-400">Usage Example</p>
-                <pre className="overflow-x-auto whitespace-pre-wrap text-sm text-cyan-400">
+              <div className="border border-neutral-900 bg-neutral-900 p-4">
+                <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Usage Example</p>
+                <pre className="overflow-x-auto whitespace-pre-wrap text-sm text-neutral-300 font-mono">
                   <code>{consumerUsageExample}</code>
                 </pre>
               </div>
@@ -812,7 +810,7 @@ def my_agent():
               <button
                 type="button"
                 onClick={handleCopy}
-                className="mt-4 inline-flex items-center gap-2 border border-slate-600 bg-slate-800 px-4 py-2 text-xs uppercase tracking-wider text-cyan-400 transition hover:bg-slate-700"
+                className="mt-4 inline-flex items-center gap-2 border border-neutral-800 bg-neutral-900 px-4 py-2 text-xs uppercase tracking-wider text-neutral-400 transition hover:bg-neutral-800 hover:text-neutral-200"
               >
                 <Copy className="h-4 w-4" />
                 {copyState === "copied"
@@ -821,16 +819,16 @@ def my_agent():
               </button>
 
               {copyState === "error" && (
-                <p className="mt-2 text-xs text-cyan-400">Clipboard permission blocked. Copy manually.</p>
+                <p className="mt-2 text-xs text-red-500">Clipboard permission blocked. Copy manually.</p>
               )}
 
-              <div className="mt-5 border border-slate-800 bg-slate-950 p-4">
-                <p className="text-sm text-slate-400">
+              <div className="mt-5 border border-neutral-900 bg-neutral-900 p-4">
+                <p className="text-sm text-neutral-500">
                   {consumerSdk === "node"
                     ? "The Node SDK signs and routes verification requests to"
                     : "The Python SDK automatically routes verification requests to"}{" "}
-                  <span className="text-cyan-300">{APP_BASE_URL}/api/gate/&lt;your-service-name&gt;.</span>{" "}
-                  <span className="text-cyan-300">1 Request = 1 Credit.</span>
+                  <span className="text-neutral-300 font-mono">{APP_BASE_URL}/api/gate/&lt;your-service-name&gt;.</span>{" "}
+                  <span className="text-neutral-300 font-mono">1 Request = 1 Credit.</span>
                 </p>
               </div>
             </article>
@@ -843,7 +841,7 @@ def my_agent():
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={<main className="min-h-screen bg-slate-950 font-mono text-slate-400" />}>
+    <Suspense fallback={<main className="min-h-screen font-mono text-neutral-400" />}>
       <DashboardPageContent />
     </Suspense>
   );

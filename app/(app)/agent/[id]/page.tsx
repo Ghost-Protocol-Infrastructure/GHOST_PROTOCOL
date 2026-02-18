@@ -27,10 +27,10 @@ type AgentSummary = {
 };
 
 const tierClassName: Record<AgentSummary["tier"], string> = {
-  WHALE: "border-emerald-400/40 bg-emerald-500/20 text-emerald-300",
-  ACTIVE: "border-amber-400/40 bg-amber-500/20 text-amber-300",
-  NEW: "border-slate-500/40 bg-slate-500/20 text-slate-300",
-  GHOST: "border-slate-700/60 bg-slate-800/40 text-slate-500",
+  WHALE: "border-neutral-800 bg-neutral-900 text-neutral-300",
+  ACTIVE: "border-neutral-800 bg-neutral-900 text-neutral-300",
+  NEW: "border-neutral-800 bg-neutral-900 text-neutral-500",
+  GHOST: "border-neutral-800 bg-neutral-900 text-neutral-600",
 };
 
 const toTitleCase = (value: string): string =>
@@ -94,80 +94,80 @@ export default async function AgentProfilePage({ params, searchParams }: AgentPa
   const agentDescription = normalizeAgentDescription(agent.description);
 
   return (
-    <main className="min-h-screen bg-slate-950 font-mono text-slate-300">
+    <main className="min-h-screen font-mono text-neutral-400 bg-neutral-950 [background-image:none]">
       <div className="mx-auto max-w-5xl px-4 py-10 md:px-8">
         <div className="mb-6 flex items-center justify-between">
-          <h1 className="text-sm uppercase tracking-[0.18em] text-slate-400">Agent Profile</h1>
+          <h1 className="text-sm uppercase tracking-[0.18em] text-neutral-500 font-bold">Agent Profile</h1>
           <Link
             href="/rank"
-            className="border border-slate-700 bg-slate-900 px-3 py-2 text-xs uppercase tracking-[0.12em] text-slate-300 transition hover:border-cyan-500/50 hover:text-cyan-300"
+            className="border border-neutral-900 bg-neutral-950 px-3 py-2 text-xs uppercase tracking-[0.12em] text-neutral-400 transition hover:border-red-600 hover:text-red-500 font-bold"
           >
             Back to Rank
           </Link>
         </div>
 
-        <section className="mb-6 border border-cyan-500/20 bg-slate-900/80 p-6">
+        <section className="mb-6 border border-neutral-900 bg-neutral-950 p-6">
           <div className="mb-4 flex flex-wrap items-center gap-3">
-            <h2 className="text-2xl font-semibold tracking-tight text-slate-100">{agent.name || `Agent #${agent.agentId}`}</h2>
-            <span className="border border-violet-500/40 bg-violet-500/20 px-2 py-1 text-xs uppercase tracking-[0.16em] text-violet-200">
+            <h2 className="text-2xl font-bold tracking-tight text-neutral-100">{agent.name || `Agent #${agent.agentId}`}</h2>
+            <span className="border border-red-900/30 bg-red-950/10 px-2 py-1 text-xs uppercase tracking-[0.16em] text-red-600 font-bold">
               #{agent.agentId}
             </span>
-            <span className={`border px-2 py-1 text-xs uppercase tracking-[0.16em] ${tierClassName[agent.tier]}`}>
+            <span className={`border px-2 py-1 text-xs uppercase tracking-[0.16em] font-bold ${tierClassName[agent.tier]}`}>
               {agent.tier}
             </span>
           </div>
 
           <div className="grid grid-cols-1 gap-4 text-xs md:grid-cols-2">
-            <div className="border border-slate-800 bg-slate-950 p-3">
-              <p className="mb-1 uppercase tracking-[0.16em] text-slate-500">Creator Wallet</p>
-              <p className="text-slate-300" title={agent.creator}>
+            <div className="border border-neutral-900 bg-neutral-900 p-3">
+              <p className="mb-1 uppercase tracking-[0.16em] text-neutral-500 font-bold">Creator Wallet</p>
+              <p className="text-neutral-300 font-mono" title={agent.creator}>
                 {truncateAddress(agent.creator)}
               </p>
             </div>
-            <div className="border border-slate-800 bg-slate-950 p-3">
-              <p className="mb-1 uppercase tracking-[0.16em] text-slate-500">Owner Wallet</p>
-              <p className="text-slate-300" title={ownerAddress}>
+            <div className="border border-neutral-900 bg-neutral-900 p-3">
+              <p className="mb-1 uppercase tracking-[0.16em] text-neutral-500 font-bold">Owner Wallet</p>
+              <p className="text-neutral-300 font-mono" title={ownerAddress}>
                 {truncateAddress(ownerAddress)}
               </p>
             </div>
-            <div className="border border-slate-800 bg-slate-950 p-3">
-              <p className="mb-1 uppercase tracking-[0.16em] text-slate-500">Status</p>
-              <p className="text-slate-300">{statusLabel}</p>
+            <div className="border border-neutral-900 bg-neutral-900 p-3">
+              <p className="mb-1 uppercase tracking-[0.16em] text-neutral-500 font-bold">Status</p>
+              <p className="text-neutral-300 font-mono">{statusLabel}</p>
             </div>
-            <div className="border border-slate-800 bg-slate-950 p-3">
-              <p className="mb-1 uppercase tracking-[0.16em] text-slate-500">Rank Score</p>
-              <p className="text-slate-300">{agent.rankScore.toFixed(2)}</p>
+            <div className="border border-neutral-900 bg-neutral-900 p-3">
+              <p className="mb-1 uppercase tracking-[0.16em] text-neutral-500 font-bold">Rank Score</p>
+              <p className="text-neutral-300 font-mono">{agent.rankScore.toFixed(2)}</p>
             </div>
-            <div className="border border-slate-800 bg-slate-950 p-3">
-              <p className="mb-1 uppercase tracking-[0.16em] text-slate-500">Reputation</p>
-              <p className="text-slate-300">{agent.reputation.toFixed(2)}</p>
+            <div className="border border-neutral-900 bg-neutral-900 p-3">
+              <p className="mb-1 uppercase tracking-[0.16em] text-neutral-500 font-bold">Reputation</p>
+              <p className="text-neutral-300 font-mono">{agent.reputation.toFixed(2)}</p>
             </div>
-            <div className="border border-slate-800 bg-slate-950 p-3">
-              <p className="mb-1 uppercase tracking-[0.16em] text-slate-500">Transactions</p>
-              <p className="text-slate-300">{agent.txCount}</p>
+            <div className="border border-neutral-900 bg-neutral-900 p-3">
+              <p className="mb-1 uppercase tracking-[0.16em] text-neutral-500 font-bold">Transactions</p>
+              <p className="text-neutral-300 font-mono">{agent.txCount}</p>
             </div>
           </div>
 
           {agentDescription ? (
-            <div className="mt-4 border border-slate-800 bg-slate-950 p-3 text-sm text-slate-400">
+            <div className="mt-4 border border-neutral-900 bg-neutral-900 p-3 text-sm text-neutral-400 font-mono">
               {agentDescription}
             </div>
           ) : null}
         </section>
 
-        <section className="border border-emerald-500/25 bg-emerald-950/10 p-6">
-          <h3 className="mb-3 text-sm uppercase tracking-[0.16em] text-emerald-300">Connect</h3>
-          <p className="mb-3 text-sm text-slate-400">
+        <section className="border border-neutral-900 bg-neutral-950 p-6">
+          <h3 className="mb-3 text-sm uppercase tracking-[0.16em] text-neutral-100 font-bold">Connect</h3>
+          <p className="mb-3 text-sm text-neutral-400">
             Choose your SDK runtime and copy the integration starter below.
           </p>
-          <div className="border border-emerald-500/30 bg-slate-950 p-4">
-            <p className="mb-2 text-xs uppercase tracking-[0.16em] text-slate-500">Agent ID</p>
-            <code className="block break-all text-lg text-emerald-300">{agent.agentId}</code>
+          <div className="border border-neutral-800 bg-neutral-900 p-4">
+            <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Agent ID</p>
+            <code className="block break-all text-lg text-neutral-200 font-mono">{agent.agentId}</code>
           </div>
           <div className="mt-4">
             <IntegrationTabs agentId={agent.agentId} initialTab={initialSdkTab} />
           </div>
-          <p className="mt-3 text-xs text-slate-500">
+          <p className="mt-3 text-xs text-neutral-500">
             The snippets above are pre-filled with this agent identifier so onboarding stays consistent.
           </p>
         </section>

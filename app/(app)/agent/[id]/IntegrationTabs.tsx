@@ -13,10 +13,9 @@ const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/, "");
 const APP_BASE_URL = normalizeBaseUrl(process.env.NEXT_PUBLIC_BASE_URL?.trim() || "https://ghostprotocol.cc");
 
 const tabButtonClass = (isActive: boolean): string =>
-  `border px-3 py-2 text-xs uppercase tracking-[0.14em] transition ${
-    isActive
-      ? "border-cyan-400/70 bg-cyan-500/20 text-cyan-200"
-      : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-500 hover:text-slate-200"
+  `border px-3 py-2 text-xs uppercase tracking-[0.14em] transition ${isActive
+    ? "border-neutral-700 bg-neutral-800 text-neutral-200"
+    : "border-neutral-800 bg-neutral-950 text-neutral-500 hover:border-neutral-600 hover:text-neutral-300"
   }`;
 
 export default function IntegrationTabs({ agentId, initialTab = "node" }: IntegrationTabsProps) {
@@ -81,26 +80,26 @@ def run_agent():
 
       {activeTab === "node" ? (
         <div className="space-y-3">
-          <div className="border border-slate-700 bg-slate-950 p-3">
-            <p className="mb-2 text-xs uppercase tracking-[0.16em] text-slate-500">Install</p>
-            <code className="text-sm text-cyan-300">npm install @ghost/sdk</code>
+          <div className="border border-neutral-900 bg-neutral-900 p-3">
+            <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Install</p>
+            <code className="text-sm text-neutral-300 font-mono">npm install @ghost/sdk</code>
           </div>
-          <div className="border border-slate-700 bg-slate-950 p-3">
-            <p className="mb-2 text-xs uppercase tracking-[0.16em] text-slate-500">TypeScript</p>
-            <pre className="overflow-x-auto whitespace-pre-wrap text-sm text-cyan-300">
+          <div className="border border-neutral-900 bg-neutral-900 p-3">
+            <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">TypeScript</p>
+            <pre className="overflow-x-auto whitespace-pre-wrap text-sm text-neutral-300 font-mono">
               <code>{nodeSnippet}</code>
             </pre>
           </div>
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="border border-slate-700 bg-slate-950 p-3">
-            <p className="mb-2 text-xs uppercase tracking-[0.16em] text-slate-500">Install</p>
-            <code className="text-sm text-cyan-300">pip install ghost-gate</code>
+          <div className="border border-neutral-900 bg-neutral-900 p-3">
+            <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Install</p>
+            <code className="text-sm text-neutral-300 font-mono">pip install ghost-gate</code>
           </div>
-          <div className="border border-slate-700 bg-slate-950 p-3">
-            <p className="mb-2 text-xs uppercase tracking-[0.16em] text-slate-500">Python</p>
-            <pre className="overflow-x-auto whitespace-pre-wrap text-sm text-cyan-300">
+          <div className="border border-neutral-900 bg-neutral-900 p-3">
+            <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Python</p>
+            <pre className="overflow-x-auto whitespace-pre-wrap text-sm text-neutral-300 font-mono">
               <code>{pythonSnippet}</code>
             </pre>
           </div>

@@ -107,60 +107,60 @@ const getBaseNetworkStatusDisplay = (syncHealth: SyncHealth): NetworkStatusDispl
   switch (syncHealth) {
     case "live":
       return {
-        label: "live_on_base",
-        description: "Systems nominal. Real-time data.",
-        textClassName: "text-cyan-300",
-        descriptionClassName: "text-emerald-300/90",
-        pingClassName: "bg-emerald-400",
-        dotClassName: "bg-emerald-500",
-        dotShadowClassName: "shadow-[0_0_10px_#34d399]",
+        label: "LIVE_ON_BASE",
+        description: "Systems nominal Real-time data",
+        textClassName: "text-neutral-300",
+        descriptionClassName: "text-neutral-500",
+        pingClassName: "bg-red-500",
+        dotClassName: "bg-red-600",
+        dotShadowClassName: "shadow-none",
         showPing: true,
       };
     case "stale":
       return {
-        label: "sync_lag",
-        description: "Indexer is behind by 1+ hours.",
-        textClassName: "text-amber-300",
-        descriptionClassName: "text-amber-300/90",
-        pingClassName: "bg-amber-300",
-        dotClassName: "bg-amber-400",
-        dotShadowClassName: "shadow-[0_0_10px_rgba(251,191,36,0.75)]",
+        label: "SYNC_LAG",
+        description: "Indexer is behind by 1+ hours",
+        textClassName: "text-yellow-500",
+        descriptionClassName: "text-yellow-500/90",
+        pingClassName: "bg-yellow-500",
+        dotClassName: "bg-yellow-600",
+        dotShadowClassName: "shadow-none",
         showPing: true,
       };
     case "offline":
       return {
-        label: "signal_lost",
+        label: "LOST_SIGNAL",
         description: "Indexer is down",
-        textClassName: "text-rose-300",
-        descriptionClassName: "text-rose-300/90",
-        pingClassName: "bg-rose-300",
-        dotClassName: "bg-rose-500",
-        dotShadowClassName: "shadow-[0_0_10px_rgba(244,63,94,0.75)]",
+        textClassName: "text-red-500",
+        descriptionClassName: "text-red-500/90",
+        pingClassName: "bg-red-500",
+        dotClassName: "bg-red-600",
+        dotShadowClassName: "shadow-none",
         showPing: true,
       };
     default:
       return {
-        label: "sync_status_unknown",
-        description: "Unable to verify indexer health.",
-        textClassName: "text-slate-400",
-        descriptionClassName: "text-slate-500",
-        pingClassName: "bg-slate-500",
-        dotClassName: "bg-slate-500",
-        dotShadowClassName: "shadow-[0_0_10px_rgba(100,116,139,0.65)]",
+        label: "SYNC_UNKNOWN",
+        description: "Unable to verify indexer health",
+        textClassName: "text-neutral-600",
+        descriptionClassName: "text-neutral-700",
+        pingClassName: "bg-neutral-700",
+        dotClassName: "bg-neutral-800",
+        dotShadowClassName: "shadow-none",
         showPing: false,
       };
   }
 };
 
 const MEGAETH_STATUS_DISPLAY: NetworkStatusDisplay = {
-  label: "wip_no_verified_data",
-  description: "MegaETH telemetry is not verified yet.",
-  textClassName: "text-fuchsia-300",
-  descriptionClassName: "text-fuchsia-300/85",
-  pingClassName: "bg-fuchsia-400",
-  dotClassName: "bg-fuchsia-500",
-  dotShadowClassName: "shadow-[0_0_10px_rgba(232,121,249,0.75)]",
-  showPing: true,
+  label: "MEGAETH_WIP",
+  description: "MegaETH telemetry is not verified yet",
+  textClassName: "text-neutral-500",
+  descriptionClassName: "text-neutral-600",
+  pingClassName: "bg-neutral-500",
+  dotClassName: "bg-neutral-600",
+  dotShadowClassName: "shadow-none",
+  showPing: false,
 };
 
 const parseTxCount = (rawVolume: string): number => {
@@ -383,30 +383,24 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-950 p-8 max-w-7xl mx-auto space-y-8 mb-20 relative z-[50] font-mono text-slate-300">
+    <>
+      <main className="min-h-screen p-8 pb-20 max-w-7xl mx-auto space-y-12 relative z-[50] font-mono text-neutral-400 bg-neutral-950 [background-image:none] border-l border-r border-neutral-900">
       <Navbar />
 
-      <section className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="relative w-full max-w-xs">
+      <section className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-neutral-800 pb-8">
+        <div className="relative w-full max-w-xs group">
           <select
             value={networkSelectValue}
             onChange={(event) => setNetwork(event.target.value === "base" ? "BASE" : "MEGAETH")}
-            className="w-full appearance-none border border-slate-700 bg-slate-900 py-2 pl-3 pr-8 text-xs font-mono uppercase tracking-[0.14em] text-slate-300 outline-none transition focus:border-cyan-400 focus:shadow-[0_0_12px_rgba(34,211,238,0.25)]"
+            className="w-full appearance-none border border-neutral-800 bg-neutral-950 py-3 pl-4 pr-10 text-xs font-bold uppercase tracking-widest text-neutral-300 outline-none transition-all hover:border-neutral-600 focus:border-red-600 rounded-none"
             aria-label="Select network"
           >
-            <option value="base">BASE (LIVE)</option>
-            <option value="megaeth">MEGAETH (WIP)</option>
+            <option value="base">BASE_MAINNET</option>
+            <option value="megaeth">MEGAETH_TESTNET</option>
           </select>
-          <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-slate-500">
-            <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" aria-hidden="true">
-              <path
-                d="M5.25 7.75L10 12.5l4.75-4.75"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
+          <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-neutral-500 group-hover:text-neutral-300 transition-colors">
+            <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2">
+              <path d="M19 9l-7 7-7-7" strokeLinecap="square" strokeLinejoin="miter" />
             </svg>
           </span>
         </div>
@@ -415,91 +409,78 @@ export default function Home() {
           type="text"
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
-          placeholder="search_agent_id_or_owner..."
-          className="w-full max-w-sm border border-slate-700 bg-slate-900 px-3 py-2 text-xs tracking-[0.14em] text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/40"
+          placeholder="SEARCH_AGENT_ID..."
+          className="w-full md:flex-1 border border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-bold tracking-widest text-neutral-300 placeholder:text-neutral-700 focus:outline-none focus:border-red-600 transition-all rounded-none uppercase"
         />
       </section>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="p-4 rounded-sm bg-slate-950/50 border border-violet-500/20 backdrop-blur-sm transform-gpu group hover:border-violet-500/40 transition-colors">
-          <div className="relative inline-flex mb-2">
-            <div className="absolute inset-0 bg-violet-500/30" aria-hidden="true"></div>
-            <span className="relative text-white text-[10px] tracking-[0.2em]">{"//total_agents"}</span>
-          </div>
-          <div className="text-3xl text-white font-regular drop-shadow-[0_0_5px_rgba(255,255,255,0.3)]">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-0 border border-neutral-800 bg-neutral-950 text-neutral-400">
+        <div className="p-6 border-r border-neutral-800 group hover:bg-neutral-900/30 transition-colors">
+          <div className="mb-4 text-xs tracking-widest uppercase text-neutral-600 font-bold">Total Agents</div>
+          <div className="text-3xl text-neutral-100 font-bold">
             {network === "BASE" ? (isLoadingLeads ? "--" : totalAgentsCount) : 0}
           </div>
         </div>
-        <div className="p-4 rounded-sm bg-slate-950/50 border border-violet-500/20 backdrop-blur-sm transform-gpu group hover:border-violet-500/40 transition-colors">
-          <div className="relative inline-flex mb-2">
-            <div className="absolute inset-0 bg-violet-500/30" aria-hidden="true"></div>
-            <span className="relative text-white text-[10px] tracking-[0.2em]">{"//network_status"}</span>
-          </div>
-          <div className="text-sm font-regular flex flex-col items-start gap-1">
+        <div className="p-6 border-r border-neutral-800 group hover:bg-neutral-900/30 transition-colors">
+          <div className="mb-4 text-xs tracking-widest uppercase text-neutral-600 font-bold">Network Status</div>
+          <div className="text-sm font-bold flex flex-col items-start gap-1">
             <div className="flex items-center gap-2">
               <span className="relative flex h-2 w-2">
                 {networkStatusDisplay.showPing ? (
                   <span
-                    className={`animate-ping absolute inline-flex h-full w-full rounded-full ${networkStatusDisplay.pingClassName} opacity-75 will-change-[transform,opacity]`}
+                    className={`animate-ping absolute inline-flex h-full w-full rounded-full ${networkStatusDisplay.pingClassName} opacity-75`}
                   ></span>
                 ) : null}
                 <span
-                  className={`relative inline-flex rounded-full h-2 w-2 ${networkStatusDisplay.dotClassName} ${networkStatusDisplay.dotShadowClassName}`}
+                  className={`relative inline-flex rounded-full h-2 w-2 ${networkStatusDisplay.dotClassName}`}
                 ></span>
               </span>
-              <span className={networkStatusDisplay.textClassName}>[{networkStatusDisplay.label}]</span>
+              <span className={networkStatusDisplay.textClassName}>{networkStatusDisplay.label}</span>
             </div>
-            <p className={`text-[11px] leading-tight ${networkStatusDisplay.descriptionClassName}`}>
+            <p className={`text-[11px] leading-tight font-normal ${networkStatusDisplay.descriptionClassName}`}>
               {networkStatusDisplay.description}
             </p>
           </div>
         </div>
-        <div className="p-4 rounded-sm bg-slate-950/50 border border-violet-500/20 backdrop-blur-sm transform-gpu group hover:border-violet-500/40 transition-colors">
-          <div className="relative inline-flex mb-2">
-            <div className="absolute inset-0 bg-violet-500/30" aria-hidden="true"></div>
-            <span className="relative text-white text-[10px] tracking-[0.2em]">{"//sync_height"}</span>
-          </div>
-          <div className="text-3xl text-white font-regular drop-shadow-[0_0_5px_rgba(255,255,255,0.3)]">
+        <div className="p-6 border-r border-neutral-800 group hover:bg-neutral-900/30 transition-colors">
+          <div className="mb-4 text-xs tracking-widest uppercase text-neutral-600 font-bold">Sync Height</div>
+          <div className="text-3xl text-neutral-100 font-bold">
             {network === "BASE" ? (isLoadingLeads ? "--" : formatBlockHeight(lastSyncedBlock)) : "--"}
           </div>
         </div>
-        <div className="p-4 rounded-sm bg-slate-950/50 border border-violet-500/20 backdrop-blur-sm transform-gpu group hover:border-violet-500/40 transition-colors">
-          <div className="relative inline-flex mb-2">
-            <div className="absolute inset-0 bg-violet-500/20" aria-hidden="true"></div>
-            <span className="relative text-white text-[10px] tracking-[0.2em]">{"//claimed_agents"}</span>
-          </div>
-          <div className="text-sm text-cyan-300">
+        <div className="p-6 group hover:bg-neutral-900/30 transition-colors">
+          <div className="mb-4 text-xs tracking-widest uppercase text-neutral-600 font-bold">Claimed Agents</div>
+          <div className="text-xl text-neutral-100 font-bold">
             {network === "BASE" ? (isLoadingLeads ? "--/--" : `${claimedCount}/${totalAgentsCount}`) : "--"}
           </div>
         </div>
       </div>
 
-      <section className="relative bg-slate-950/80 backdrop-blur-md border border-cyan-500/30 rounded-lg overflow-hidden shadow-[0_0_40px_-10px_rgba(34,211,238,0.25)]">
-        <div className="h-1 w-full bg-gradient-to-r from-cyan-600 via-sky-500 to-cyan-600 opacity-50"></div>
-        <div className="grid grid-cols-12 gap-0 border-b border-cyan-500/30 bg-cyan-950/10 text-xs uppercase tracking-wider text-slate-400">
-          <div className="col-span-1 py-3 px-4 border-r border-cyan-500/20">RANK</div>
-          <div className="col-span-3 py-3 px-4 border-r border-cyan-500/20">AGENT</div>
-          <div className="col-span-1 py-3 px-4 border-r border-cyan-500/20 text-right">TXS</div>
-          <div className="col-span-2 py-3 px-4 border-r border-cyan-500/20 text-right">REPUTATION</div>
-          <div className="col-span-2 py-3 px-4 border-r border-cyan-500/20 text-right">YIELD</div>
-          <div className="col-span-1 py-3 px-4 border-r border-cyan-500/20 text-right">UPTIME</div>
-          <div className="col-span-2 py-3 px-4 text-right">ACTION</div>
+      <section className="relative border border-neutral-800 bg-neutral-950">
+        <div className="grid grid-cols-12 gap-0 border-b border-neutral-800 bg-neutral-950 text-xs uppercase tracking-widest text-neutral-600 font-bold">
+          <div className="col-span-1 py-4 px-6 border-r border-neutral-800">RANK</div>
+          <div className="col-span-3 py-4 px-6 border-r border-neutral-800">AGENT</div>
+          <div className="col-span-1 py-4 px-6 border-r border-neutral-800 text-right">TXS</div>
+          <div className="col-span-2 py-4 px-6 border-r border-neutral-800 text-right">REPUTATION</div>
+          <div className="col-span-2 py-4 px-6 border-r border-neutral-800 text-right">YIELD</div>
+          <div className="col-span-1 py-4 px-6 border-r border-neutral-800 text-right">UPTIME</div>
+          <div className="col-span-2 py-4 px-6 text-right">ACTION</div>
         </div>
 
         {network !== "BASE" ? (
-          <div className="py-16 text-center text-xs uppercase tracking-[0.16em] text-slate-600">
+          <div className="py-24 text-center text-xs uppercase tracking-[0.2em] text-neutral-600">
             MegaETH telemetry is not verified yet. Switch to BASE (LIVE).
           </div>
         ) : isLoadingLeads ? (
-          <div className="py-16 text-center text-xs uppercase tracking-[0.16em] text-slate-600">
-            Loading live agents from Postgres...
+          <div className="py-24 text-center text-xs uppercase tracking-[0.2em] text-neutral-600 animate-pulse">
+            Loading live agents...
           </div>
         ) : loadError ? (
-          <div className="py-16 text-center text-xs uppercase tracking-[0.16em] text-rose-400">
+          <div className="py-24 text-center text-xs uppercase tracking-[0.2em] text-red-500">
             Live data fetch failed: {loadError}
           </div>
         ) : (
-          <div className="divide-y divide-cyan-500/10">
+          <div className="divide-y divide-neutral-800">
             {rankedAgents.map((agent) => {
               const isOwner = userAddress?.toLowerCase() === agent.owner.toLowerCase();
               const safeYieldEth = agent.isClaimed ? Math.max(0, agent.yieldEth ?? 0) : 0;
@@ -507,74 +488,73 @@ export default function Home() {
               const showYieldZeroState = agent.isClaimed && safeYieldEth === 0;
               const showUptimeZeroState = agent.isClaimed && safeUptimePct === 0;
               const yieldClassName = !agent.isClaimed
-                ? "text-slate-600"
+                ? "text-neutral-600"
                 : showYieldZeroState
-                  ? "text-slate-400"
-                  : "text-emerald-300";
+                  ? "text-neutral-500"
+                  : "text-neutral-300";
               const uptimeClassName = !agent.isClaimed
-                ? "text-slate-600"
+                ? "text-neutral-600"
                 : showUptimeZeroState
-                  ? "text-slate-400"
-                  : "text-cyan-300";
+                  ? "text-neutral-500"
+                  : "text-neutral-300";
 
               return (
                 <div
                   key={`${agent.agentId}-${agent.owner}`}
-                  className="grid grid-cols-12 gap-0 items-center border-b border-white/5 hover:bg-white/5 transition-colors"
+                  className="grid grid-cols-12 gap-0 items-center hover:bg-neutral-900/30 transition-colors group"
                 >
-                  <div className="col-span-1 py-3 px-4 border-r border-cyan-500/10 text-slate-300">{agent.rank}</div>
-                  <div className="col-span-3 py-3 px-4 border-r border-cyan-500/10">
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-100">#{agent.agentId}</span>
-                      <span className={`inline-flex border px-2 py-1 text-[11px] tracking-wider ${tierClassName[agent.tier]}`}>
+                  <div className="col-span-1 py-4 px-6 border-r border-neutral-800 text-neutral-400 font-bold">{String(agent.rank).padStart(2, '0')}</div>
+                  <div className="col-span-3 py-4 px-6">
+                    <div className="flex items-center gap-3">
+                      <span className="text-neutral-200 font-bold">#{agent.agentId}</span>
+                      <span className={`inline-flex border px-2 py-0.5 text-[10px] tracking-widest uppercase font-bold ${tierClassName[agent.tier]}`}>
                         {agent.tier}
                       </span>
                       {agent.isClaimed && (
-                        <span className="inline-flex shrink-0 items-center border border-emerald-400/50 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-300 whitespace-nowrap">
+                        <span className="inline-flex shrink-0 items-center border border-red-900/30 bg-red-950/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-red-600 whitespace-nowrap">
                           RESERVED
                         </span>
                       )}
                     </div>
-                    <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-slate-600">{agent.displayName}</div>
-                    <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                    <div className="mt-2 text-[10px] uppercase tracking-widest text-neutral-500">{agent.displayName}</div>
+                    <div className="mt-1 flex items-center gap-2 text-[10px] text-neutral-600 font-mono">
                       <span title={agent.owner}>{truncateAddress(agent.owner)}</span>
                       <button
                         type="button"
                         onClick={() => handleCopyOwner(agent.owner)}
-                        className="inline-flex items-center justify-center border border-slate-700 px-1.5 py-1 text-slate-400 transition hover:border-cyan-500/50 hover:text-cyan-300"
+                        className="inline-flex items-center justify-center border border-neutral-800 px-1 py-0.5 text-neutral-500 transition hover:border-neutral-600 hover:text-neutral-300"
                         aria-label={`Copy ${agent.owner}`}
                         title={copiedOwner === agent.owner ? "Copied" : "Copy full address"}
                       >
-                        <Copy className="h-3.5 w-3.5" />
+                        <Copy className="h-3 w-3" />
                       </button>
                     </div>
                   </div>
-                  <div className="col-span-1 py-3 px-4 border-r border-cyan-500/10 text-right text-slate-300">{agent.txCount}</div>
-                  <div className={`col-span-2 py-3 px-4 border-r border-cyan-500/10 text-right ${reputationColor(agent.reputationScore)}`}>
+                  <div className="col-span-1 py-4 px-6 border-l border-r border-neutral-800 text-right text-neutral-400 font-mono">{agent.txCount}</div>
+                  <div className={`col-span-2 py-4 px-6 border-r border-neutral-800 text-right font-mono ${reputationColor(agent.reputationScore)}`}>
                     {formatReputation(agent.reputationScore)}
                   </div>
-                  <div className={`col-span-2 py-3 px-4 border-r border-cyan-500/10 text-right ${yieldClassName}`}>
+                  <div className={`col-span-2 py-4 px-6 border-r border-neutral-800 text-right font-mono ${yieldClassName}`}>
                     {agent.isClaimed ? formatYield(safeYieldEth) : "---"}
                   </div>
-                  <div className={`col-span-1 py-3 px-4 border-r border-cyan-500/10 text-right ${uptimeClassName}`}>
+                  <div className={`col-span-1 py-4 px-6 border-r border-neutral-800 text-right font-mono ${uptimeClassName}`}>
                     {agent.isClaimed ? formatUptime(safeUptimePct) : "---"}
                   </div>
-                  <div className="col-span-2 py-3 px-4 text-right">
+                  <div className="col-span-2 py-4 px-6 text-right">
                     {!userAddress ? (
-                      <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
-                        CONNECT WALLET FOR ACCESS
+                      <span className="text-[10px] uppercase tracking-widest text-neutral-600 font-bold">
+                        CONNECT_WALLET
                       </span>
                     ) : (
                       <button
                         type="button"
                         onClick={() => handleOpenDashboard(isOwner ? "merchant" : "consumer", agent.agentId, agent.owner)}
-                        className={`inline-flex min-w-[132px] items-center justify-center px-3 py-2 text-xs uppercase tracking-[0.12em] font-mono border transition ${
-                          isOwner
-                            ? "bg-emerald-500 text-black border-emerald-400/40 hover:bg-emerald-400"
-                            : "text-cyan-400 border-cyan-400/20 hover:bg-cyan-400/10"
-                        }`}
+                        className={`inline-flex min-w-[120px] items-center justify-center px-4 py-3 text-[10px] uppercase tracking-widest font-bold border transition-colors duration-200 ${isOwner
+                          ? "bg-neutral-100 text-neutral-950 border-neutral-100 hover:bg-neutral-300 hover:border-neutral-300"
+                          : "text-neutral-400 border-neutral-800 hover:text-neutral-100 hover:border-neutral-100"
+                          }`}
                       >
-                        {isOwner ? "ACTIVATE" : "ACCESS"}
+                        {isOwner ? "MANAGE" : "ACCESS_TERMINAL"}
                       </button>
                     )}
                   </div>
@@ -583,11 +563,42 @@ export default function Home() {
             })}
 
             {rankedAgents.length === 0 && (
-              <div className="py-16 text-center text-xs uppercase tracking-[0.16em] text-slate-600">No agents match your filter.</div>
+              <div className="py-24 text-center text-xs uppercase tracking-[0.2em] text-neutral-600">No agents match your filter.</div>
             )}
           </div>
         )}
       </section>
-    </main>
+      </main>
+
+      <footer className="border-t border-neutral-900 bg-neutral-950 py-12 px-6">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-end gap-8">
+          <div>
+            <div className="text-xs text-neutral-600 mb-4 font-bold tracking-widest">
+              GHOST_PROTOCOL_INFRASTRUCTURE
+            </div>
+            <div className="text-[10px] text-neutral-700 max-w-sm leading-relaxed">
+              Indexing ERC-8004 registries on Base &amp; MegaETH.
+              <br />
+              All systems nominal. No warranties implied.
+              <br />
+              © 2026 Ghost Protocol.
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-12 text-xs tracking-wider uppercase">
+            <div className="flex flex-col gap-3">
+              <span className="text-neutral-500 font-bold mb-1">Network</span>
+              <a href="#" className="hover:text-red-500 transition-colors">Base (L2)</a>
+              <a href="#" className="hover:text-red-500 transition-colors">MegaETH</a>
+            </div>
+            <div className="flex flex-col gap-3">
+              <span className="text-neutral-500 font-bold mb-1">Uplink</span>
+              <a href="https://twitter.com/GhostProtocol_0" target="_blank" rel="noreferrer" className="hover:text-red-500 transition-colors">Twitter_X</a>
+              <a href="https://github.com/Ghost-Protocol-Infrastructure" target="_blank" rel="noreferrer" className="hover:text-red-500 transition-colors">Github</a>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </>
   );
 }

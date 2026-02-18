@@ -4,7 +4,7 @@ export default function AppLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <div className="app-shell font-mono bg-slate-950 text-slate-400 selection:bg-violet-500/30 selection:text-violet-200">
+    <div className="app-shell font-mono bg-neutral-950 text-neutral-400 selection:bg-red-500/30 selection:text-red-200 [background-image:none]">
       {children}
     </div>
   );
