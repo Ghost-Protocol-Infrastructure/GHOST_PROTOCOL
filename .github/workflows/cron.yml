@@ -13,14 +13,16 @@ permissions:
 
 concurrency:
   group: data-refresh
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   data-refresh:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       POSTGRES_PRISMA_URL: ${{ secrets.POSTGRES_PRISMA_URL }}
       POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}
+      BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
 
     steps:
       - name: Checkout code

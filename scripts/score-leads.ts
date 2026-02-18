@@ -6,6 +6,8 @@ const BASE_RPC_URL = process.env.BASE_RPC_URL?.trim() || "https://mainnet.base.o
 const CONCURRENCY_LIMIT = 5;
 const BATCH_DELAY_MS = 100;
 const UPDATE_BATCH_SIZE = 100;
+const HEARTBEAT_INTERVAL = 10;
+const DB_RECONNECT_THRESHOLD_MS = 5 * 60_000;
 
 const UNCLAIMED_REPUTATION_CAP = 80;
 const REPUTATION_TX_WEIGHT = 0.3;
@@ -112,6 +114,7 @@ const fetchTxCountsByCreator = async (
 
   const publicClient = buildClient();
   let failures = 0;
+  const total = normalizedCreators.length;
 
   for (let index = 0; index < normalizedCreators.length; index += CONCURRENCY_LIMIT) {
     const batch = normalizedCreators.slice(index, index + CONCURRENCY_LIMIT);
@@ -129,6 +132,10 @@ const fetchTxCountsByCreator = async (
         }
       }),
     );
+    const processed = Math.min(index + batch.length, total);
+    if (processed % HEARTBEAT_INTERVAL === 0 || processed === total) {
+      console.log(`Heartbeat: fetched txCounts ${processed}/${total} creators`);
+    }
 
     if (index + CONCURRENCY_LIMIT < normalizedCreators.length) {
       await sleep(BATCH_DELAY_MS);
@@ -139,6 +146,7 @@ const fetchTxCountsByCreator = async (
 };
 
 const applyScoreUpdates = async (updates: ScoreUpdate[]): Promise<void> => {
+  const total = updates.length;
   for (let index = 0; index < updates.length; index += UPDATE_BATCH_SIZE) {
     const chunk = updates.slice(index, index + UPDATE_BATCH_SIZE);
 
@@ -159,10 +167,14 @@ const applyScoreUpdates = async (updates: ScoreUpdate[]): Promise<void> => {
         }),
       ),
     );
+
+    const persisted = Math.min(index + chunk.length, total);
+    console.log(`Heartbeat: persisted ${persisted}/${total} score updates`);
   }
 };
 
 async function main(): Promise<void> {
+  const startedAt = Date.now();
   const agents = await prisma.agent.findMany({
     select: {
       address: true,
@@ -192,7 +204,11 @@ async function main(): Promise<void> {
     .filter((value) => value > 0);
   const maxClaimedYield = claimedYields.length > 0 ? Math.max(...claimedYields) : 0;
 
-  const updates: ScoreUpdate[] = agents.map((agent) => {
+  const updates: ScoreUpdate[] = [];
+  const totalAgents = agents.length;
+
+  for (let index = 0; index < totalAgents; index += 1) {
+    const agent = agents[index];
     const txCount = txCountByCreatorLower.get(agent.creator.toLowerCase()) ?? agent.txCount ?? 0;
     const txVolumeNorm = normalizeLog100(txCount, maxTxCount);
     const velocityNorm = normalizeLog100(txCount, maxTxCount);
@@ -213,7 +229,7 @@ async function main(): Promise<void> {
     const rankScore = roundToTwo(reputation * RANK_REPUTATION_WEIGHT + velocityNorm * RANK_VELOCITY_WEIGHT);
     const tier = getTier(txCount, isClaimed);
 
-    return {
+    updates.push({
       address: agent.address,
       txCount,
       tier,
@@ -223,8 +239,19 @@ async function main(): Promise<void> {
       uptimePct,
       volume: BigInt(txCount),
       score: Math.round(rankScore),
-    };
-  });
+    });
+
+    const processed = index + 1;
+    if (processed % HEARTBEAT_INTERVAL === 0 || processed === totalAgents) {
+      console.log(`Heartbeat: scored ${processed}/${totalAgents} agents`);
+    }
+  }
+
+  if (Date.now() - startedAt > DB_RECONNECT_THRESHOLD_MS) {
+    console.log("Heartbeat: refreshing Prisma connection before final batch write");
+    await prisma.$disconnect();
+    await prisma.$connect();
+  }
 
   await applyScoreUpdates(updates);
 
@@ -250,5 +277,9 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
-    await prisma.$disconnect();
+    try {
+      await prisma.$disconnect();
+    } catch (disconnectError) {
+      console.error("Failed to disconnect Prisma cleanly:", disconnectError);
+    }
   });
