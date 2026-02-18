@@ -20,7 +20,13 @@ const AGENT_REGISTERED_EVENT = parseAbiItem(
 );
 const CREATE_SERVICE_EVENT = parseAbiItem("event CreateService(uint256 indexed serviceId, bytes32 configHash)");
 const OWNER_OF_FUNCTION = parseAbiItem("function ownerOf(uint256 serviceId) view returns (address)");
+const TOKEN_URI_FUNCTION = parseAbiItem("function tokenURI(uint256 serviceId) view returns (string)");
 const FALLBACK_ADDRESS_PREFIX = "service:";
+const FORCE_REFRESH_METADATA =
+  process.argv.includes("--force-refresh-metadata") || process.env.AGENT_FORCE_REFRESH_METADATA === "true";
+const METADATA_FETCH_TIMEOUT_MS = 8_000;
+const METADATA_FETCH_RETRY_COUNT = 2;
+const DEFAULT_IPFS_GATEWAY = "https://ipfs.io/ipfs/";
 
 type IndexedAgentRecord = {
   address: string;
@@ -31,6 +37,22 @@ type IndexedAgentRecord = {
   telegram: string | null;
   twitter: string | null;
   website: string | null;
+};
+
+type ServiceMetadata = {
+  name: string | null;
+  description: string | null;
+  image: string | null;
+  metadataUri: string | null;
+};
+
+type ContractReader = {
+  readContract: (args: {
+    address: Address;
+    abi: readonly unknown[];
+    functionName: string;
+    args: readonly unknown[];
+  }) => Promise<unknown>;
 };
 
 const sleep = (ms: number): Promise<void> =>
@@ -54,6 +76,104 @@ const fallbackName = (address: string): string => `Agent ${address.slice(0, 10)}
 const fallbackServiceName = (serviceId: string): string => `Agent #${serviceId}`;
 const fallbackServiceDescription = (serviceId: string): string =>
   `Fallback-indexed registry service ${serviceId} (CreateService + ownerOf).`;
+const getIpfsGateway = (): string => {
+  const configured = process.env.AGENT_METADATA_IPFS_GATEWAY?.trim();
+  if (!configured) return DEFAULT_IPFS_GATEWAY;
+  return configured.endsWith("/") ? configured : `${configured}/`;
+};
+
+const resolveUriForFetch = (value: string): string => {
+  const normalized = value.trim();
+  if (normalized.startsWith("ipfs://ipfs/")) {
+    return `${getIpfsGateway()}${normalized.replace("ipfs://ipfs/", "")}`;
+  }
+  if (normalized.startsWith("ipfs://")) {
+    return `${getIpfsGateway()}${normalized.replace("ipfs://", "")}`;
+  }
+  return normalized;
+};
+
+const sanitizeImageField = (raw: unknown): string | null => {
+  const image = sanitizeOptionalText(raw);
+  if (!image) return null;
+
+  if (image.startsWith("<svg")) {
+    return `data:image/svg+xml;utf8,${encodeURIComponent(image)}`;
+  }
+  return resolveUriForFetch(image);
+};
+
+const fetchJsonWithRetry = async (url: string): Promise<Record<string, unknown>> => {
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= METADATA_FETCH_RETRY_COUNT; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), METADATA_FETCH_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        signal: controller.signal,
+        headers: { accept: "application/json,text/plain,*/*" },
+      });
+      if (!response.ok) {
+        if (response.status >= 500 && attempt < METADATA_FETCH_RETRY_COUNT) {
+          await sleep(250);
+          continue;
+        }
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const body = await response.text();
+      const parsed = JSON.parse(body) as unknown;
+      if (!parsed || typeof parsed !== "object") {
+        throw new Error("Metadata payload is not a JSON object");
+      }
+      return parsed as Record<string, unknown>;
+    } catch (error) {
+      lastError = error;
+      if (attempt < METADATA_FETCH_RETRY_COUNT) {
+        await sleep(250);
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Metadata fetch failed");
+};
+
+const fetchServiceMetadata = async (
+  client: ContractReader,
+  serviceId: bigint,
+): Promise<ServiceMetadata | null> => {
+  const rawTokenUri = await client.readContract({
+    address: REGISTRY_ADDRESS,
+    abi: [TOKEN_URI_FUNCTION],
+    functionName: "tokenURI",
+    args: [serviceId],
+  });
+  const tokenUri = sanitizeOptionalText(rawTokenUri);
+  if (!tokenUri) {
+    throw new Error("tokenURI returned empty value");
+  }
+
+  const metadataUri = resolveUriForFetch(tokenUri);
+  const payload = await fetchJsonWithRetry(metadataUri);
+  const name = sanitizeOptionalText(payload.name);
+  const description = sanitizeOptionalText(payload.description);
+  const image = sanitizeImageField(payload.image) ?? sanitizeImageField(payload.image_data);
+
+  if (!name && !description && !image) {
+    return null;
+  }
+
+  return {
+    name,
+    description,
+    image,
+    metadataUri,
+  };
+};
 
 const isHexAddress = (value: string): boolean => /^0x[a-fA-F0-9]{40}$/.test(value);
 
@@ -280,12 +400,26 @@ const fetchCreateServiceFallback = async (
 
       const serviceIdText = serviceId.toString();
       const syntheticAddress = `${FALLBACK_ADDRESS_PREFIX}${serviceIdText}`;
+      let metadata: ServiceMetadata | null = null;
+      try {
+        metadata = await fetchServiceMetadata(client as unknown as ContractReader, serviceId);
+      } catch (error) {
+        console.warn(
+          `Metadata fetch failed for service ${serviceIdText}. Falling back to synthetic identity fields.`,
+        );
+        console.error(error);
+      }
+
+      if (!metadata) {
+        console.warn(`Metadata is empty for service ${serviceIdText}. Falling back to synthetic identity fields.`);
+      }
+
       indexed.set(syntheticAddress, {
         address: syntheticAddress,
-        name: fallbackServiceName(serviceIdText),
+        name: metadata?.name ?? fallbackServiceName(serviceIdText),
         creator: getAddress(owner).toLowerCase(),
-        image: null,
-        description: fallbackServiceDescription(serviceIdText),
+        image: metadata?.image ?? null,
+        description: metadata?.description ?? fallbackServiceDescription(serviceIdText),
         telegram: null,
         twitter: null,
         website: null,
@@ -316,6 +450,9 @@ const normalizeLegacyFallbackRows = async (): Promise<number> => {
     const normalizedName = fallbackServiceName(serviceId);
     const normalizedDescription = fallbackServiceDescription(serviceId);
 
+    const hasFallbackDescription = row.description?.toLowerCase().includes("fallback-indexed registry service") ?? false;
+    const hasLegacyFallbackName = /^agent\s+0x[a-f0-9]+$/i.test(row.name);
+    if (!hasFallbackDescription && !hasLegacyFallbackName) continue;
     if (row.name === normalizedName && row.description === normalizedDescription) continue;
 
     await prisma.agent.update({
@@ -330,6 +467,104 @@ const normalizeLegacyFallbackRows = async (): Promise<number> => {
   }
 
   return updatedCount;
+};
+
+const forceRefreshServiceMetadata = async (): Promise<{
+  total: number;
+  refreshed: number;
+  fallbackUsed: number;
+  unchanged: number;
+}> => {
+  const client = buildClient();
+  const rows = await prisma.agent.findMany({
+    where: { address: { startsWith: FALLBACK_ADDRESS_PREFIX } },
+    select: { address: true, name: true, description: true, image: true, owner: true, creator: true },
+  });
+
+  let refreshed = 0;
+  let fallbackUsed = 0;
+  let unchanged = 0;
+  let processed = 0;
+
+  for (const row of rows) {
+    processed += 1;
+    if (processed % 10 === 0 || processed === rows.length) {
+      console.log(`Metadata refresh progress: ${processed}/${rows.length} agents`);
+    }
+
+    const serviceIdText = row.address.slice(FALLBACK_ADDRESS_PREFIX.length);
+    if (!/^\d+$/.test(serviceIdText)) {
+      unchanged += 1;
+      continue;
+    }
+
+    const serviceId = BigInt(serviceIdText);
+    let owner = row.owner;
+    try {
+      const ownerResult = await client.readContract({
+        address: REGISTRY_ADDRESS,
+        abi: [OWNER_OF_FUNCTION],
+        functionName: "ownerOf",
+        args: [serviceId],
+      });
+      const ownerAddress = typeof ownerResult === "string" ? ownerResult : "";
+      if (!ownerAddress) throw new Error("ownerOf returned a non-string value");
+      owner = getAddress(ownerAddress as Address).toLowerCase();
+    } catch (error) {
+      console.warn(`ownerOf failed for service ${serviceIdText} during metadata refresh. Preserving existing owner.`);
+      console.error(error);
+    }
+
+    let metadata: ServiceMetadata | null = null;
+    try {
+      metadata = await fetchServiceMetadata(client as unknown as ContractReader, serviceId);
+    } catch (error) {
+      console.warn(`Metadata fetch failed for service ${serviceIdText} during refresh. Falling back to synthetic values.`);
+      console.error(error);
+    }
+
+    const nextName = metadata?.name ?? fallbackServiceName(serviceIdText);
+    const nextDescription = metadata?.description ?? fallbackServiceDescription(serviceIdText);
+    const nextImage = metadata?.image ?? null;
+
+    if (!metadata) {
+      fallbackUsed += 1;
+    } else {
+      refreshed += 1;
+    }
+
+    if (
+      row.name === nextName &&
+      row.description === nextDescription &&
+      row.image === nextImage &&
+      row.owner === owner &&
+      row.creator === owner
+    ) {
+      unchanged += 1;
+      await sleep(OWNER_READ_DELAY_MS);
+      continue;
+    }
+
+    await prisma.agent.update({
+      where: { address: row.address },
+      data: {
+        name: nextName,
+        description: nextDescription,
+        image: nextImage,
+        owner,
+        creator: owner,
+      },
+    });
+
+    await sleep(OWNER_READ_DELAY_MS);
+  }
+
+  return {
+    total: rows.length,
+    refreshed,
+    fallbackUsed,
+    unchanged,
+  };
 };
 
 const collectUsedAgentIds = async (): Promise<Set<string>> => {
@@ -436,6 +671,14 @@ const backfillAgentIdentityColumns = async (): Promise<number> => {
 };
 
 async function main(): Promise<void> {
+  if (FORCE_REFRESH_METADATA) {
+    const stats = await forceRefreshServiceMetadata();
+    console.log(
+      `Forced metadata refresh complete: total=${stats.total}, rich_metadata=${stats.refreshed}, fallback=${stats.fallbackUsed}, unchanged=${stats.unchanged}.`,
+    );
+    return;
+  }
+
   const client = buildClient();
   const latestBlock = await client.getBlockNumber();
   const fromBlock = await getFromBlock();
