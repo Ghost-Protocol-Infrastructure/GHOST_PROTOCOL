@@ -6,8 +6,9 @@ import { prisma } from "@/lib/db";
 
 export const runtime = "nodejs";
 
-const DEFAULT_LIMIT = 200;
+const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 1000;
+const DEFAULT_PAGE = 1;
 const ONE_HOUR_SECONDS = 60 * 60;
 const ONE_DAY_SECONDS = 24 * ONE_HOUR_SECONDS;
 
@@ -37,6 +38,13 @@ const parseLimit = (rawLimit: string | null): number => {
   const parsed = Number.parseInt(rawLimit, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_LIMIT;
   return Math.min(parsed, MAX_LIMIT);
+};
+
+const parsePage = (rawPage: string | null): number => {
+  if (!rawPage) return DEFAULT_PAGE;
+  const parsed = Number.parseInt(rawPage, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_PAGE;
+  return parsed;
 };
 
 const parseOwner = (rawOwner: string | null): string | null => {
@@ -89,6 +97,8 @@ const resolveSyncMetadata = async (lastSyncedBlock: bigint | null | undefined): 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const sort = request.nextUrl.searchParams.get("sort");
   const limit = parseLimit(request.nextUrl.searchParams.get("limit"));
+  const page = parsePage(request.nextUrl.searchParams.get("page"));
+  const skip = (page - 1) * limit;
   const ownerQuery = request.nextUrl.searchParams.get("owner");
   const owner = parseOwner(ownerQuery);
 
@@ -112,13 +122,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       }
     : undefined;
 
-  const [agents, totalAgents, indexerState] = await prisma.$transaction([
+  const [agents, totalAgents, filteredTotal, indexerState] = await prisma.$transaction([
     prisma.agent.findMany({
       where,
       orderBy,
       take: limit,
+      skip,
     }),
     prisma.agent.count(),
+    prisma.agent.count({ where }),
     prisma.systemState.findFirst({
       where: { key: "agent_indexer" },
     }),
@@ -128,6 +140,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   return NextResponse.json(
     {
       totalAgents,
+      filteredTotal,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(filteredTotal / limit)),
       filteredAgents: agents.length,
       lastSyncedBlock: indexerState?.lastSyncedBlock?.toString() ?? null,
       syncHealth: syncMetadata.syncHealth,

@@ -7,13 +7,27 @@ const REGISTRY_ADDRESS = getAddress(
 );
 const CURSOR_KEY = "agent_indexer";
 const DEFAULT_START_BLOCK = 23_000_000n;
+const MIN_CHUNK_SIZE = 2_000n;
+const MAX_CHUNK_SIZE = 10_000n;
 const CHUNK_SIZE = (() => {
   const raw = process.env.AGENT_INDEX_CHUNK_SIZE?.trim();
-  if (raw && /^\d+$/.test(raw)) return BigInt(raw);
-  return 2_000n;
+  if (!raw || !/^\d+$/.test(raw)) return MIN_CHUNK_SIZE;
+  const parsed = BigInt(raw);
+  if (parsed < MIN_CHUNK_SIZE) return MIN_CHUNK_SIZE;
+  if (parsed > MAX_CHUNK_SIZE) return MAX_CHUNK_SIZE;
+  return parsed;
 })();
 const CHUNK_DELAY_MS = 100;
-const OWNER_READ_DELAY_MS = 120;
+const METADATA_CONCURRENCY = (() => {
+  const raw = process.env.AGENT_METADATA_CONCURRENCY?.trim();
+  const parsed = raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 25;
+  return Math.max(1, Math.min(parsed, 50));
+})();
+const METADATA_BATCH_DELAY_MS = (() => {
+  const raw = process.env.AGENT_METADATA_BATCH_DELAY_MS?.trim();
+  const parsed = raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 120;
+  return Math.max(0, Math.min(parsed, 2_000));
+})();
 
 const AGENT_REGISTERED_EVENT = parseAbiItem(
   "event AgentRegistered(address indexed agent, string name, address indexed creator, string image, string description, string telegram, string twitter, string website)",
@@ -44,6 +58,12 @@ type ServiceMetadata = {
   description: string | null;
   image: string | null;
   metadataUri: string | null;
+};
+
+type ServiceResolution = {
+  serviceIdText: string;
+  record: IndexedAgentRecord | null;
+  metadataUsedFallback: boolean;
 };
 
 type ContractReader = {
@@ -173,6 +193,72 @@ const fetchServiceMetadata = async (
     image,
     metadataUri,
   };
+};
+
+const chunkArray = <T>(items: T[], size: number): T[][] => {
+  if (size <= 0) return [items];
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+};
+
+const resolveServiceRecord = async (
+  client: ContractReader,
+  serviceId: bigint,
+): Promise<ServiceResolution> => {
+  const serviceIdText = serviceId.toString();
+  try {
+    const ownerResult = await client.readContract({
+      address: REGISTRY_ADDRESS,
+      abi: [OWNER_OF_FUNCTION],
+      functionName: "ownerOf",
+      args: [serviceId],
+    });
+    const ownerAddress = typeof ownerResult === "string" ? ownerResult : "";
+    if (!ownerAddress) {
+      throw new Error("ownerOf returned a non-string value");
+    }
+
+    const syntheticAddress = `${FALLBACK_ADDRESS_PREFIX}${serviceIdText}`;
+    let metadata: ServiceMetadata | null = null;
+    try {
+      metadata = await fetchServiceMetadata(client, serviceId);
+    } catch (error) {
+      console.warn(
+        `Metadata fetch failed for service ${serviceIdText}. Falling back to synthetic identity fields.`,
+      );
+      console.error(error);
+    }
+
+    if (!metadata) {
+      console.warn(`Metadata is empty for service ${serviceIdText}. Falling back to synthetic identity fields.`);
+    }
+
+    return {
+      serviceIdText,
+      metadataUsedFallback: metadata == null,
+      record: {
+        address: syntheticAddress,
+        name: metadata?.name ?? fallbackServiceName(serviceIdText),
+        creator: getAddress(ownerAddress as Address).toLowerCase(),
+        image: metadata?.image ?? null,
+        description: metadata?.description ?? fallbackServiceDescription(serviceIdText),
+        telegram: null,
+        twitter: null,
+        website: null,
+      },
+    };
+  } catch (error) {
+    console.warn(`Skipping service ${serviceIdText} in fallback due to ownerOf failure.`);
+    console.error(error);
+    return {
+      serviceIdText,
+      metadataUsedFallback: true,
+      record: null,
+    };
+  }
 };
 
 const isHexAddress = (value: string): boolean => /^0x[a-fA-F0-9]{40}$/.test(value);
@@ -389,47 +475,31 @@ const fetchCreateServiceFallback = async (
     }
   }
 
-  for (const serviceId of serviceIds) {
-    try {
-      const owner = await client.readContract({
-        address: REGISTRY_ADDRESS,
-        abi: [OWNER_OF_FUNCTION],
-        functionName: "ownerOf",
-        args: [serviceId],
-      });
+  const serviceIdList = Array.from(serviceIds).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  let processedServices = 0;
+  let fallbackMetadataCount = 0;
 
-      const serviceIdText = serviceId.toString();
-      const syntheticAddress = `${FALLBACK_ADDRESS_PREFIX}${serviceIdText}`;
-      let metadata: ServiceMetadata | null = null;
-      try {
-        metadata = await fetchServiceMetadata(client as unknown as ContractReader, serviceId);
-      } catch (error) {
-        console.warn(
-          `Metadata fetch failed for service ${serviceIdText}. Falling back to synthetic identity fields.`,
-        );
-        console.error(error);
-      }
+  for (const batch of chunkArray(serviceIdList, METADATA_CONCURRENCY)) {
+    const results = await Promise.all(
+      batch.map((serviceId) => resolveServiceRecord(client as unknown as ContractReader, serviceId)),
+    );
 
-      if (!metadata) {
-        console.warn(`Metadata is empty for service ${serviceIdText}. Falling back to synthetic identity fields.`);
-      }
-
-      indexed.set(syntheticAddress, {
-        address: syntheticAddress,
-        name: metadata?.name ?? fallbackServiceName(serviceIdText),
-        creator: getAddress(owner).toLowerCase(),
-        image: metadata?.image ?? null,
-        description: metadata?.description ?? fallbackServiceDescription(serviceIdText),
-        telegram: null,
-        twitter: null,
-        website: null,
-      });
-    } catch (error) {
-      console.warn(`Skipping service ${serviceId.toString()} in fallback due to ownerOf failure.`);
-      console.error(error);
+    for (const result of results) {
+      if (result.metadataUsedFallback) fallbackMetadataCount += 1;
+      if (!result.record) continue;
+      indexed.set(result.record.address, result.record);
     }
 
-    await sleep(OWNER_READ_DELAY_MS);
+    processedServices += batch.length;
+    if (processedServices % 100 === 0 || processedServices === serviceIdList.length) {
+      console.log(
+        `Fallback metadata progress: ${processedServices}/${serviceIdList.length} services (fallback ${fallbackMetadataCount})`,
+      );
+    }
+
+    if (processedServices < serviceIdList.length && METADATA_BATCH_DELAY_MS > 0) {
+      await sleep(METADATA_BATCH_DELAY_MS);
+    }
   }
 
   return indexed;
@@ -475,7 +545,7 @@ const forceRefreshServiceMetadata = async (): Promise<{
   fallbackUsed: number;
   unchanged: number;
 }> => {
-  const client = buildClient();
+  const client = buildClient() as unknown as ContractReader;
   const rows = await prisma.agent.findMany({
     where: { address: { startsWith: FALLBACK_ADDRESS_PREFIX } },
     select: { address: true, name: true, description: true, image: true, owner: true, creator: true },
@@ -486,16 +556,14 @@ const forceRefreshServiceMetadata = async (): Promise<{
   let unchanged = 0;
   let processed = 0;
 
-  for (const row of rows) {
-    processed += 1;
-    if (processed % 10 === 0 || processed === rows.length) {
-      console.log(`Metadata refresh progress: ${processed}/${rows.length} agents`);
-    }
-
+  const refreshRow = async (row: (typeof rows)[number]): Promise<{
+    refreshed: boolean;
+    fallbackUsed: boolean;
+    unchanged: boolean;
+  }> => {
     const serviceIdText = row.address.slice(FALLBACK_ADDRESS_PREFIX.length);
     if (!/^\d+$/.test(serviceIdText)) {
-      unchanged += 1;
-      continue;
+      return { refreshed: false, fallbackUsed: false, unchanged: true };
     }
 
     const serviceId = BigInt(serviceIdText);
@@ -517,7 +585,7 @@ const forceRefreshServiceMetadata = async (): Promise<{
 
     let metadata: ServiceMetadata | null = null;
     try {
-      metadata = await fetchServiceMetadata(client as unknown as ContractReader, serviceId);
+      metadata = await fetchServiceMetadata(client, serviceId);
     } catch (error) {
       console.warn(`Metadata fetch failed for service ${serviceIdText} during refresh. Falling back to synthetic values.`);
       console.error(error);
@@ -527,12 +595,6 @@ const forceRefreshServiceMetadata = async (): Promise<{
     const nextDescription = metadata?.description ?? fallbackServiceDescription(serviceIdText);
     const nextImage = metadata?.image ?? null;
 
-    if (!metadata) {
-      fallbackUsed += 1;
-    } else {
-      refreshed += 1;
-    }
-
     if (
       row.name === nextName &&
       row.description === nextDescription &&
@@ -540,9 +602,7 @@ const forceRefreshServiceMetadata = async (): Promise<{
       row.owner === owner &&
       row.creator === owner
     ) {
-      unchanged += 1;
-      await sleep(OWNER_READ_DELAY_MS);
-      continue;
+      return { refreshed: metadata != null, fallbackUsed: metadata == null, unchanged: true };
     }
 
     await prisma.agent.update({
@@ -556,7 +616,25 @@ const forceRefreshServiceMetadata = async (): Promise<{
       },
     });
 
-    await sleep(OWNER_READ_DELAY_MS);
+    return { refreshed: metadata != null, fallbackUsed: metadata == null, unchanged: false };
+  };
+
+  for (const batch of chunkArray(rows, METADATA_CONCURRENCY)) {
+    const results = await Promise.all(batch.map((row) => refreshRow(row)));
+    processed += batch.length;
+
+    for (const result of results) {
+      if (result.refreshed) refreshed += 1;
+      if (result.fallbackUsed) fallbackUsed += 1;
+      if (result.unchanged) unchanged += 1;
+    }
+
+    if (processed % 10 === 0 || processed === rows.length) {
+      console.log(`Metadata refresh progress: ${processed}/${rows.length} agents`);
+    }
+    if (processed < rows.length && METADATA_BATCH_DELAY_MS > 0) {
+      await sleep(METADATA_BATCH_DELAY_MS);
+    }
   }
 
   return {
@@ -671,6 +749,10 @@ const backfillAgentIdentityColumns = async (): Promise<number> => {
 };
 
 async function main(): Promise<void> {
+  console.log(
+    `Indexer config: chunk_size=${CHUNK_SIZE.toString()} blocks, metadata_concurrency=${METADATA_CONCURRENCY}, metadata_batch_delay_ms=${METADATA_BATCH_DELAY_MS}`,
+  );
+
   if (FORCE_REFRESH_METADATA) {
     const stats = await forceRefreshServiceMetadata();
     console.log(
