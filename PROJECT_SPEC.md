@@ -119,7 +119,7 @@ To avoid high-frequency gas fees, Ghost Protocol uses a "Prepaid Native ETH" mod
 ### 6.1 GhostVault.sol
 * **Role:** Core revenue engine for Ghost Protocol.
 * **Network:** Base Mainnet.
-* **Deployed Address:** `0xE968393bd003331Db6D62DEb614d2B073C9C151C`.
+* **Deployed Address:** `0x75B728D3DFf2974EDefcb3415F42Baa03091666F`.
 
 ### 6.2 Settlement & Fee Routing Logic
 * **Pattern:** Non-custodial, pull-payment architecture.

@@ -2,7 +2,7 @@ import type { Abi, Address } from "viem";
 import { getAddress } from "viem";
 import ghostVaultAbi from "@/lib/abi/GhostVault.json";
 
-const FALLBACK_GHOST_VAULT_ADDRESS = "0xE968393bd003331Db6D62DEb614d2B073C9C151C";
+const FALLBACK_GHOST_VAULT_ADDRESS = "0x75B728D3DFf2974EDefcb3415F42Baa03091666F";
 const FALLBACK_PROTOCOL_TREASURY = "0x6D1F2814fC91971dB8b58A124eBfeB8bC7504c6f";
 
 const resolveAddress = (rawAddress: string | undefined, fallbackAddress: string): Address => {
