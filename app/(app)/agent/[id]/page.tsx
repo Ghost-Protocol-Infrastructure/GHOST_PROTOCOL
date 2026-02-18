@@ -42,6 +42,20 @@ const toTitleCase = (value: string): string =>
 
 const truncateAddress = (address: string): string => `${address.slice(0, 6)}...${address.slice(-4)}`;
 
+const normalizeAgentDescription = (description: string | null): string | null => {
+  if (!description) return null;
+
+  const cleaned = description.trim();
+  if (!cleaned) return null;
+
+  const fallbackMatch = cleaned.match(/^Fallback-indexed registry service\s+(\d+)\s+\(CreateService \+ ownerOf\)\.?$/i);
+  if (fallbackMatch) {
+    return `Indexed via fallback registry path for Agent #${fallbackMatch[1]}.`;
+  }
+
+  return cleaned;
+};
+
 export default async function AgentProfilePage({ params, searchParams }: AgentPageProps) {
   const { id } = await params;
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
@@ -77,6 +91,7 @@ export default async function AgentProfilePage({ params, searchParams }: AgentPa
   const statusLabel = toTitleCase(agent.status);
   const initialSdkTab = resolvedSearchParams?.sdk?.toLowerCase() === "python" ? "python" : "node";
   const ownerAddress = agent.owner ?? agent.creator;
+  const agentDescription = normalizeAgentDescription(agent.description);
 
   return (
     <main className="min-h-screen bg-slate-950 font-mono text-slate-300">
@@ -133,9 +148,9 @@ export default async function AgentProfilePage({ params, searchParams }: AgentPa
             </div>
           </div>
 
-          {agent.description ? (
+          {agentDescription ? (
             <div className="mt-4 border border-slate-800 bg-slate-950 p-3 text-sm text-slate-400">
-              {agent.description}
+              {agentDescription}
             </div>
           ) : null}
         </section>

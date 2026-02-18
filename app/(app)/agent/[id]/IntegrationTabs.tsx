@@ -25,13 +25,13 @@ export default function IntegrationTabs({ agentId, initialTab = "node" }: Integr
   const nodeSnippet = useMemo(
     () => `import { GhostAgent } from "@ghost/sdk";
 
-const agentId = "${agentId}";
 const apiKey = "sk_live_your_api_key";
 
 (async () => {
   const sdk = new GhostAgent({
     baseUrl: "${APP_BASE_URL}",
     privateKey: "YOUR_PRIVATE_KEY",
+    serviceSlug: "agent-${agentId}",
   });
 
   const result = await sdk.connect(apiKey);
@@ -40,7 +40,7 @@ const apiKey = "sk_live_your_api_key";
   }
 
   console.log("Connected to:", result.endpoint);
-  console.log("Agent ID:", agentId);
+  console.log("Service slug:", "agent-${agentId}");
 })();`,
     [agentId],
   );
@@ -48,11 +48,15 @@ const apiKey = "sk_live_your_api_key";
   const pythonSnippet = useMemo(
     () => `from ghostgate import GhostGate
 
-gate = GhostGate(api_key="sk_live_your_api_key", base_url="${APP_BASE_URL}")
-agent_id = "${agentId}"
+gate = GhostGate(
+    api_key="sk_live_your_api_key",
+    private_key="0xyour_private_key",
+    base_url="${APP_BASE_URL}",
+)
 
-print("GhostGate ready")
-print("Agent ID:", agent_id)`,
+@gate.guard(cost=1, service="agent-${agentId}", method="POST")
+def run_agent():
+    return {"ok": True}`,
     [agentId],
   );
 
@@ -92,7 +96,7 @@ print("Agent ID:", agent_id)`,
         <div className="space-y-3">
           <div className="border border-slate-700 bg-slate-950 p-3">
             <p className="mb-2 text-xs uppercase tracking-[0.16em] text-slate-500">Install</p>
-            <code className="text-sm text-cyan-300">pip install requests</code>
+            <code className="text-sm text-cyan-300">pip install ghost-gate</code>
           </div>
           <div className="border border-slate-700 bg-slate-950 p-3">
             <p className="mb-2 text-xs uppercase tracking-[0.16em] text-slate-500">Python</p>

@@ -26,6 +26,7 @@ const PREFERRED_CHAIN_ID = base.id;
 
 type CopyState = "idle" | "copied" | "error";
 type CreditSyncState = "idle" | "syncing" | "synced" | "error";
+type ConsumerSdk = "node" | "python";
 
 type AgentApiRow = {
   address: string;
@@ -123,6 +124,7 @@ function DashboardPageContent() {
   const [switchError, setSwitchError] = useState<string | null>(null);
   const [creditSyncState, setCreditSyncState] = useState<CreditSyncState>("idle");
   const [creditSyncError, setCreditSyncError] = useState<string | null>(null);
+  const [consumerSdk, setConsumerSdk] = useState<ConsumerSdk>("node");
   const [syncedCredits, setSyncedCredits] = useState<string | null>(null);
   const [ownedAgents, setOwnedAgents] = useState<OwnedAgent[]>([]);
   const [isLoadingOwnedAgents, setIsLoadingOwnedAgents] = useState(false);
@@ -257,12 +259,40 @@ function DashboardPageContent() {
     return () => clearTimeout(timeout);
   }, [apiKeyCopyState]);
 
-  const consumerUsageExample = useMemo(
+  const nodeConsumerUsageExample = useMemo(
     () =>
-      `The Python SDK automatically routes verification requests to
-${APP_BASE_URL}/api/gate/<your-service-name>.`,
+      `import { GhostAgent } from "@ghost/sdk";
+
+const sdk = new GhostAgent({
+  baseUrl: "${APP_BASE_URL}",
+  privateKey: process.env.GHOST_SIGNER_PRIVATE_KEY as \`0x\${string}\`,
+  serviceSlug: "weather",
+  creditCost: 1,
+});
+
+const result = await sdk.connect(process.env.GHOST_API_KEY!);
+console.log(result);`,
     [],
   );
+
+  const pythonConsumerUsageExample = useMemo(
+    () =>
+      `from ghostgate import GhostGate
+
+gate = GhostGate(
+    api_key="sk_live_your_api_key",
+    private_key="0xyour_private_key",
+    base_url="${APP_BASE_URL}",
+)
+
+@gate.guard(cost=1, service="weather", method="POST")
+def run_agent():
+    return {"ok": True}`,
+    [],
+  );
+
+  const consumerUsageExample =
+    consumerSdk === "node" ? nodeConsumerUsageExample : pythonConsumerUsageExample;
 
   useEffect(() => {
     if (!address) {
@@ -500,7 +530,7 @@ def my_agent():
                   >
                     {ownedAgents.map((agent) => (
                       <option key={`${agent.agentId}-${agent.owner}`} value={agent.agentId}>
-                        AGENT #{agent.agentId} {agent.isClaimed ? "[CLAIMED]" : "[UNCLAIMED]"}
+                        AGENT #{agent.agentId} {agent.isClaimed ? "[RESERVED]" : "[UNCLAIMED]"}
                       </option>
                     ))}
                   </select>
@@ -744,7 +774,32 @@ def my_agent():
             <article className="bg-slate-900 border border-slate-800 rounded-none p-5">
               <div className="mb-5 flex items-center gap-3">
                 <Code className="h-5 w-5 text-cyan-400" />
-                <h2 className="text-sm uppercase tracking-[0.18em] text-slate-100">API ACCESS // CONSUMER MODE</h2>
+                <h2 className="text-sm uppercase tracking-[0.18em] text-slate-100">API ACCESS // CONSUMER CONSOLE</h2>
+              </div>
+
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConsumerSdk("node")}
+                  className={`border px-3 py-2 text-xs uppercase tracking-[0.14em] transition ${
+                    consumerSdk === "node"
+                      ? "border-cyan-400/70 bg-cyan-500/20 text-cyan-200"
+                      : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-500 hover:text-slate-200"
+                  }`}
+                >
+                  Node.js SDK
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConsumerSdk("python")}
+                  className={`border px-3 py-2 text-xs uppercase tracking-[0.14em] transition ${
+                    consumerSdk === "python"
+                      ? "border-cyan-400/70 bg-cyan-500/20 text-cyan-200"
+                      : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-500 hover:text-slate-200"
+                  }`}
+                >
+                  Python SDK
+                </button>
               </div>
 
               <div className="border border-slate-800 bg-slate-950 p-4">
@@ -760,7 +815,9 @@ def my_agent():
                 className="mt-4 inline-flex items-center gap-2 border border-slate-600 bg-slate-800 px-4 py-2 text-xs uppercase tracking-wider text-cyan-400 transition hover:bg-slate-700"
               >
                 <Copy className="h-4 w-4" />
-                {copyState === "copied" ? "Copied" : "Copy Example"}
+                {copyState === "copied"
+                  ? "Copied"
+                  : `Copy ${consumerSdk === "node" ? "Node.js" : "Python"} Example`}
               </button>
 
               {copyState === "error" && (
@@ -769,7 +826,9 @@ def my_agent():
 
               <div className="mt-5 border border-slate-800 bg-slate-950 p-4">
                 <p className="text-sm text-slate-400">
-                  The Python SDK automatically routes verification requests to{" "}
+                  {consumerSdk === "node"
+                    ? "The Node SDK signs and routes verification requests to"
+                    : "The Python SDK automatically routes verification requests to"}{" "}
                   <span className="text-cyan-300">{APP_BASE_URL}/api/gate/&lt;your-service-name&gt;.</span>{" "}
                   <span className="text-cyan-300">1 Request = 1 Credit.</span>
                 </p>

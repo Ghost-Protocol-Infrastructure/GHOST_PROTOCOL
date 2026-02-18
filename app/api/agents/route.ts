@@ -1,11 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
+import { createPublicClient, fallback, http } from "viem";
+import { base } from "viem/chains";
 import { prisma } from "@/lib/db";
 
 export const runtime = "nodejs";
 
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 1000;
+const ONE_HOUR_SECONDS = 60 * 60;
+const ONE_DAY_SECONDS = 24 * ONE_HOUR_SECONDS;
+
+type SyncHealth = "live" | "stale" | "offline" | "unknown";
+
+type SyncMetadata = {
+  syncHealth: SyncHealth;
+  syncAgeSeconds: number | null;
+  lastSyncedAt: string | null;
+};
+
+const basePublicClient = createPublicClient({
+  chain: base,
+  transport: fallback([
+    http(process.env.BASE_RPC_URL?.trim() || "https://mainnet.base.org", {
+      retryCount: 2,
+      retryDelay: 250,
+      timeout: 15_000,
+    }),
+    http("https://base.llamarpc.com", { retryCount: 2, retryDelay: 250, timeout: 15_000 }),
+    http("https://1rpc.io/base", { retryCount: 2, retryDelay: 250, timeout: 15_000 }),
+  ]),
+});
 
 const parseLimit = (rawLimit: string | null): number => {
   if (!rawLimit) return DEFAULT_LIMIT;
@@ -19,6 +44,46 @@ const parseOwner = (rawOwner: string | null): string | null => {
   const normalized = rawOwner.trim().toLowerCase();
   if (!/^0x[a-f0-9]{40}$/.test(normalized)) return null;
   return normalized;
+};
+
+const resolveSyncMetadata = async (lastSyncedBlock: bigint | null | undefined): Promise<SyncMetadata> => {
+  if (!lastSyncedBlock || lastSyncedBlock <= 0n) {
+    return {
+      syncHealth: "offline",
+      syncAgeSeconds: null,
+      lastSyncedAt: null,
+    };
+  }
+
+  try {
+    const syncedBlock = await basePublicClient.getBlock({ blockNumber: lastSyncedBlock });
+    const syncedAtSeconds = Number(syncedBlock.timestamp);
+    if (!Number.isFinite(syncedAtSeconds) || syncedAtSeconds <= 0) {
+      return {
+        syncHealth: "unknown",
+        syncAgeSeconds: null,
+        lastSyncedAt: null,
+      };
+    }
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const syncAgeSeconds = Math.max(0, nowSeconds - syncedAtSeconds);
+    const syncHealth: SyncHealth =
+      syncAgeSeconds > ONE_DAY_SECONDS ? "offline" : syncAgeSeconds > ONE_HOUR_SECONDS ? "stale" : "live";
+
+    return {
+      syncHealth,
+      syncAgeSeconds,
+      lastSyncedAt: new Date(syncedAtSeconds * 1000).toISOString(),
+    };
+  } catch (error) {
+    console.error("Failed to resolve Base sync freshness from block timestamp.", error);
+    return {
+      syncHealth: "unknown",
+      syncAgeSeconds: null,
+      lastSyncedAt: null,
+    };
+  }
 };
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
@@ -58,12 +123,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       where: { key: "agent_indexer" },
     }),
   ]);
+  const syncMetadata = await resolveSyncMetadata(indexerState?.lastSyncedBlock);
 
   return NextResponse.json(
     {
       totalAgents,
       filteredAgents: agents.length,
       lastSyncedBlock: indexerState?.lastSyncedBlock?.toString() ?? null,
+      syncHealth: syncMetadata.syncHealth,
+      syncAgeSeconds: syncMetadata.syncAgeSeconds,
+      lastSyncedAt: syncMetadata.lastSyncedAt,
       agents: agents.map((agent) => ({
         address: agent.address,
         agentId: agent.agentId ?? agent.address,

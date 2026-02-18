@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
-import { Check, Copy } from "lucide-react";
+import { Copy } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import { isClaimedAgent } from "@/lib/agent-claim";
 
 type Network = "MEGAETH" | "BASE";
 type LeadTier = "WHALE" | "ACTIVE" | "NEW" | "GHOST";
+type SyncHealth = "live" | "stale" | "offline" | "unknown";
 
 type ApiAgent = {
   address: string;
@@ -45,6 +46,20 @@ type AgentApiResponse = {
   agents: ApiAgent[];
   totalAgents?: number;
   lastSyncedBlock?: string | null;
+  syncHealth?: string | null;
+  syncAgeSeconds?: number | null;
+  lastSyncedAt?: string | null;
+};
+
+type NetworkStatusDisplay = {
+  label: string;
+  description: string;
+  textClassName: string;
+  descriptionClassName: string;
+  pingClassName: string;
+  dotClassName: string;
+  dotShadowClassName: string;
+  showPing: boolean;
 };
 
 const truncateAddress = (address: string): string => `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -71,6 +86,82 @@ const formatBlockHeight = (rawBlock: string | null): string => {
 };
 
 const isHexAddress = (value: string): boolean => /^0x[a-fA-F0-9]{40}$/.test(value);
+
+const parseSyncAgeSeconds = (raw: number | null | undefined): number | null => {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
+  return Math.max(0, Math.trunc(raw));
+};
+
+const resolveSyncHealth = (rawSyncHealth: string | null | undefined, syncAgeSeconds: number | null): SyncHealth => {
+  if (rawSyncHealth === "live" || rawSyncHealth === "stale" || rawSyncHealth === "offline" || rawSyncHealth === "unknown") {
+    return rawSyncHealth;
+  }
+
+  if (syncAgeSeconds == null) return "unknown";
+  if (syncAgeSeconds > 24 * 60 * 60) return "offline";
+  if (syncAgeSeconds > 60 * 60) return "stale";
+  return "live";
+};
+
+const getBaseNetworkStatusDisplay = (syncHealth: SyncHealth): NetworkStatusDisplay => {
+  switch (syncHealth) {
+    case "live":
+      return {
+        label: "live_on_base",
+        description: "Systems nominal. Real-time data.",
+        textClassName: "text-cyan-300",
+        descriptionClassName: "text-emerald-300/90",
+        pingClassName: "bg-emerald-400",
+        dotClassName: "bg-emerald-500",
+        dotShadowClassName: "shadow-[0_0_10px_#34d399]",
+        showPing: true,
+      };
+    case "stale":
+      return {
+        label: "sync_lag",
+        description: "Indexer is behind by 1+ hours.",
+        textClassName: "text-amber-300",
+        descriptionClassName: "text-amber-300/90",
+        pingClassName: "bg-amber-300",
+        dotClassName: "bg-amber-400",
+        dotShadowClassName: "shadow-[0_0_10px_rgba(251,191,36,0.75)]",
+        showPing: true,
+      };
+    case "offline":
+      return {
+        label: "signal_lost",
+        description: "Indexer is down",
+        textClassName: "text-rose-300",
+        descriptionClassName: "text-rose-300/90",
+        pingClassName: "bg-rose-300",
+        dotClassName: "bg-rose-500",
+        dotShadowClassName: "shadow-[0_0_10px_rgba(244,63,94,0.75)]",
+        showPing: true,
+      };
+    default:
+      return {
+        label: "sync_status_unknown",
+        description: "Unable to verify indexer health.",
+        textClassName: "text-slate-400",
+        descriptionClassName: "text-slate-500",
+        pingClassName: "bg-slate-500",
+        dotClassName: "bg-slate-500",
+        dotShadowClassName: "shadow-[0_0_10px_rgba(100,116,139,0.65)]",
+        showPing: false,
+      };
+  }
+};
+
+const MEGAETH_STATUS_DISPLAY: NetworkStatusDisplay = {
+  label: "wip_no_verified_data",
+  description: "MegaETH telemetry is not verified yet.",
+  textClassName: "text-fuchsia-300",
+  descriptionClassName: "text-fuchsia-300/85",
+  pingClassName: "bg-fuchsia-400",
+  dotClassName: "bg-fuchsia-500",
+  dotShadowClassName: "shadow-[0_0_10px_rgba(232,121,249,0.75)]",
+  showPing: true,
+};
 
 const parseTxCount = (rawVolume: string): number => {
   const parsed = Number.parseInt(rawVolume, 10);
@@ -177,6 +268,7 @@ export default function Home() {
   const [baseLeads, setBaseLeads] = useState<ProcessedLead[]>([]);
   const [totalAgentsCount, setTotalAgentsCount] = useState<number>(0);
   const [lastSyncedBlock, setLastSyncedBlock] = useState<string | null>(null);
+  const [syncHealth, setSyncHealth] = useState<SyncHealth>("unknown");
   const [isLoadingLeads, setIsLoadingLeads] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const { address: userAddress } = useAccount();
@@ -207,9 +299,11 @@ export default function Home() {
             : agents.length;
 
         if (!isActive) return;
+        const parsedSyncAgeSeconds = parseSyncAgeSeconds(payload.syncAgeSeconds);
         setBaseLeads(buildLeadsFromApi(agents));
         setTotalAgentsCount(Math.max(0, Math.trunc(totalAgents)));
         setLastSyncedBlock(payload.lastSyncedBlock ?? null);
+        setSyncHealth(resolveSyncHealth(payload.syncHealth, parsedSyncAgeSeconds));
         setLoadError(null);
       } catch (error) {
         if (!isActive) return;
@@ -219,6 +313,7 @@ export default function Home() {
         setBaseLeads([]);
         setTotalAgentsCount(0);
         setLastSyncedBlock(null);
+        setSyncHealth("unknown");
       } finally {
         if (isActive) setIsLoadingLeads(false);
       }
@@ -258,6 +353,8 @@ export default function Home() {
   );
 
   const claimedCount = useMemo(() => baseLeads.filter((agent) => agent.isClaimed).length, [baseLeads]);
+  const networkStatusDisplay =
+    network === "MEGAETH" ? MEGAETH_STATUS_DISPLAY : getBaseNetworkStatusDisplay(syncHealth);
 
   const reputationColor = (score: number): string => {
     if (score >= 80) return "text-emerald-300";
@@ -338,14 +435,23 @@ export default function Home() {
             <div className="absolute inset-0 bg-violet-500/30" aria-hidden="true"></div>
             <span className="relative text-white text-[10px] tracking-[0.2em]">{"//network_status"}</span>
           </div>
-          <div className="text-sm font-regular flex items-center gap-2">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 will-change-[transform,opacity]"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-[0_0_10px_#34d399]"></span>
-            </span>
-            <span className={network === "MEGAETH" ? "text-fuchsia-300" : "text-cyan-300"}>
-              [{network === "MEGAETH" ? "wip_no_verified_data" : "live_on_base"}]
-            </span>
+          <div className="text-sm font-regular flex flex-col items-start gap-1">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2 w-2">
+                {networkStatusDisplay.showPing ? (
+                  <span
+                    className={`animate-ping absolute inline-flex h-full w-full rounded-full ${networkStatusDisplay.pingClassName} opacity-75 will-change-[transform,opacity]`}
+                  ></span>
+                ) : null}
+                <span
+                  className={`relative inline-flex rounded-full h-2 w-2 ${networkStatusDisplay.dotClassName} ${networkStatusDisplay.dotShadowClassName}`}
+                ></span>
+              </span>
+              <span className={networkStatusDisplay.textClassName}>[{networkStatusDisplay.label}]</span>
+            </div>
+            <p className={`text-[11px] leading-tight ${networkStatusDisplay.descriptionClassName}`}>
+              {networkStatusDisplay.description}
+            </p>
           </div>
         </div>
         <div className="p-4 rounded-sm bg-slate-950/50 border border-violet-500/20 backdrop-blur-sm transform-gpu group hover:border-violet-500/40 transition-colors">
@@ -424,9 +530,8 @@ export default function Home() {
                         {agent.tier}
                       </span>
                       {agent.isClaimed && (
-                        <span className="inline-flex shrink-0 items-center gap-1 border border-emerald-400/50 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-emerald-300 whitespace-nowrap">
-                          <Check className="h-2.5 w-2.5" />
-                          Claimed
+                        <span className="inline-flex shrink-0 items-center border border-emerald-400/50 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-300 whitespace-nowrap">
+                          RESERVED
                         </span>
                       )}
                     </div>
@@ -469,7 +574,7 @@ export default function Home() {
                             : "text-cyan-400 border-cyan-400/20 hover:bg-cyan-400/10"
                         }`}
                       >
-                        {isOwner ? "MANAGE" : "ACCESS"}
+                        {isOwner ? "ACTIVATE" : "ACCESS"}
                       </button>
                     )}
                   </div>
