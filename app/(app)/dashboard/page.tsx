@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { Activity, AlertTriangle, Code, Copy, Info, Wallet } from "lucide-react";
+import { AlertTriangle, Code, Copy, Info, Wallet } from "lucide-react";
 import {
   useAccount,
   useReadContract,
@@ -19,6 +19,8 @@ import {
   PROTOCOL_TREASURY_FALLBACK_ADDRESS,
 } from "@/lib/constants";
 import { isClaimedAgent } from "@/lib/agent-claim";
+import GhostLogo from "@/components/GhostLogo";
+import LatencyIndicator from "@/components/LatencyIndicator";
 
 const CREDIT_PRICE_WEI = parseEther("0.00001");
 const SUPPORTED_CHAIN_IDS = new Set<number>([base.id]);
@@ -492,12 +494,19 @@ def my_agent():
       <div className="mx-auto w-full max-w-6xl px-4 py-8 md:px-8">
         <header className="mb-12 flex flex-col gap-4 border-b border-neutral-900 pb-8 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
-            <div className="h-3 w-3 bg-red-600 animate-pulse"></div>
+            <GhostLogo className="h-5 w-5" />
             <h1 className="text-sm tracking-[0.2em] text-neutral-100 md:text-base font-bold">
               ghost_gate // SETTLEMENT TERMINAL
             </h1>
           </div>
-          <ConnectButton showBalance={false} chainStatus="icon" accountStatus="full" />
+          <div className="flex items-center gap-4">
+            <LatencyIndicator
+              labelClassName="text-neutral-600 text-[10px] tracking-[0.16em]"
+              valueClassName="text-red-500 font-bold text-[10px] tracking-[0.16em]"
+              offlineValueClassName="text-neutral-500 font-bold text-[10px] tracking-[0.16em]"
+            />
+            <ConnectButton showBalance={false} chainStatus="icon" accountStatus="full" />
+          </div>
         </header>
 
         {!isConnected && (
@@ -519,7 +528,7 @@ def my_agent():
             <div className="border border-neutral-900 bg-neutral-950 p-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <p className="text-sm uppercase tracking-[0.18em] text-neutral-100 font-bold">
-                  // MERCHANT CONSOLE
+                  {"// MERCHANT CONSOLE"}
                 </p>
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] uppercase tracking-[0.16em] text-neutral-500 font-bold">Active Agent</span>

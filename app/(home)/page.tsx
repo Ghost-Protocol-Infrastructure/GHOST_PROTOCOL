@@ -2,7 +2,9 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Shield, ChevronRight, Activity, Lock, Sword, Swords } from 'lucide-react';
+import { ChevronRight, Activity, Lock, Swords } from 'lucide-react';
+import LatencyIndicator from '@/components/LatencyIndicator';
+import GhostLogo from '@/components/GhostLogo';
 
 const HomePage = () => {
   return (
@@ -10,7 +12,7 @@ const HomePage = () => {
       <div className="fixed top-0 left-0 w-full z-50 border-b border-neutral-900 bg-neutral-950/90 backdrop-blur-sm h-12 flex items-center px-4 justify-between text-xs tracking-widest">
         <div className="flex items-center gap-4">
           <span className="text-neutral-100 font-bold flex items-center gap-2">
-            <div className="w-2 h-2 bg-red-600 animate-pulse" />
+            <GhostLogo className="h-4 w-4" />
             GHOST_PROTOCOL
           </span>
           <span className="hidden md:inline text-neutral-600">
@@ -18,10 +20,7 @@ const HomePage = () => {
           </span>
         </div>
         <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
-            <span className="text-neutral-600">LATENCY:</span>
-            <span className="text-red-500 font-bold">09ms</span>
-          </div>
+          <LatencyIndicator />
           <div className="flex items-center gap-2">
             <span className="text-neutral-600">STATUS:</span>
             <span className="text-neutral-100">OPERATIONAL</span>
@@ -74,9 +73,9 @@ const HomePage = () => {
           </div>
         </div>
 
-        <div className="absolute bottom-10 left-0 w-full border-t border-b border-neutral-900 py-2 overflow-hidden bg-neutral-950">
+        <div className="absolute bottom-6 left-0 w-full border-t border-b border-neutral-900 py-2 overflow-hidden bg-neutral-950">
           <div className="whitespace-nowrap text-[10px] text-neutral-700 font-bold tracking-widest animate-marquee inline-block">
-            {"// INDEXING BASE AGENTS // REPUTATION LAYER ACTIVE // SETTLEMENT RAIL ONLINE // BLOCK_TIME: 10MS // TX_VOLUME: 4.2M ETH // AGENT_ID_2049 VERIFIED // INDEXING MEGAETH AGENTS // REPUTATION LAYER ACTIVE //"}
+            {"// INDEXING BASE AGENTS // REPUTATION LAYER ACTIVE // SETTLEMENT RAIL ONLINE // BLOCK_TIME: 10MS // TX_VOLUME: 4.2M ETH // AGENT_ID_2049 VERIFIED // INDEXING MEGAETH AGENTS // REPUTATION LAYER ACTIVE // // INDEXING BASE AGENTS // REPUTATION LAYER ACTIVE // SETTLEMENT RAIL ONLINE // BLOCK_TIME: 10MS // TX_VOLUME: 4.2M ETH // AGENT_ID_2049 VERIFIED // INDEXING MEGAETH AGENTS // REPUTATION LAYER ACTIVE //"}
           </div>
         </div>
       </main>
@@ -173,7 +172,8 @@ const HomePage = () => {
         </div>
       </footer>
 
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         @keyframes marquee {
           0% { transform: translateX(0); }
           100% { transform: translateX(-50%); }

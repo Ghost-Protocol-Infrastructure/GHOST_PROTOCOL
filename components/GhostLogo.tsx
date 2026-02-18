@@ -1,0 +1,19 @@
+type GhostLogoProps = {
+  className?: string;
+};
+
+const GhostLogo = ({ className = "h-8 w-auto" }: GhostLogoProps) => (
+  <svg
+    viewBox="0 0 100 100"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    aria-label="Ghost Protocol Logo"
+  >
+    <path d="M35 85 L55 15 L70 15 L50 85 Z" fill="#E5E5E5" />
+    <path d="M10 85 L30 15 L45 15 L25 85 Z" fill="#E5E5E5" />
+    <rect x="75" y="65" width="20" height="20" fill="#DC2626" />
+  </svg>
+);
+
+export default GhostLogo;
