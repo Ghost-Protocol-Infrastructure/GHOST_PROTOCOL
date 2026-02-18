@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { useAccount } from "wagmi";
 import { Copy } from "lucide-react";
 import Navbar from "@/components/Navbar";
@@ -15,6 +16,7 @@ type ApiAgent = {
   address: string;
   agentId?: string;
   name: string;
+  image?: string | null;
   creator: string;
   owner?: string;
   status: string;
@@ -31,6 +33,7 @@ type ApiAgent = {
 type ProcessedLead = {
   agentId: string;
   displayName: string;
+  imageUrl: string | null;
   owner: string;
   tier: LeadTier;
   txCount: number;
@@ -64,6 +67,21 @@ type NetworkStatusDisplay = {
 
 const truncateAddress = (address: string): string => `${address.slice(0, 6)}...${address.slice(-4)}`;
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
+const resolveAgentImageUrl = (raw: string | null | undefined): string | null => {
+  const image = raw?.trim();
+  if (!image) return null;
+  if (image.startsWith("data:image/")) return image;
+  if (image.startsWith("<svg")) {
+    return `data:image/svg+xml;utf8,${encodeURIComponent(image)}`;
+  }
+  if (image.startsWith("ipfs://ipfs/")) {
+    return `https://ipfs.io/ipfs/${image.slice("ipfs://ipfs/".length)}`;
+  }
+  if (image.startsWith("ipfs://")) {
+    return `https://ipfs.io/ipfs/${image.slice("ipfs://".length)}`;
+  }
+  return image;
+};
 
 const normalizeTxScore = (txCount: number, maxTxCount: number): number => {
   if (maxTxCount <= 0) return 0;
@@ -237,6 +255,7 @@ const buildLeadsFromApi = (agents: ApiAgent[]): ProcessedLead[] => {
     return {
       agentId,
       displayName: normalizeDisplayName(agent, agentId),
+      imageUrl: resolveAgentImageUrl(agent.image),
       owner: isHexAddress(ownerSource) ? ownerSource.toLowerCase() : ownerSource,
       tier: parseTier(agent.tier, txCount, isClaimed),
       txCount,
@@ -271,6 +290,7 @@ export default function Home() {
   const [syncHealth, setSyncHealth] = useState<SyncHealth>("unknown");
   const [isLoadingLeads, setIsLoadingLeads] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [brokenAvatars, setBrokenAvatars] = useState<Set<string>>(new Set());
   const { address: userAddress } = useAccount();
   const router = useRouter();
   const networkSelectValue = network === "BASE" ? "base" : "megaeth";
@@ -382,6 +402,15 @@ export default function Home() {
     }
   };
 
+  const markAvatarBroken = (key: string) => {
+    setBrokenAvatars((previous) => {
+      if (previous.has(key)) return previous;
+      const next = new Set(previous);
+      next.add(key);
+      return next;
+    });
+  };
+
   return (
     <>
       <main className="min-h-screen p-8 pb-20 max-w-7xl mx-auto space-y-12 relative z-[50] font-mono text-neutral-400 bg-neutral-950 [background-image:none] border-l border-r border-neutral-900">
@@ -482,11 +511,14 @@ export default function Home() {
         ) : (
           <div className="divide-y divide-neutral-800">
             {rankedAgents.map((agent) => {
+              const rowKey = `${agent.agentId}-${agent.owner}`;
               const isOwner = userAddress?.toLowerCase() === agent.owner.toLowerCase();
               const safeYieldEth = agent.isClaimed ? Math.max(0, agent.yieldEth ?? 0) : 0;
               const safeUptimePct = agent.isClaimed ? clamp(agent.uptimePct ?? 0, 0, 100) : 0;
               const showYieldZeroState = agent.isClaimed && safeYieldEth === 0;
               const showUptimeZeroState = agent.isClaimed && safeUptimePct === 0;
+              const showAvatar = Boolean(agent.imageUrl) && !brokenAvatars.has(rowKey);
+              const avatarFallback = agent.displayName.trim().charAt(0).toUpperCase() || "#";
               const yieldClassName = !agent.isClaimed
                 ? "text-neutral-600"
                 : showYieldZeroState
@@ -500,34 +532,58 @@ export default function Home() {
 
               return (
                 <div
-                  key={`${agent.agentId}-${agent.owner}`}
+                  key={rowKey}
                   className="grid grid-cols-12 gap-0 items-center hover:bg-neutral-900/30 transition-colors group"
                 >
                   <div className="col-span-1 py-4 px-6 border-r border-neutral-800 text-neutral-400 font-bold">{String(agent.rank).padStart(2, '0')}</div>
                   <div className="col-span-3 py-4 px-6">
-                    <div className="flex items-center gap-3">
-                      <span className="text-neutral-200 font-bold">#{agent.agentId}</span>
-                      <span className={`inline-flex border px-2 py-0.5 text-[10px] tracking-widest uppercase font-bold ${tierClassName[agent.tier]}`}>
-                        {agent.tier}
-                      </span>
-                      {agent.isClaimed && (
-                        <span className="inline-flex shrink-0 items-center border border-red-900/30 bg-red-950/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-red-600 whitespace-nowrap">
-                          RESERVED
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-2 text-[10px] uppercase tracking-widest text-neutral-500">{agent.displayName}</div>
-                    <div className="mt-1 flex items-center gap-2 text-[10px] text-neutral-600 font-mono">
-                      <span title={agent.owner}>{truncateAddress(agent.owner)}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyOwner(agent.owner)}
-                        className="inline-flex items-center justify-center border border-neutral-800 px-1 py-0.5 text-neutral-500 transition hover:border-neutral-600 hover:text-neutral-300"
-                        aria-label={`Copy ${agent.owner}`}
-                        title={copiedOwner === agent.owner ? "Copied" : "Copy full address"}
-                      >
-                        <Copy className="h-3 w-3" />
-                      </button>
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded border border-neutral-800 bg-neutral-900 text-xs font-bold text-neutral-400">
+                        {showAvatar ? (
+                          <Image
+                            src={agent.imageUrl as string}
+                            alt={`${agent.displayName} avatar`}
+                            width={40}
+                            height={40}
+                            className="h-full w-full object-cover"
+                            unoptimized
+                            loading="lazy"
+                            referrerPolicy="no-referrer"
+                            onError={() => markAvatarBroken(rowKey)}
+                          />
+                        ) : (
+                          <span>{avatarFallback}</span>
+                        )}
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="truncate text-neutral-100 font-bold">{agent.displayName}</span>
+                          <span className="inline-flex border border-neutral-800 bg-neutral-900 px-1.5 py-0.5 text-[10px] text-neutral-500 font-bold">
+                            #{agent.agentId}
+                          </span>
+                          <span className={`inline-flex border px-2 py-0.5 text-[10px] tracking-widest uppercase font-bold ${tierClassName[agent.tier]}`}>
+                            {agent.tier}
+                          </span>
+                          {agent.isClaimed && (
+                            <span className="inline-flex shrink-0 items-center border border-red-900/30 bg-red-950/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-red-600 whitespace-nowrap">
+                              RESERVED
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-1 flex items-center gap-2 text-[10px] text-neutral-600 font-mono">
+                          <span title={agent.owner}>{truncateAddress(agent.owner)}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyOwner(agent.owner)}
+                            className="inline-flex items-center justify-center border border-neutral-800 px-1 py-0.5 text-neutral-500 transition hover:border-neutral-600 hover:text-neutral-300"
+                            aria-label={`Copy ${agent.owner}`}
+                            title={copiedOwner === agent.owner ? "Copied" : "Copy full address"}
+                          >
+                            <Copy className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <div className="col-span-1 py-4 px-6 border-l border-r border-neutral-800 text-right text-neutral-400 font-mono">{agent.txCount}</div>
