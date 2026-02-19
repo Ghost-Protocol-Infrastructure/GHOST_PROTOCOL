@@ -45,6 +45,16 @@ const METADATA_BATCH_DELAY_MS = (() => {
   const parsed = raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 120;
   return Math.max(0, Math.min(parsed, 2_000));
 })();
+const PRISMA_RETRY_ATTEMPTS = (() => {
+  const raw = process.env.AGENT_PRISMA_RETRY_ATTEMPTS?.trim();
+  const parsed = raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 3;
+  return Math.max(1, Math.min(parsed, 6));
+})();
+const PRISMA_RETRY_DELAY_MS = (() => {
+  const raw = process.env.AGENT_PRISMA_RETRY_DELAY_MS?.trim();
+  const parsed = raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 750;
+  return Math.max(100, Math.min(parsed, 5_000));
+})();
 const INDEXER_RPC_URL =
   process.env.BASE_RPC_URL_INDEXER?.trim() || process.env.BASE_RPC_URL?.trim() || "https://mainnet.base.org";
 const INDEXER_RPC_ENV = process.env.BASE_RPC_URL_INDEXER?.trim()
@@ -109,6 +119,39 @@ const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+
+const isRecoverablePrismaError = (error: unknown): boolean => {
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  return /(postgresql connection|kind:\s*closed|connection.*closed|P1001|P1017|timeout|socket hang up|ECONNRESET|connection reset)/i.test(
+    message,
+  );
+};
+
+const withPrismaRetry = async <T>(label: string, operation: () => Promise<T>): Promise<T> => {
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= PRISMA_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isRecoverablePrismaError(error) || attempt >= PRISMA_RETRY_ATTEMPTS) {
+        throw error;
+      }
+
+      console.warn(
+        `${label} failed with recoverable Prisma error (attempt ${attempt}/${PRISMA_RETRY_ATTEMPTS}). Retrying...`,
+      );
+      console.error(error);
+
+      await prisma.$disconnect().catch(() => undefined);
+      await sleep(PRISMA_RETRY_DELAY_MS * attempt);
+      await prisma.$connect().catch(() => undefined);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(`${label} failed after retries`);
+};
 
 const parseStartBlock = (): bigint => {
   const raw = process.env.AGENT_INDEX_START_BLOCK?.trim();
@@ -616,15 +659,20 @@ const fetchCreateServiceFallback = async (
   return indexed;
 };
 
-const fetchErc8004ByTransfer = async (
+const indexErc8004Incremental = async (
   fromBlock: bigint,
   toBlock: bigint,
-): Promise<Map<string, IndexedAgentRecord>> => {
+): Promise<{
+  newCount: number;
+  totalResolvedTokens: number;
+  fallbackMetadataCount: number;
+}> => {
   const client = buildClient();
-  const indexed = new Map<string, IndexedAgentRecord>();
-  const creatorByTokenId = new Map<string, string | null>();
-  const tokenIds = new Set<bigint>();
+  const usedAgentIds = await withPrismaRetry("load used agent IDs", collectUsedAgentIds);
   let chunkIndex = 0;
+  let newCount = 0;
+  let totalResolvedTokens = 0;
+  let fallbackMetadataCount = 0;
 
   let currentBlock = fromBlock;
   while (currentBlock <= toBlock) {
@@ -658,12 +706,14 @@ const fetchErc8004ByTransfer = async (
     }
 
     if (!logs) {
-      console.warn(`Skipping Transfer chunk ${currentBlock.toString()}-${chunkToBlock.toString()}.`);
+      const message = `Failed to fetch Transfer logs for chunk ${currentBlock.toString()}-${chunkToBlock.toString()} after retries.`;
+      console.error(message);
       console.error(lastError);
-      currentBlock = chunkToBlock + 1n;
-      if (currentBlock <= toBlock) await sleep(CHUNK_DELAY_MS);
-      continue;
+      throw new Error(message);
     }
+
+    const creatorByTokenId = new Map<string, string | null>();
+    const tokenIds = new Set<bigint>();
 
     for (const log of logs) {
       if (log.args.tokenId == null) continue;
@@ -686,42 +736,72 @@ const fetchErc8004ByTransfer = async (
       }
     }
 
+    const tokenIdList = Array.from(tokenIds).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    let chunkFallbackMetadataCount = 0;
+    let chunkResolvedTokens = 0;
+    const chunkRecords = new Map<string, IndexedAgentRecord>();
+
+    for (const batch of chunkArray(tokenIdList, METADATA_CONCURRENCY)) {
+      const results = await Promise.all(
+        batch.map((tokenId) =>
+          resolveErc8004Record(
+            client as unknown as ContractReader,
+            tokenId,
+            creatorByTokenId.get(tokenId.toString()) ?? null,
+          ),
+        ),
+      );
+
+      for (const result of results) {
+        if (result.metadataUsedFallback) chunkFallbackMetadataCount += 1;
+        if (!result.record) continue;
+        chunkRecords.set(result.record.address, result.record);
+      }
+
+      chunkResolvedTokens += batch.length;
+      totalResolvedTokens += batch.length;
+      if (chunkResolvedTokens % 100 === 0 || chunkResolvedTokens === tokenIdList.length) {
+        console.log(
+          `ERC-8004 metadata progress (chunk ${currentBlock.toString()}-${chunkToBlock.toString()}): ${chunkResolvedTokens}/${tokenIdList.length}`,
+        );
+      }
+
+      if (chunkResolvedTokens < tokenIdList.length && METADATA_BATCH_DELAY_MS > 0) {
+        await sleep(METADATA_BATCH_DELAY_MS);
+      }
+    }
+
+    if (chunkRecords.size > 0) {
+      const chunkNewCount = await withPrismaRetry(
+        `upsert ERC-8004 agents for chunk ${currentBlock.toString()}-${chunkToBlock.toString()}`,
+        () => upsertAgents(chunkRecords, usedAgentIds),
+      );
+      newCount += chunkNewCount;
+    }
+
+    fallbackMetadataCount += chunkFallbackMetadataCount;
+    await withPrismaRetry(
+      `persist ERC-8004 cursor for chunk ending ${chunkToBlock.toString()}`,
+      () => persistCursor(chunkToBlock),
+    );
+
+    if (chunkIndex % 10 === 0 || chunkToBlock === toBlock) {
+      console.log(
+        `Chunk checkpoint: blocks ${currentBlock.toString()}-${chunkToBlock.toString()}, chunk_tokens=${tokenIdList.length}, total_tokens=${totalResolvedTokens}, new_agents=${newCount}, metadata_fallback=${fallbackMetadataCount}`,
+      );
+    }
+
     currentBlock = chunkToBlock + 1n;
     if (currentBlock <= toBlock) {
       await sleep(CHUNK_DELAY_MS);
     }
   }
 
-  const tokenIdList = Array.from(tokenIds).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  let processedTokens = 0;
-  let fallbackMetadataCount = 0;
-
-  for (const batch of chunkArray(tokenIdList, METADATA_CONCURRENCY)) {
-    const results = await Promise.all(
-      batch.map((tokenId) =>
-        resolveErc8004Record(client as unknown as ContractReader, tokenId, creatorByTokenId.get(tokenId.toString()) ?? null),
-      ),
-    );
-
-    for (const result of results) {
-      if (result.metadataUsedFallback) fallbackMetadataCount += 1;
-      if (!result.record) continue;
-      indexed.set(result.record.address, result.record);
-    }
-
-    processedTokens += batch.length;
-    if (processedTokens % 100 === 0 || processedTokens === tokenIdList.length) {
-      console.log(
-        `ERC-8004 metadata progress: ${processedTokens}/${tokenIdList.length} tokens (fallback ${fallbackMetadataCount})`,
-      );
-    }
-
-    if (processedTokens < tokenIdList.length && METADATA_BATCH_DELAY_MS > 0) {
-      await sleep(METADATA_BATCH_DELAY_MS);
-    }
-  }
-
-  return indexed;
+  return {
+    newCount,
+    totalResolvedTokens,
+    fallbackMetadataCount,
+  };
 };
 
 const normalizeLegacyFallbackRows = async (): Promise<number> => {
@@ -876,7 +956,7 @@ const collectUsedAgentIds = async (): Promise<Set<string>> => {
   );
 };
 
-const upsertAgents = async (records: Map<string, IndexedAgentRecord>): Promise<number> => {
+const upsertAgents = async (records: Map<string, IndexedAgentRecord>, usedAgentIds?: Set<string>): Promise<number> => {
   if (records.size === 0) return 0;
 
   const addresses = Array.from(records.keys());
@@ -886,14 +966,14 @@ const upsertAgents = async (records: Map<string, IndexedAgentRecord>): Promise<n
   });
   const existingSet = new Set(existing.map((row) => row.address));
   const existingByAddress = new Map(existing.map((row) => [row.address, row]));
-  const usedAgentIds = await collectUsedAgentIds();
+  const resolvedUsedAgentIds = usedAgentIds ?? (await collectUsedAgentIds());
   const newCount = addresses.filter((address) => !existingSet.has(address)).length;
 
   for (const record of records.values()) {
     const current = existingByAddress.get(record.address);
     const resolvedAgentId = current?.agentId
       ? current.agentId
-      : allocateUniqueAgentId(deriveAgentId(record), record.address, usedAgentIds);
+      : allocateUniqueAgentId(deriveAgentId(record), record.address, resolvedUsedAgentIds);
 
     await prisma.agent.upsert({
       where: { address: record.address },
@@ -969,7 +1049,7 @@ const backfillAgentIdentityColumns = async (): Promise<number> => {
 
 async function main(): Promise<void> {
   console.log(
-    `Indexer config: mode=${AGENT_INDEX_MODE}, cursor_key=${CURSOR_KEY}, chunk_size=${CHUNK_SIZE.toString()} blocks, chunk_delay_ms=${CHUNK_DELAY_MS}, metadata_concurrency=${METADATA_CONCURRENCY}, metadata_batch_delay_ms=${METADATA_BATCH_DELAY_MS}, rpc_env=${INDEXER_RPC_ENV}`,
+    `Indexer config: mode=${AGENT_INDEX_MODE}, cursor_key=${CURSOR_KEY}, chunk_size=${CHUNK_SIZE.toString()} blocks, chunk_delay_ms=${CHUNK_DELAY_MS}, metadata_concurrency=${METADATA_CONCURRENCY}, metadata_batch_delay_ms=${METADATA_BATCH_DELAY_MS}, prisma_retry_attempts=${PRISMA_RETRY_ATTEMPTS}, prisma_retry_delay_ms=${PRISMA_RETRY_DELAY_MS}, rpc_env=${INDEXER_RPC_ENV}`,
   );
 
   if (FORCE_RESET_INDEXER) {
@@ -993,11 +1073,11 @@ async function main(): Promise<void> {
 
   const client = buildClient();
   const latestBlock = await client.getBlockNumber();
-  const fromBlock = await getFromBlock();
+  const fromBlock = await withPrismaRetry("read index cursor", () => getFromBlock());
 
   if (fromBlock > latestBlock) {
-    const backfilledIdentityCount = await backfillAgentIdentityColumns();
-    await persistCursor(latestBlock);
+    const backfilledIdentityCount = await withPrismaRetry("backfill identity fields", () => backfillAgentIdentityColumns());
+    await withPrismaRetry(`persist cursor ${latestBlock.toString()}`, () => persistCursor(latestBlock));
     console.log(`Indexed 0 new agents from block ${fromBlock.toString()} to ${latestBlock.toString()}.`);
     if (backfilledIdentityCount > 0) {
       console.log(`Backfilled identity fields for ${backfilledIdentityCount} existing agents.`);
@@ -1005,21 +1085,31 @@ async function main(): Promise<void> {
     return;
   }
 
-  let records: Map<string, IndexedAgentRecord>;
+  let newCount = 0;
   if (AGENT_INDEX_MODE === "erc8004") {
-    records = await fetchErc8004ByTransfer(fromBlock, latestBlock);
+    const stats = await indexErc8004Incremental(fromBlock, latestBlock);
+    newCount = stats.newCount;
+    console.log(
+      `ERC-8004 indexing summary: resolved_tokens=${stats.totalResolvedTokens}, metadata_fallback=${stats.fallbackMetadataCount}, new_agents=${stats.newCount}.`,
+    );
   } else {
-    records = await fetchAgentRegistered(fromBlock, latestBlock);
+    let records = await fetchAgentRegistered(fromBlock, latestBlock);
     if (records.size === 0 && process.env.AGENT_INDEXER_FALLBACK_CREATE_SERVICE !== "false") {
       console.warn("AgentRegistered logs not found in range. Falling back to CreateService indexing.");
       records = await fetchCreateServiceFallback(fromBlock, latestBlock);
     }
+    newCount = await withPrismaRetry("upsert Olas agent records", () => upsertAgents(records));
+    await withPrismaRetry(`persist cursor ${latestBlock.toString()}`, () => persistCursor(latestBlock));
   }
 
-  const newCount = await upsertAgents(records);
-  const backfilledIdentityCount = await backfillAgentIdentityColumns();
-  const normalizedLegacyCount = AGENT_INDEX_MODE === "olas" ? await normalizeLegacyFallbackRows() : 0;
-  await persistCursor(latestBlock);
+  const backfilledIdentityCount = await withPrismaRetry("backfill identity fields", () => backfillAgentIdentityColumns());
+  const normalizedLegacyCount =
+    AGENT_INDEX_MODE === "olas"
+      ? await withPrismaRetry("normalize legacy fallback labels", () => normalizeLegacyFallbackRows())
+      : 0;
+  if (AGENT_INDEX_MODE === "erc8004") {
+    await withPrismaRetry(`persist cursor ${latestBlock.toString()}`, () => persistCursor(latestBlock));
+  }
 
   console.log(`Indexed ${newCount} new agents from block ${fromBlock.toString()} to ${latestBlock.toString()}.`);
   if (backfilledIdentityCount > 0) {
