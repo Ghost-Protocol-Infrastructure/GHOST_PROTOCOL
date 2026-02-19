@@ -2,7 +2,24 @@ import { createPublicClient, fallback, getAddress, http, type Address } from "vi
 import { base } from "viem/chains";
 import { prisma } from "../lib/db";
 
-const BASE_RPC_URL = process.env.BASE_RPC_URL?.trim() || "https://mainnet.base.org";
+type AgentIndexMode = "erc8004" | "olas";
+type ScoreTxSource = "owner" | "creator";
+
+const AGENT_INDEX_MODE: AgentIndexMode =
+  process.env.AGENT_INDEX_MODE?.trim().toLowerCase() === "olas" ? "olas" : "erc8004";
+const SCORE_TX_SOURCE: ScoreTxSource = (() => {
+  const raw = process.env.SCORE_TX_SOURCE?.trim().toLowerCase();
+  if (raw === "owner" || raw === "creator") return raw;
+  return AGENT_INDEX_MODE === "olas" ? "creator" : "owner";
+})();
+
+const INDEXER_RPC_URL =
+  process.env.BASE_RPC_URL_INDEXER?.trim() || process.env.BASE_RPC_URL?.trim() || "https://mainnet.base.org";
+const INDEXER_RPC_ENV = process.env.BASE_RPC_URL_INDEXER?.trim()
+  ? "BASE_RPC_URL_INDEXER"
+  : process.env.BASE_RPC_URL?.trim()
+    ? "BASE_RPC_URL"
+    : "default";
 const CONCURRENCY_LIMIT = 5;
 const BATCH_DELAY_MS = 100;
 const UPDATE_BATCH_SIZE = 100;
@@ -70,6 +87,12 @@ const parseAddress = (value: string): Address | null => {
   }
 };
 
+const resolveTxSourceAddressLower = (agent: { owner: string; creator: string }): string => {
+  const primary = SCORE_TX_SOURCE === "owner" ? agent.owner : agent.creator;
+  const secondary = SCORE_TX_SOURCE === "owner" ? agent.creator : agent.owner;
+  return (primary || secondary || "").trim().toLowerCase();
+};
+
 const statusIndicatesClaimed = (status: string): boolean => {
   const normalized = status.trim().toLowerCase();
   if (normalized.length === 0) return false;
@@ -87,62 +110,62 @@ const buildClient = () =>
   createPublicClient({
     chain: base,
     transport: fallback([
-      http(BASE_RPC_URL, { retryCount: 2, retryDelay: 250, timeout: 15_000 }),
+      http(INDEXER_RPC_URL, { retryCount: 2, retryDelay: 250, timeout: 15_000 }),
       http("https://base.llamarpc.com", { retryCount: 2, retryDelay: 250, timeout: 15_000 }),
       http("https://1rpc.io/base", { retryCount: 2, retryDelay: 250, timeout: 15_000 }),
     ]),
   });
 
-const fetchTxCountsByCreator = async (
-  creators: string[],
+const fetchTxCountsBySourceAddress = async (
+  sourceAddresses: string[],
 ): Promise<{
-  txCountByCreatorLower: Map<string, number>;
+  txCountBySourceAddressLower: Map<string, number>;
   failures: number;
 }> => {
-  const txCountByCreatorLower = new Map<string, number>();
-  const normalizedCreators = Array.from(
+  const txCountBySourceAddressLower = new Map<string, number>();
+  const normalizedAddresses = Array.from(
     new Set(
-      creators
-        .map((creator) => creator.toLowerCase())
-        .map((creatorLower) => {
-          const parsed = parseAddress(creatorLower);
-          return parsed ? { creatorLower, creatorAddress: parsed } : null;
+      sourceAddresses
+        .map((sourceAddress) => sourceAddress.toLowerCase())
+        .map((sourceAddressLower) => {
+          const parsed = parseAddress(sourceAddressLower);
+          return parsed ? { sourceAddressLower, sourceAddress: parsed } : null;
         })
-        .filter((value): value is { creatorLower: string; creatorAddress: Address } => value !== null),
+        .filter((value): value is { sourceAddressLower: string; sourceAddress: Address } => value !== null),
     ),
   );
 
   const publicClient = buildClient();
   let failures = 0;
-  const total = normalizedCreators.length;
+  const total = normalizedAddresses.length;
 
-  for (let index = 0; index < normalizedCreators.length; index += CONCURRENCY_LIMIT) {
-    const batch = normalizedCreators.slice(index, index + CONCURRENCY_LIMIT);
+  for (let index = 0; index < normalizedAddresses.length; index += CONCURRENCY_LIMIT) {
+    const batch = normalizedAddresses.slice(index, index + CONCURRENCY_LIMIT);
 
     await Promise.all(
-      batch.map(async ({ creatorLower, creatorAddress }) => {
+      batch.map(async ({ sourceAddressLower, sourceAddress }) => {
         try {
-          const txCountRaw = await publicClient.getTransactionCount({ address: creatorAddress });
-          txCountByCreatorLower.set(creatorLower, toSafeInt(txCountRaw));
+          const txCountRaw = await publicClient.getTransactionCount({ address: sourceAddress });
+          txCountBySourceAddressLower.set(sourceAddressLower, toSafeInt(txCountRaw));
         } catch (error) {
           failures += 1;
-          txCountByCreatorLower.set(creatorLower, 0);
-          console.warn(`Failed txCount fetch for ${creatorAddress}. Defaulting to 0.`);
+          txCountBySourceAddressLower.set(sourceAddressLower, 0);
+          console.warn(`Failed txCount fetch for ${sourceAddress}. Defaulting to 0.`);
           console.error(error);
         }
       }),
     );
     const processed = Math.min(index + batch.length, total);
     if (processed % HEARTBEAT_INTERVAL === 0 || processed === total) {
-      console.log(`Heartbeat: fetched txCounts ${processed}/${total} creators`);
+      console.log(`Heartbeat: fetched txCounts ${processed}/${total} ${SCORE_TX_SOURCE} addresses`);
     }
 
-    if (index + CONCURRENCY_LIMIT < normalizedCreators.length) {
+    if (index + CONCURRENCY_LIMIT < normalizedAddresses.length) {
       await sleep(BATCH_DELAY_MS);
     }
   }
 
-  return { txCountByCreatorLower, failures };
+  return { txCountBySourceAddressLower, failures };
 };
 
 const applyScoreUpdates = async (updates: ScoreUpdate[]): Promise<void> => {
@@ -174,11 +197,13 @@ const applyScoreUpdates = async (updates: ScoreUpdate[]): Promise<void> => {
 };
 
 async function main(): Promise<void> {
+  console.log(`Scoring config: mode=${AGENT_INDEX_MODE}, tx_source=${SCORE_TX_SOURCE}, rpc_env=${INDEXER_RPC_ENV}`);
   const startedAt = Date.now();
   const agents = await prisma.agent.findMany({
     select: {
       address: true,
       creator: true,
+      owner: true,
       status: true,
       yield: true,
       uptime: true,
@@ -191,9 +216,13 @@ async function main(): Promise<void> {
     return;
   }
 
-  const { txCountByCreatorLower, failures } = await fetchTxCountsByCreator(agents.map((agent) => agent.creator));
+  const { txCountBySourceAddressLower, failures } = await fetchTxCountsBySourceAddress(
+    agents.map((agent) => resolveTxSourceAddressLower(agent)),
+  );
 
-  const txCounts = agents.map((agent) => txCountByCreatorLower.get(agent.creator.toLowerCase()) ?? agent.txCount ?? 0);
+  const txCounts = agents.map(
+    (agent) => txCountBySourceAddressLower.get(resolveTxSourceAddressLower(agent)) ?? agent.txCount ?? 0,
+  );
   const maxTxCount = Math.max(0, ...txCounts);
 
   const claimedYields = agents
@@ -209,7 +238,7 @@ async function main(): Promise<void> {
 
   for (let index = 0; index < totalAgents; index += 1) {
     const agent = agents[index];
-    const txCount = txCountByCreatorLower.get(agent.creator.toLowerCase()) ?? agent.txCount ?? 0;
+    const txCount = txCountBySourceAddressLower.get(resolveTxSourceAddressLower(agent)) ?? agent.txCount ?? 0;
     const txVolumeNorm = normalizeLog100(txCount, maxTxCount);
     const velocityNorm = normalizeLog100(txCount, maxTxCount);
     const isClaimed = statusIndicatesClaimed(agent.status);

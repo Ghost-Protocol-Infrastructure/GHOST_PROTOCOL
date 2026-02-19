@@ -5,6 +5,9 @@
   "packageManager": "npm@10.8.2",
   "scripts": {
     "index:db": "npx tsx scripts/index-db.ts",
+    "index:db:erc8004": "npx tsx scripts/index-db.ts --mode=erc8004",
+    "index:db:olas": "npx tsx scripts/index-db.ts --mode=olas",
+    "index:db:full-reindex": "npx tsx scripts/index-db.ts --reset-indexer",
     "index:db:refresh-metadata": "npx tsx scripts/index-db.ts --force-refresh-metadata",
     "score": "npx tsx scripts/score-leads.ts",
     "typecheck": "tsc --noEmit",

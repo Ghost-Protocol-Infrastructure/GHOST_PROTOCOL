@@ -2,22 +2,39 @@ import { createPublicClient, fallback, getAddress, http, parseAbiItem, type Addr
 import { base } from "viem/chains";
 import { prisma } from "../lib/db";
 
+type AgentIndexMode = "erc8004" | "olas";
+
+const parseAgentIndexMode = (): AgentIndexMode => {
+  const modeArg = process.argv.find((arg) => arg.startsWith("--mode="))?.split("=")[1];
+  const rawMode = (modeArg ?? process.env.AGENT_INDEX_MODE ?? "erc8004").trim().toLowerCase();
+  return rawMode === "olas" ? "olas" : "erc8004";
+};
+
+const AGENT_INDEX_MODE = parseAgentIndexMode();
+const DEFAULT_ERC8004_REGISTRY_ADDRESS = "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432";
+const DEFAULT_OLAS_REGISTRY_ADDRESS = "0x3C1fF68f5aa342D296d4DEe4Bb1cACCA912D95fE";
 const REGISTRY_ADDRESS = getAddress(
-  process.env.ERC8004_REGISTRY_ADDRESS?.trim() || "0x3C1fF68f5aa342D296d4DEe4Bb1cACCA912D95fE",
+  process.env.ERC8004_REGISTRY_ADDRESS?.trim() ||
+    (AGENT_INDEX_MODE === "olas" ? DEFAULT_OLAS_REGISTRY_ADDRESS : DEFAULT_ERC8004_REGISTRY_ADDRESS),
 );
-const CURSOR_KEY = "agent_indexer";
-const DEFAULT_START_BLOCK = 23_000_000n;
+const CURSOR_KEY = AGENT_INDEX_MODE === "olas" ? "agent_indexer_olas" : "agent_indexer_erc8004";
+const LEGACY_CURSOR_KEY = "agent_indexer";
+const DEFAULT_START_BLOCK = 10_827_380n;
 const MIN_CHUNK_SIZE = 2_000n;
 const MAX_CHUNK_SIZE = 10_000n;
 const CHUNK_SIZE = (() => {
   const raw = process.env.AGENT_INDEX_CHUNK_SIZE?.trim();
-  if (!raw || !/^\d+$/.test(raw)) return MIN_CHUNK_SIZE;
+  if (!raw || !/^\d+$/.test(raw)) return MAX_CHUNK_SIZE;
   const parsed = BigInt(raw);
   if (parsed < MIN_CHUNK_SIZE) return MIN_CHUNK_SIZE;
   if (parsed > MAX_CHUNK_SIZE) return MAX_CHUNK_SIZE;
   return parsed;
 })();
-const CHUNK_DELAY_MS = 100;
+const CHUNK_DELAY_MS = (() => {
+  const raw = process.env.AGENT_INDEX_CHUNK_DELAY_MS?.trim();
+  const parsed = raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 40;
+  return Math.max(0, Math.min(parsed, 1_000));
+})();
 const METADATA_CONCURRENCY = (() => {
   const raw = process.env.AGENT_METADATA_CONCURRENCY?.trim();
   const parsed = raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 25;
@@ -28,16 +45,28 @@ const METADATA_BATCH_DELAY_MS = (() => {
   const parsed = raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 120;
   return Math.max(0, Math.min(parsed, 2_000));
 })();
+const INDEXER_RPC_URL =
+  process.env.BASE_RPC_URL_INDEXER?.trim() || process.env.BASE_RPC_URL?.trim() || "https://mainnet.base.org";
+const INDEXER_RPC_ENV = process.env.BASE_RPC_URL_INDEXER?.trim()
+  ? "BASE_RPC_URL_INDEXER"
+  : process.env.BASE_RPC_URL?.trim()
+    ? "BASE_RPC_URL"
+    : "default";
 
 const AGENT_REGISTERED_EVENT = parseAbiItem(
   "event AgentRegistered(address indexed agent, string name, address indexed creator, string image, string description, string telegram, string twitter, string website)",
 );
 const CREATE_SERVICE_EVENT = parseAbiItem("event CreateService(uint256 indexed serviceId, bytes32 configHash)");
+const TRANSFER_EVENT = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)");
 const OWNER_OF_FUNCTION = parseAbiItem("function ownerOf(uint256 serviceId) view returns (address)");
 const TOKEN_URI_FUNCTION = parseAbiItem("function tokenURI(uint256 serviceId) view returns (string)");
 const FALLBACK_ADDRESS_PREFIX = "service:";
+const ERC8004_ADDRESS_PREFIX = "agent:";
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const FORCE_REFRESH_METADATA =
   process.argv.includes("--force-refresh-metadata") || process.env.AGENT_FORCE_REFRESH_METADATA === "true";
+const FORCE_RESET_INDEXER =
+  process.argv.includes("--reset-indexer") || process.env.AGENT_RESET_INDEXER === "true";
 const METADATA_FETCH_TIMEOUT_MS = 8_000;
 const METADATA_FETCH_RETRY_COUNT = 2;
 const DEFAULT_IPFS_GATEWAY = "https://ipfs.io/ipfs/";
@@ -46,6 +75,7 @@ type IndexedAgentRecord = {
   address: string;
   name: string;
   creator: string;
+  owner: string;
   image: string | null;
   description: string | null;
   telegram: string | null;
@@ -96,6 +126,8 @@ const fallbackName = (address: string): string => `Agent ${address.slice(0, 10)}
 const fallbackServiceName = (serviceId: string): string => `Agent #${serviceId}`;
 const fallbackServiceDescription = (serviceId: string): string =>
   `Fallback-indexed registry service ${serviceId} (CreateService + ownerOf).`;
+const fallbackErc8004Description = (tokenId: string): string =>
+  `Fallback-indexed ERC-8004 token ${tokenId} (Transfer + ownerOf).`;
 const getIpfsGateway = (): string => {
   const configured = process.env.AGENT_METADATA_IPFS_GATEWAY?.trim();
   if (!configured) return DEFAULT_IPFS_GATEWAY;
@@ -243,6 +275,7 @@ const resolveServiceRecord = async (
         address: syntheticAddress,
         name: metadata?.name ?? fallbackServiceName(serviceIdText),
         creator: getAddress(ownerAddress as Address).toLowerCase(),
+        owner: getAddress(ownerAddress as Address).toLowerCase(),
         image: metadata?.image ?? null,
         description: metadata?.description ?? fallbackServiceDescription(serviceIdText),
         telegram: null,
@@ -255,6 +288,65 @@ const resolveServiceRecord = async (
     console.error(error);
     return {
       serviceIdText,
+      metadataUsedFallback: true,
+      record: null,
+    };
+  }
+};
+
+const resolveErc8004Record = async (
+  client: ContractReader,
+  tokenId: bigint,
+  creatorHint: string | null,
+): Promise<ServiceResolution> => {
+  const tokenIdText = tokenId.toString();
+  try {
+    const ownerResult = await client.readContract({
+      address: REGISTRY_ADDRESS,
+      abi: [OWNER_OF_FUNCTION],
+      functionName: "ownerOf",
+      args: [tokenId],
+    });
+    const ownerAddress = typeof ownerResult === "string" ? ownerResult : "";
+    if (!ownerAddress) {
+      throw new Error("ownerOf returned a non-string value");
+    }
+
+    const owner = getAddress(ownerAddress as Address).toLowerCase();
+    let metadata: ServiceMetadata | null = null;
+    try {
+      metadata = await fetchServiceMetadata(client, tokenId);
+    } catch (error) {
+      console.warn(
+        `Metadata fetch failed for ERC-8004 token ${tokenIdText}. Falling back to synthetic identity fields.`,
+      );
+      console.error(error);
+    }
+
+    if (!metadata) {
+      console.warn(`Metadata is empty for ERC-8004 token ${tokenIdText}. Falling back to synthetic identity fields.`);
+    }
+
+    return {
+      serviceIdText: tokenIdText,
+      metadataUsedFallback: metadata == null,
+      record: {
+        address: `${ERC8004_ADDRESS_PREFIX}${tokenIdText}`,
+        name: metadata?.name ?? fallbackServiceName(tokenIdText),
+        creator: creatorHint ?? owner,
+        owner,
+        image: metadata?.image ?? null,
+        description: metadata?.description ?? fallbackErc8004Description(tokenIdText),
+        telegram: null,
+        twitter: null,
+        website: null,
+      },
+    };
+  } catch (error) {
+    console.warn(`Skipping ERC-8004 token ${tokenIdText} due to ownerOf failure.`);
+    console.error(error);
+    return {
+      serviceIdText: tokenIdText,
       metadataUsedFallback: true,
       record: null,
     };
@@ -298,6 +390,12 @@ const allocateUniqueAgentId = (candidate: string, address: string, usedIds: Set<
 
 const getFromBlock = async (): Promise<bigint> => {
   const state = await prisma.systemState.findUnique({ where: { key: CURSOR_KEY } });
+  if (!state && AGENT_INDEX_MODE === "olas") {
+    const legacyState = await prisma.systemState.findUnique({ where: { key: LEGACY_CURSOR_KEY } });
+    if (legacyState && legacyState.lastSyncedBlock > 0n) {
+      return legacyState.lastSyncedBlock + 1n;
+    }
+  }
   if (!state || state.lastSyncedBlock <= 0n) {
     return parseStartBlock();
   }
@@ -317,11 +415,23 @@ const persistCursor = async (latestBlock: bigint): Promise<void> => {
   });
 };
 
+const resetIndexerState = async (): Promise<{ deletedAgents: number }> => {
+  const deletedAgents = await prisma.agent.deleteMany();
+  await prisma.systemState.deleteMany({
+    where: {
+      key: {
+        in: AGENT_INDEX_MODE === "olas" ? [CURSOR_KEY, LEGACY_CURSOR_KEY] : [CURSOR_KEY],
+      },
+    },
+  });
+  return { deletedAgents: deletedAgents.count };
+};
+
 const buildClient = () =>
   createPublicClient({
     chain: base,
     transport: fallback([
-      http(process.env.BASE_RPC_URL?.trim() || "https://mainnet.base.org", {
+      http(INDEXER_RPC_URL, {
         retryCount: 2,
         retryDelay: 250,
         timeout: 15_000,
@@ -398,6 +508,7 @@ const fetchAgentRegistered = async (
       indexed.set(address, {
         address,
         creator,
+        owner: creator,
         name,
         image: sanitizeOptionalText(args.image),
         description: sanitizeOptionalText(args.description),
@@ -498,6 +609,114 @@ const fetchCreateServiceFallback = async (
     }
 
     if (processedServices < serviceIdList.length && METADATA_BATCH_DELAY_MS > 0) {
+      await sleep(METADATA_BATCH_DELAY_MS);
+    }
+  }
+
+  return indexed;
+};
+
+const fetchErc8004ByTransfer = async (
+  fromBlock: bigint,
+  toBlock: bigint,
+): Promise<Map<string, IndexedAgentRecord>> => {
+  const client = buildClient();
+  const indexed = new Map<string, IndexedAgentRecord>();
+  const creatorByTokenId = new Map<string, string | null>();
+  const tokenIds = new Set<bigint>();
+  let chunkIndex = 0;
+
+  let currentBlock = fromBlock;
+  while (currentBlock <= toBlock) {
+    const chunkToBlock = currentBlock + CHUNK_SIZE <= toBlock ? currentBlock + CHUNK_SIZE : toBlock;
+    chunkIndex += 1;
+    if (chunkIndex % 20 === 1) {
+      console.log(`ERC-8004 scan Transfer logs from ${currentBlock.toString()} to ${chunkToBlock.toString()}`);
+    }
+
+    let logs:
+      | Awaited<ReturnType<typeof client.getLogs<typeof TRANSFER_EVENT>>>
+      | null = null;
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        logs = await client.getLogs({
+          address: REGISTRY_ADDRESS,
+          event: TRANSFER_EVENT,
+          fromBlock: currentBlock,
+          toBlock: chunkToBlock,
+          strict: true,
+        });
+        break;
+      } catch (error) {
+        lastError = error;
+        console.warn(
+          `Transfer chunk fetch failed for ${currentBlock.toString()}-${chunkToBlock.toString()} (attempt ${attempt}/2).`,
+        );
+        if (attempt < 2) await sleep(CHUNK_DELAY_MS);
+      }
+    }
+
+    if (!logs) {
+      console.warn(`Skipping Transfer chunk ${currentBlock.toString()}-${chunkToBlock.toString()}.`);
+      console.error(lastError);
+      currentBlock = chunkToBlock + 1n;
+      if (currentBlock <= toBlock) await sleep(CHUNK_DELAY_MS);
+      continue;
+    }
+
+    for (const log of logs) {
+      if (log.args.tokenId == null) continue;
+      const tokenId = log.args.tokenId;
+      tokenIds.add(tokenId);
+
+      const tokenIdText = tokenId.toString();
+      if (!creatorByTokenId.has(tokenIdText)) {
+        creatorByTokenId.set(tokenIdText, null);
+      }
+
+      const fromAddress = typeof log.args.from === "string" ? log.args.from.toLowerCase() : "";
+      const toAddress = typeof log.args.to === "string" ? log.args.to : null;
+      if (fromAddress === ZERO_ADDRESS && toAddress) {
+        try {
+          creatorByTokenId.set(tokenIdText, getAddress(toAddress as Address).toLowerCase());
+        } catch {
+          // Ignore malformed mint event recipient.
+        }
+      }
+    }
+
+    currentBlock = chunkToBlock + 1n;
+    if (currentBlock <= toBlock) {
+      await sleep(CHUNK_DELAY_MS);
+    }
+  }
+
+  const tokenIdList = Array.from(tokenIds).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  let processedTokens = 0;
+  let fallbackMetadataCount = 0;
+
+  for (const batch of chunkArray(tokenIdList, METADATA_CONCURRENCY)) {
+    const results = await Promise.all(
+      batch.map((tokenId) =>
+        resolveErc8004Record(client as unknown as ContractReader, tokenId, creatorByTokenId.get(tokenId.toString()) ?? null),
+      ),
+    );
+
+    for (const result of results) {
+      if (result.metadataUsedFallback) fallbackMetadataCount += 1;
+      if (!result.record) continue;
+      indexed.set(result.record.address, result.record);
+    }
+
+    processedTokens += batch.length;
+    if (processedTokens % 100 === 0 || processedTokens === tokenIdList.length) {
+      console.log(
+        `ERC-8004 metadata progress: ${processedTokens}/${tokenIdList.length} tokens (fallback ${fallbackMetadataCount})`,
+      );
+    }
+
+    if (processedTokens < tokenIdList.length && METADATA_BATCH_DELAY_MS > 0) {
       await sleep(METADATA_BATCH_DELAY_MS);
     }
   }
@@ -683,7 +902,7 @@ const upsertAgents = async (records: Map<string, IndexedAgentRecord>): Promise<n
         agentId: resolvedAgentId,
         name: record.name,
         creator: record.creator,
-        owner: record.creator,
+        owner: record.owner,
         image: record.image,
         description: record.description,
         telegram: record.telegram,
@@ -694,7 +913,7 @@ const upsertAgents = async (records: Map<string, IndexedAgentRecord>): Promise<n
         agentId: resolvedAgentId,
         name: record.name,
         creator: record.creator,
-        owner: record.creator,
+        owner: record.owner,
         image: record.image,
         description: record.description,
         telegram: record.telegram,
@@ -750,10 +969,21 @@ const backfillAgentIdentityColumns = async (): Promise<number> => {
 
 async function main(): Promise<void> {
   console.log(
-    `Indexer config: chunk_size=${CHUNK_SIZE.toString()} blocks, metadata_concurrency=${METADATA_CONCURRENCY}, metadata_batch_delay_ms=${METADATA_BATCH_DELAY_MS}`,
+    `Indexer config: mode=${AGENT_INDEX_MODE}, cursor_key=${CURSOR_KEY}, chunk_size=${CHUNK_SIZE.toString()} blocks, chunk_delay_ms=${CHUNK_DELAY_MS}, metadata_concurrency=${METADATA_CONCURRENCY}, metadata_batch_delay_ms=${METADATA_BATCH_DELAY_MS}, rpc_env=${INDEXER_RPC_ENV}`,
   );
 
+  if (FORCE_RESET_INDEXER) {
+    const resetResult = await resetIndexerState();
+    console.log(
+      `Indexer reset complete: deleted_agents=${resetResult.deletedAgents}. Cursor cleared. Full re-index will start from block ${parseStartBlock().toString()}.`,
+    );
+  }
+
   if (FORCE_REFRESH_METADATA) {
+    if (AGENT_INDEX_MODE !== "olas") {
+      console.warn("Forced metadata refresh currently supports Olas service identities only. Skipping.");
+      return;
+    }
     const stats = await forceRefreshServiceMetadata();
     console.log(
       `Forced metadata refresh complete: total=${stats.total}, rich_metadata=${stats.refreshed}, fallback=${stats.fallbackUsed}, unchanged=${stats.unchanged}.`,
@@ -775,15 +1005,20 @@ async function main(): Promise<void> {
     return;
   }
 
-  let records = await fetchAgentRegistered(fromBlock, latestBlock);
-  if (records.size === 0 && process.env.AGENT_INDEXER_FALLBACK_CREATE_SERVICE !== "false") {
-    console.warn("AgentRegistered logs not found in range. Falling back to CreateService indexing.");
-    records = await fetchCreateServiceFallback(fromBlock, latestBlock);
+  let records: Map<string, IndexedAgentRecord>;
+  if (AGENT_INDEX_MODE === "erc8004") {
+    records = await fetchErc8004ByTransfer(fromBlock, latestBlock);
+  } else {
+    records = await fetchAgentRegistered(fromBlock, latestBlock);
+    if (records.size === 0 && process.env.AGENT_INDEXER_FALLBACK_CREATE_SERVICE !== "false") {
+      console.warn("AgentRegistered logs not found in range. Falling back to CreateService indexing.");
+      records = await fetchCreateServiceFallback(fromBlock, latestBlock);
+    }
   }
 
   const newCount = await upsertAgents(records);
   const backfilledIdentityCount = await backfillAgentIdentityColumns();
-  const normalizedLegacyCount = await normalizeLegacyFallbackRows();
+  const normalizedLegacyCount = AGENT_INDEX_MODE === "olas" ? await normalizeLegacyFallbackRows() : 0;
   await persistCursor(latestBlock);
 
   console.log(`Indexed ${newCount} new agents from block ${fromBlock.toString()} to ${latestBlock.toString()}.`);

@@ -11,6 +11,9 @@ const MAX_LIMIT = 1000;
 const DEFAULT_PAGE = 1;
 const ONE_HOUR_SECONDS = 60 * 60;
 const ONE_DAY_SECONDS = 24 * ONE_HOUR_SECONDS;
+const AGENT_INDEX_MODE = process.env.AGENT_INDEX_MODE?.trim().toLowerCase() === "olas" ? "olas" : "erc8004";
+const ACTIVE_CURSOR_KEY = AGENT_INDEX_MODE === "olas" ? "agent_indexer_olas" : "agent_indexer_erc8004";
+const LEGACY_CURSOR_KEY = "agent_indexer";
 
 type SyncHealth = "live" | "stale" | "offline" | "unknown";
 
@@ -122,7 +125,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       }
     : undefined;
 
-  const [agents, totalAgents, filteredTotal, indexerState] = await prisma.$transaction([
+  const [agents, totalAgents, filteredTotal, indexerStates] = await prisma.$transaction([
     prisma.agent.findMany({
       where,
       orderBy,
@@ -131,10 +134,22 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }),
     prisma.agent.count(),
     prisma.agent.count({ where }),
-    prisma.systemState.findFirst({
-      where: { key: "agent_indexer" },
+    prisma.systemState.findMany({
+      where: {
+        key: {
+          in: [ACTIVE_CURSOR_KEY, LEGACY_CURSOR_KEY],
+        },
+      },
+      select: {
+        key: true,
+        lastSyncedBlock: true,
+      },
     }),
   ]);
+  const indexerState =
+    indexerStates.find((state) => state.key === ACTIVE_CURSOR_KEY) ??
+    indexerStates.find((state) => state.key === LEGACY_CURSOR_KEY) ??
+    null;
   const syncMetadata = await resolveSyncMetadata(indexerState?.lastSyncedBlock);
 
   return NextResponse.json(
