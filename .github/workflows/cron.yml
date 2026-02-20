@@ -2,6 +2,39 @@ name: Data Refresh
 
 on:
   workflow_dispatch:
+    inputs:
+      score_v2_enabled:
+        description: "Enable v2 scoring pipeline"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      score_v2_shadow_only:
+        description: "Keep v2 in shadow-only mode"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      score_v2_scheduler_enabled:
+        description: "Allow workflow to execute v2 step"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      leaderboard_read_from_snapshot:
+        description: "Read leaderboard API from active snapshot"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
   schedule:
     - cron: "0 * * * *"
   push:
@@ -46,10 +79,10 @@ jobs:
       SCORE_PRISMA_RETRY_ATTEMPTS: "4"
       SCORE_PRISMA_RETRY_DELAY_MS: "1000"
       SCORE_PRISMA_CONNECTION_TIMEOUT_MS: "12000"
-      SCORE_V2_ENABLED: "false"
-      SCORE_V2_SHADOW_ONLY: "true"
-      SCORE_V2_SCHEDULER_ENABLED: "false"
-      LEADERBOARD_READ_FROM_SNAPSHOT: "false"
+      SCORE_V2_ENABLED: ${{ github.event.inputs.score_v2_enabled || 'false' }}
+      SCORE_V2_SHADOW_ONLY: ${{ github.event.inputs.score_v2_shadow_only || 'true' }}
+      SCORE_V2_SCHEDULER_ENABLED: ${{ github.event.inputs.score_v2_scheduler_enabled || 'false' }}
+      LEADERBOARD_READ_FROM_SNAPSHOT: ${{ github.event.inputs.leaderboard_read_from_snapshot || 'false' }}
 
     steps:
       - name: Checkout code
