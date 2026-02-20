@@ -79,10 +79,10 @@ jobs:
       SCORE_PRISMA_RETRY_ATTEMPTS: "4"
       SCORE_PRISMA_RETRY_DELAY_MS: "1000"
       SCORE_PRISMA_CONNECTION_TIMEOUT_MS: "12000"
-      SCORE_V2_ENABLED: ${{ github.event.inputs.score_v2_enabled || 'false' }}
-      SCORE_V2_SHADOW_ONLY: ${{ github.event.inputs.score_v2_shadow_only || 'true' }}
-      SCORE_V2_SCHEDULER_ENABLED: ${{ github.event.inputs.score_v2_scheduler_enabled || 'false' }}
-      LEADERBOARD_READ_FROM_SNAPSHOT: ${{ github.event.inputs.leaderboard_read_from_snapshot || 'false' }}
+      SCORE_V2_ENABLED: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.score_v2_enabled || 'false' }}
+      SCORE_V2_SHADOW_ONLY: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.score_v2_shadow_only || 'true' }}
+      SCORE_V2_SCHEDULER_ENABLED: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.score_v2_scheduler_enabled || 'false' }}
+      LEADERBOARD_READ_FROM_SNAPSHOT: ${{ github.event_name == 'schedule' && 'false' || github.event.inputs.leaderboard_read_from_snapshot || 'false' }}
 
     steps:
       - name: Checkout code
