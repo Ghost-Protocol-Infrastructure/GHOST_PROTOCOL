@@ -48,6 +48,10 @@ type ProcessedLead = {
 type AgentApiResponse = {
   agents: ApiAgent[];
   totalAgents?: number;
+  filteredTotal?: number;
+  page?: number;
+  limit?: number;
+  totalPages?: number;
   lastSyncedBlock?: string | null;
   syncHealth?: string | null;
   syncAgeSeconds?: number | null;
@@ -279,13 +283,20 @@ const tierClassName: Record<LeadTier, string> = {
   NEW: "border-slate-500/40 bg-slate-500/20 text-slate-300",
   GHOST: "border-slate-700/60 bg-slate-800/40 text-slate-500",
 };
+const PAGE_SIZE = 250;
+const SEARCH_DEBOUNCE_MS = 300;
 
 export default function Home() {
   const [network, setNetwork] = useState<Network>("BASE");
+  const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [pageInput, setPageInput] = useState("1");
   const [copiedOwner, setCopiedOwner] = useState<string | null>(null);
   const [baseLeads, setBaseLeads] = useState<ProcessedLead[]>([]);
   const [totalAgentsCount, setTotalAgentsCount] = useState<number>(0);
+  const [filteredAgentsCount, setFilteredAgentsCount] = useState<number>(0);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [totalPages, setTotalPages] = useState<number>(1);
   const [lastSyncedBlock, setLastSyncedBlock] = useState<string | null>(null);
   const [syncHealth, setSyncHealth] = useState<SyncHealth>("unknown");
   const [isLoadingLeads, setIsLoadingLeads] = useState<boolean>(true);
@@ -296,11 +307,32 @@ export default function Home() {
   const networkSelectValue = network === "BASE" ? "base" : "megaeth";
 
   useEffect(() => {
+    const debounceHandle = window.setTimeout(() => {
+      const normalized = searchInput.trim();
+      setSearchQuery((previous) => (previous === normalized ? previous : normalized));
+      setCurrentPage(1);
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(debounceHandle);
+    };
+  }, [searchInput]);
+
+  useEffect(() => {
     let isActive = true;
 
     const loadLeads = async () => {
+      setIsLoadingLeads(true);
       try {
-        const response = await fetch("/api/agents?limit=1000", {
+        const params = new URLSearchParams({
+          limit: PAGE_SIZE.toString(),
+          page: currentPage.toString(),
+        });
+        if (searchQuery) {
+          params.set("q", searchQuery);
+        }
+
+        const response = await fetch(`/api/agents?${params.toString()}`, {
           cache: "no-store",
           headers: {
             "cache-control": "no-cache",
@@ -317,11 +349,25 @@ export default function Home() {
           typeof payload.totalAgents === "number" && Number.isFinite(payload.totalAgents)
             ? payload.totalAgents
             : agents.length;
+        const filteredTotal =
+          typeof payload.filteredTotal === "number" && Number.isFinite(payload.filteredTotal)
+            ? payload.filteredTotal
+            : agents.length;
+        const resolvedTotalPages =
+          typeof payload.totalPages === "number" && Number.isFinite(payload.totalPages)
+            ? payload.totalPages
+            : Math.max(1, Math.ceil(filteredTotal / PAGE_SIZE));
 
         if (!isActive) return;
+        if (currentPage > resolvedTotalPages) {
+          setCurrentPage(resolvedTotalPages);
+          return;
+        }
         const parsedSyncAgeSeconds = parseSyncAgeSeconds(payload.syncAgeSeconds);
         setBaseLeads(buildLeadsFromApi(agents));
         setTotalAgentsCount(Math.max(0, Math.trunc(totalAgents)));
+        setFilteredAgentsCount(Math.max(0, Math.trunc(filteredTotal)));
+        setTotalPages(Math.max(1, Math.trunc(resolvedTotalPages)));
         setLastSyncedBlock(payload.lastSyncedBlock ?? null);
         setSyncHealth(resolveSyncHealth(payload.syncHealth, parsedSyncAgeSeconds));
         setLoadError(null);
@@ -332,6 +378,8 @@ export default function Home() {
         setLoadError(message);
         setBaseLeads([]);
         setTotalAgentsCount(0);
+        setFilteredAgentsCount(0);
+        setTotalPages(1);
         setLastSyncedBlock(null);
         setSyncHealth("unknown");
       } finally {
@@ -348,33 +396,25 @@ export default function Home() {
       isActive = false;
       window.clearInterval(refreshHandle);
     };
-  }, []);
+  }, [currentPage, searchQuery]);
 
-  const filteredAgents = useMemo(() => {
+  const rankedAgents = useMemo(() => {
     const source = network === "BASE" ? baseLeads : [];
-    if (!searchQuery.trim()) return source;
-
-    const query = searchQuery.toLowerCase().trim();
-    return source.filter(
-      (lead) =>
-        lead.agentId.toLowerCase().includes(query) ||
-        lead.displayName.toLowerCase().includes(query) ||
-        lead.owner.toLowerCase().includes(query),
-    );
-  }, [baseLeads, network, searchQuery]);
-
-  const rankedAgents = useMemo(
-    () =>
-      filteredAgents.map((agent, index) => ({
-        ...agent,
-        rank: index + 1,
-      })),
-    [filteredAgents],
-  );
+    const rankOffset = (currentPage - 1) * PAGE_SIZE;
+    return source.map((agent, index) => ({
+      ...agent,
+      rank: rankOffset + index + 1,
+    }));
+  }, [baseLeads, network, currentPage]);
 
   const claimedCount = useMemo(() => baseLeads.filter((agent) => agent.isClaimed).length, [baseLeads]);
   const networkStatusDisplay =
     network === "MEGAETH" ? MEGAETH_STATUS_DISPLAY : getBaseNetworkStatusDisplay(syncHealth);
+  const canGoPrev = currentPage > 1;
+  const canGoNext = currentPage < totalPages;
+  const visibleStart = filteredAgentsCount === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const visibleEnd = filteredAgentsCount === 0 ? 0 : Math.min(currentPage * PAGE_SIZE, filteredAgentsCount);
+  const isPagerDisabled = network !== "BASE" || isLoadingLeads;
 
   const reputationColor = (score: number): string => {
     if (score >= 80) return "text-emerald-300";
@@ -411,6 +451,22 @@ export default function Home() {
     });
   };
 
+  useEffect(() => {
+    setPageInput(currentPage.toString());
+  }, [currentPage]);
+
+  const submitPageJump = () => {
+    const parsed = Number.parseInt(pageInput.trim(), 10);
+    if (!Number.isFinite(parsed)) {
+      setPageInput(currentPage.toString());
+      return;
+    }
+
+    const clampedPage = Math.max(1, Math.min(totalPages, parsed));
+    setCurrentPage(clampedPage);
+    setPageInput(clampedPage.toString());
+  };
+
   return (
     <>
       <main className="min-h-screen p-8 pb-20 max-w-7xl mx-auto space-y-12 relative z-[50] font-mono text-neutral-400 bg-neutral-950 [background-image:none] border-l border-r border-neutral-900">
@@ -436,9 +492,9 @@ export default function Home() {
 
         <input
           type="text"
-          value={searchQuery}
-          onChange={(event) => setSearchQuery(event.target.value)}
-          placeholder="SEARCH_AGENT_ID..."
+          value={searchInput}
+          onChange={(event) => setSearchInput(event.target.value)}
+          placeholder="SEARCH_AGENT_ID_OR_NAME..."
           className="w-full md:flex-1 border border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-bold tracking-widest text-neutral-300 placeholder:text-neutral-700 focus:outline-none focus:border-red-600 transition-all rounded-none uppercase"
         />
       </section>
@@ -486,6 +542,65 @@ export default function Home() {
       </div>
 
       <section className="relative border border-neutral-800 bg-neutral-950">
+        <div className="flex items-center justify-between border-b border-neutral-800 px-6 py-3 text-xs uppercase tracking-widest">
+          <div className="text-neutral-600">
+            Showing {visibleStart}-{visibleEnd} of {filteredAgentsCount}
+            {searchQuery ? " (filtered)" : ""}
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-neutral-500">
+              Page {currentPage} / {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((previous) => Math.max(1, previous - 1))}
+              disabled={!canGoPrev || isPagerDisabled}
+              className="inline-flex h-8 w-8 items-center justify-center border border-neutral-800 text-neutral-400 transition hover:border-neutral-500 hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Previous page"
+            >
+              {"<"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((previous) => Math.min(totalPages, previous + 1))}
+              disabled={!canGoNext || isPagerDisabled}
+              className="inline-flex h-8 w-8 items-center justify-center border border-neutral-800 text-neutral-400 transition hover:border-neutral-500 hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Next page"
+            >
+              {">"}
+            </button>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={pageInput}
+              onChange={(event) => {
+                const next = event.target.value;
+                if (/^\d*$/.test(next)) {
+                  setPageInput(next);
+                }
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  submitPageJump();
+                }
+              }}
+              disabled={isPagerDisabled}
+              className="h-8 w-16 border border-neutral-800 bg-neutral-950 px-2 text-center text-xs text-neutral-300 outline-none transition focus:border-neutral-500 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Page number"
+            />
+            <button
+              type="button"
+              onClick={submitPageJump}
+              disabled={isPagerDisabled}
+              className="inline-flex h-8 items-center justify-center border border-neutral-800 px-3 text-[10px] text-neutral-400 transition hover:border-neutral-500 hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Go to page"
+            >
+              GO
+            </button>
+          </div>
+        </div>
+
         <div className="grid grid-cols-12 gap-0 border-b border-neutral-800 bg-neutral-950 text-xs uppercase tracking-widest text-neutral-600 font-bold">
           <div className="col-span-1 py-4 px-6 border-r border-neutral-800">RANK</div>
           <div className="col-span-3 py-4 px-6 border-r border-neutral-800">AGENT</div>
@@ -509,7 +624,7 @@ export default function Home() {
             Live data fetch failed: {loadError}
           </div>
         ) : (
-          <div className="divide-y divide-neutral-800">
+          <div className="max-h-[1000px] overflow-y-auto divide-y divide-neutral-800">
             {rankedAgents.map((agent) => {
               const rowKey = `${agent.agentId}-${agent.owner}`;
               const isOwner = userAddress?.toLowerCase() === agent.owner.toLowerCase();
@@ -633,7 +748,7 @@ export default function Home() {
               GHOST_PROTOCOL_INFRASTRUCTURE
             </div>
             <div className="text-[10px] text-neutral-700 max-w-sm leading-relaxed">
-              Indexing ERC-8004 registries on Base &amp; MegaETH.
+              Indexing ERC-8004 registries on Base. MegaETH expansion coming.
               <br />
               All systems nominal. No warranties implied.
               <br />
@@ -644,7 +759,7 @@ export default function Home() {
           <div className="grid grid-cols-2 gap-12 text-xs tracking-wider uppercase">
             <div className="flex flex-col gap-3">
               <span className="text-neutral-500 font-bold mb-1">Network</span>
-              <a href="#" className="hover:text-red-500 transition-colors">Base (L2)</a>
+              <a href="#" className="hover:text-red-500 transition-colors">Base</a>
               <a href="#" className="hover:text-red-500 transition-colors">MegaETH</a>
             </div>
             <div className="flex flex-col gap-3">

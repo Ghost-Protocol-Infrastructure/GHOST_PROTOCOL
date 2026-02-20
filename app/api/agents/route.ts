@@ -9,6 +9,7 @@ export const runtime = "nodejs";
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 1000;
 const DEFAULT_PAGE = 1;
+const MAX_QUERY_LENGTH = 120;
 const ONE_HOUR_SECONDS = 60 * 60;
 const ONE_DAY_SECONDS = 24 * ONE_HOUR_SECONDS;
 const AGENT_INDEX_MODE = process.env.AGENT_INDEX_MODE?.trim().toLowerCase() === "olas" ? "olas" : "erc8004";
@@ -48,6 +49,13 @@ const parsePage = (rawPage: string | null): number => {
   const parsed = Number.parseInt(rawPage, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_PAGE;
   return parsed;
+};
+
+const parseQuery = (rawQuery: string | null): string | null => {
+  if (!rawQuery) return null;
+  const normalized = rawQuery.trim();
+  if (!normalized) return null;
+  return normalized.slice(0, MAX_QUERY_LENGTH);
 };
 
 const parseOwner = (rawOwner: string | null): string | null => {
@@ -101,6 +109,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const sort = request.nextUrl.searchParams.get("sort");
   const limit = parseLimit(request.nextUrl.searchParams.get("limit"));
   const page = parsePage(request.nextUrl.searchParams.get("page"));
+  const query = parseQuery(request.nextUrl.searchParams.get("q"));
   const skip = (page - 1) * limit;
   const ownerQuery = request.nextUrl.searchParams.get("owner");
   const owner = parseOwner(ownerQuery);
@@ -116,14 +125,28 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     sort === "volume"
       ? [{ txCount: "desc" as const }, { rankScore: "desc" as const }]
       : [{ rankScore: "desc" as const }, { reputation: "desc" as const }, { txCount: "desc" as const }];
-  const where: Prisma.AgentWhereInput | undefined = owner
-    ? {
-        owner: {
-          equals: owner,
-          mode: "insensitive" as const,
-        },
-      }
-    : undefined;
+  const filters: Prisma.AgentWhereInput[] = [];
+  if (owner) {
+    filters.push({
+      owner: {
+        equals: owner,
+        mode: "insensitive" as const,
+      },
+    });
+  }
+  if (query) {
+    filters.push({
+      OR: [
+        { agentId: { contains: query, mode: "insensitive" as const } },
+        { name: { contains: query, mode: "insensitive" as const } },
+        { address: { contains: query, mode: "insensitive" as const } },
+        { owner: { contains: query, mode: "insensitive" as const } },
+        { creator: { contains: query, mode: "insensitive" as const } },
+      ],
+    });
+  }
+  const where: Prisma.AgentWhereInput | undefined =
+    filters.length === 0 ? undefined : filters.length === 1 ? filters[0] : { AND: filters };
 
   const [agents, totalAgents, filteredTotal, indexerStates] = await prisma.$transaction([
     prisma.agent.findMany({

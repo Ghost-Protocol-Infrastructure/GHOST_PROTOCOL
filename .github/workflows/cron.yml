@@ -13,12 +13,12 @@ permissions:
 
 concurrency:
   group: data-refresh
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   data-refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       POSTGRES_PRISMA_URL: ${{ secrets.POSTGRES_PRISMA_URL }}
       POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}
@@ -26,6 +26,15 @@ jobs:
       BASE_RPC_URL_INDEXER: ${{ secrets.BASE_RPC_URL_INDEXER }}
       AGENT_INDEX_MODE: erc8004
       ERC8004_REGISTRY_ADDRESS: ${{ secrets.ERC8004_REGISTRY_ADDRESS }}
+      AGENT_INDEX_CHUNK_SIZE: "10000"
+      AGENT_INDEX_CHUNK_DELAY_MS: "40"
+      AGENT_METADATA_CONCURRENCY: "8"
+      AGENT_METADATA_BATCH_DELAY_MS: "0"
+      AGENT_TOKEN_RESOLVE_TIMEOUT_MS: "5000"
+      AGENT_PRISMA_RETRY_ATTEMPTS: "4"
+      AGENT_PRISMA_RETRY_DELAY_MS: "1000"
+      AGENT_PRISMA_OPERATION_TIMEOUT_MS: "180000"
+      AGENT_PRISMA_CONNECTION_TIMEOUT_MS: "12000"
 
     steps:
       - name: Checkout code

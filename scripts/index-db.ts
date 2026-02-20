@@ -55,6 +55,21 @@ const PRISMA_RETRY_DELAY_MS = (() => {
   const parsed = raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 750;
   return Math.max(100, Math.min(parsed, 5_000));
 })();
+const PRISMA_OPERATION_TIMEOUT_MS = (() => {
+  const raw = process.env.AGENT_PRISMA_OPERATION_TIMEOUT_MS?.trim();
+  const parsed = raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 120_000;
+  return Math.max(5_000, Math.min(parsed, 900_000));
+})();
+const PRISMA_CONNECTION_TIMEOUT_MS = (() => {
+  const raw = process.env.AGENT_PRISMA_CONNECTION_TIMEOUT_MS?.trim();
+  const parsed = raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 12_000;
+  return Math.max(2_000, Math.min(parsed, 60_000));
+})();
+const TOKEN_RESOLVE_TIMEOUT_MS = (() => {
+  const raw = process.env.AGENT_TOKEN_RESOLVE_TIMEOUT_MS?.trim();
+  const parsed = raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 25_000;
+  return Math.max(5_000, Math.min(parsed, 120_000));
+})();
 const INDEXER_RPC_URL =
   process.env.BASE_RPC_URL_INDEXER?.trim() || process.env.BASE_RPC_URL?.trim() || "https://mainnet.base.org";
 const INDEXER_RPC_ENV = process.env.BASE_RPC_URL_INDEXER?.trim()
@@ -104,6 +119,7 @@ type ServiceResolution = {
   serviceIdText: string;
   record: IndexedAgentRecord | null;
   metadataUsedFallback: boolean;
+  resolveTimedOut?: boolean;
 };
 
 type ContractReader = {
@@ -120,11 +136,57 @@ const sleep = (ms: number): Promise<void> =>
     setTimeout(resolve, ms);
   });
 
+const withTimeout = async <T>(label: string, timeoutMs: number, operation: () => Promise<T>): Promise<T> => {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      operation(),
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+};
+
+const prismaTimeoutForLabel = (label: string): number => {
+  if (/upsert\s+erc-8004\s+agents\s+for\s+chunk/i.test(label)) {
+    // Reserved for logging/config visibility; Prisma operations are not raced against this timeout.
+    return Math.max(PRISMA_OPERATION_TIMEOUT_MS, 300_000);
+  }
+  return PRISMA_OPERATION_TIMEOUT_MS;
+};
+
 const isRecoverablePrismaError = (error: unknown): boolean => {
   const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-  return /(postgresql connection|kind:\s*closed|connection.*closed|P1001|P1017|timeout|socket hang up|ECONNRESET|connection reset)/i.test(
+  return /(postgresql connection|kind:\s*closed|connection.*closed|engine is not yet connected|response from the engine was empty|genericfailure|prismaclientunknownrequesterror|P1001|P1017|timeout|timed out|socket hang up|ECONNRESET|connection reset)/i.test(
     message,
   );
+};
+
+const resetPrismaConnection = async (attempt: number): Promise<void> => {
+  try {
+    await withTimeout("prisma.$disconnect", PRISMA_CONNECTION_TIMEOUT_MS, () => prisma.$disconnect());
+  } catch (error) {
+    console.warn(
+      `prisma.$disconnect failed during retry reset (attempt ${attempt}/${PRISMA_RETRY_ATTEMPTS}). Continuing.`,
+    );
+    console.error(error);
+  }
+
+  await sleep(PRISMA_RETRY_DELAY_MS * attempt);
+
+  try {
+    await withTimeout("prisma.$connect", PRISMA_CONNECTION_TIMEOUT_MS, () => prisma.$connect());
+  } catch (error) {
+    console.warn(`prisma.$connect failed during retry reset (attempt ${attempt}/${PRISMA_RETRY_ATTEMPTS}).`);
+    console.error(error);
+  }
 };
 
 const withPrismaRetry = async <T>(label: string, operation: () => Promise<T>): Promise<T> => {
@@ -132,6 +194,9 @@ const withPrismaRetry = async <T>(label: string, operation: () => Promise<T>): P
 
   for (let attempt = 1; attempt <= PRISMA_RETRY_ATTEMPTS; attempt += 1) {
     try {
+      // Do not race Prisma queries against a JS timeout.
+      // Promise.race timeout does not cancel in-flight Prisma engine work and can leave the engine
+      // in a bad state during reconnect/retry ("Engine is not yet connected").
       return await operation();
     } catch (error) {
       lastError = error;
@@ -144,9 +209,7 @@ const withPrismaRetry = async <T>(label: string, operation: () => Promise<T>): P
       );
       console.error(error);
 
-      await prisma.$disconnect().catch(() => undefined);
-      await sleep(PRISMA_RETRY_DELAY_MS * attempt);
-      await prisma.$connect().catch(() => undefined);
+      await resetPrismaConnection(attempt);
     }
   }
 
@@ -392,6 +455,54 @@ const resolveErc8004Record = async (
       serviceIdText: tokenIdText,
       metadataUsedFallback: true,
       record: null,
+    };
+  }
+};
+
+const normalizeAddressOrNull = (value: string | null | undefined): string | null => {
+  if (!value || value.trim().length === 0) return null;
+  try {
+    return getAddress(value as Address).toLowerCase();
+  } catch {
+    return null;
+  }
+};
+
+const buildErc8004TimeoutFallbackRecord = (tokenIdText: string, creatorHint: string | null): IndexedAgentRecord => {
+  const creator = normalizeAddressOrNull(creatorHint) ?? ZERO_ADDRESS;
+  return {
+    address: `${ERC8004_ADDRESS_PREFIX}${tokenIdText}`,
+    name: fallbackServiceName(tokenIdText),
+    creator,
+    owner: creator,
+    image: null,
+    description: fallbackErc8004Description(tokenIdText),
+    telegram: null,
+    twitter: null,
+    website: null,
+  };
+};
+
+const resolveErc8004RecordWithTimeout = async (
+  client: ContractReader,
+  tokenId: bigint,
+  creatorHint: string | null,
+): Promise<ServiceResolution> => {
+  const tokenIdText = tokenId.toString();
+  try {
+    return await withTimeout(`resolve ERC-8004 token ${tokenIdText}`, TOKEN_RESOLVE_TIMEOUT_MS, () =>
+      resolveErc8004Record(client, tokenId, creatorHint),
+    );
+  } catch (error) {
+    console.warn(
+      `Resolve timeout for ERC-8004 token ${tokenIdText}. Writing fallback row and continuing index progress.`,
+    );
+    console.error(error);
+    return {
+      serviceIdText: tokenIdText,
+      metadataUsedFallback: true,
+      resolveTimedOut: true,
+      record: buildErc8004TimeoutFallbackRecord(tokenIdText, creatorHint),
     };
   }
 };
@@ -666,6 +777,7 @@ const indexErc8004Incremental = async (
   newCount: number;
   totalResolvedTokens: number;
   fallbackMetadataCount: number;
+  tokenResolveTimeoutCount: number;
 }> => {
   const client = buildClient();
   const usedAgentIds = await withPrismaRetry("load used agent IDs", collectUsedAgentIds);
@@ -673,6 +785,7 @@ const indexErc8004Incremental = async (
   let newCount = 0;
   let totalResolvedTokens = 0;
   let fallbackMetadataCount = 0;
+  let tokenResolveTimeoutCount = 0;
 
   let currentBlock = fromBlock;
   while (currentBlock <= toBlock) {
@@ -744,7 +857,7 @@ const indexErc8004Incremental = async (
     for (const batch of chunkArray(tokenIdList, METADATA_CONCURRENCY)) {
       const results = await Promise.all(
         batch.map((tokenId) =>
-          resolveErc8004Record(
+          resolveErc8004RecordWithTimeout(
             client as unknown as ContractReader,
             tokenId,
             creatorByTokenId.get(tokenId.toString()) ?? null,
@@ -754,6 +867,7 @@ const indexErc8004Incremental = async (
 
       for (const result of results) {
         if (result.metadataUsedFallback) chunkFallbackMetadataCount += 1;
+        if (result.resolveTimedOut) tokenResolveTimeoutCount += 1;
         if (!result.record) continue;
         chunkRecords.set(result.record.address, result.record);
       }
@@ -787,7 +901,7 @@ const indexErc8004Incremental = async (
 
     if (chunkIndex % 10 === 0 || chunkToBlock === toBlock) {
       console.log(
-        `Chunk checkpoint: blocks ${currentBlock.toString()}-${chunkToBlock.toString()}, chunk_tokens=${tokenIdList.length}, total_tokens=${totalResolvedTokens}, new_agents=${newCount}, metadata_fallback=${fallbackMetadataCount}`,
+        `Chunk checkpoint: blocks ${currentBlock.toString()}-${chunkToBlock.toString()}, chunk_tokens=${tokenIdList.length}, total_tokens=${totalResolvedTokens}, new_agents=${newCount}, metadata_fallback=${fallbackMetadataCount}, token_timeouts=${tokenResolveTimeoutCount}`,
       );
     }
 
@@ -801,6 +915,7 @@ const indexErc8004Incremental = async (
     newCount,
     totalResolvedTokens,
     fallbackMetadataCount,
+    tokenResolveTimeoutCount,
   };
 };
 
@@ -969,6 +1084,7 @@ const upsertAgents = async (records: Map<string, IndexedAgentRecord>, usedAgentI
   const resolvedUsedAgentIds = usedAgentIds ?? (await collectUsedAgentIds());
   const newCount = addresses.filter((address) => !existingSet.has(address)).length;
 
+  let processed = 0;
   for (const record of records.values()) {
     const current = existingByAddress.get(record.address);
     const resolvedAgentId = current?.agentId
@@ -1001,6 +1117,11 @@ const upsertAgents = async (records: Map<string, IndexedAgentRecord>, usedAgentI
         website: record.website,
       },
     });
+
+    processed += 1;
+    if (processed % 250 === 0 || processed === records.size) {
+      console.log(`Prisma upsert progress: ${processed}/${records.size}`);
+    }
   }
 
   return newCount;
@@ -1049,7 +1170,7 @@ const backfillAgentIdentityColumns = async (): Promise<number> => {
 
 async function main(): Promise<void> {
   console.log(
-    `Indexer config: mode=${AGENT_INDEX_MODE}, cursor_key=${CURSOR_KEY}, chunk_size=${CHUNK_SIZE.toString()} blocks, chunk_delay_ms=${CHUNK_DELAY_MS}, metadata_concurrency=${METADATA_CONCURRENCY}, metadata_batch_delay_ms=${METADATA_BATCH_DELAY_MS}, prisma_retry_attempts=${PRISMA_RETRY_ATTEMPTS}, prisma_retry_delay_ms=${PRISMA_RETRY_DELAY_MS}, rpc_env=${INDEXER_RPC_ENV}`,
+    `Indexer config: mode=${AGENT_INDEX_MODE}, cursor_key=${CURSOR_KEY}, chunk_size=${CHUNK_SIZE.toString()} blocks, chunk_delay_ms=${CHUNK_DELAY_MS}, metadata_concurrency=${METADATA_CONCURRENCY}, metadata_batch_delay_ms=${METADATA_BATCH_DELAY_MS}, prisma_retry_attempts=${PRISMA_RETRY_ATTEMPTS}, prisma_retry_delay_ms=${PRISMA_RETRY_DELAY_MS}, prisma_op_timeout_ms=${PRISMA_OPERATION_TIMEOUT_MS}, prisma_conn_timeout_ms=${PRISMA_CONNECTION_TIMEOUT_MS}, token_resolve_timeout_ms=${TOKEN_RESOLVE_TIMEOUT_MS}, rpc_env=${INDEXER_RPC_ENV}`,
   );
 
   if (FORCE_RESET_INDEXER) {
@@ -1090,7 +1211,7 @@ async function main(): Promise<void> {
     const stats = await indexErc8004Incremental(fromBlock, latestBlock);
     newCount = stats.newCount;
     console.log(
-      `ERC-8004 indexing summary: resolved_tokens=${stats.totalResolvedTokens}, metadata_fallback=${stats.fallbackMetadataCount}, new_agents=${stats.newCount}.`,
+      `ERC-8004 indexing summary: resolved_tokens=${stats.totalResolvedTokens}, metadata_fallback=${stats.fallbackMetadataCount}, token_timeouts=${stats.tokenResolveTimeoutCount}, new_agents=${stats.newCount}.`,
     );
   } else {
     let records = await fetchAgentRegistered(fromBlock, latestBlock);
