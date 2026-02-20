@@ -77,6 +77,9 @@ const INDEXER_RPC_ENV = process.env.BASE_RPC_URL_INDEXER?.trim()
   : process.env.BASE_RPC_URL?.trim()
     ? "BASE_RPC_URL"
     : "default";
+const AGENT_FORCE_EXIT_ON_FINISH =
+  process.env.AGENT_FORCE_EXIT_ON_FINISH?.trim().toLowerCase() === "true" ||
+  process.env.CI?.trim().toLowerCase() === "true";
 
 const AGENT_REGISTERED_EVENT = parseAbiItem(
   "event AgentRegistered(address indexed agent, string name, address indexed creator, string image, string description, string telegram, string twitter, string website)",
@@ -1247,5 +1250,12 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
-    await prisma.$disconnect();
+    try {
+      await withTimeout("index prisma.$disconnect (final)", PRISMA_CONNECTION_TIMEOUT_MS, () => prisma.$disconnect());
+    } catch (disconnectError) {
+      console.error("Failed to disconnect Prisma cleanly:", disconnectError);
+    }
+    if (AGENT_FORCE_EXIT_ON_FINISH) {
+      process.exit(process.exitCode ?? 0);
+    }
   });

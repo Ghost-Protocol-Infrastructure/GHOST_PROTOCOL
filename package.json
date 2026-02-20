@@ -10,6 +10,7 @@
     "index:db:full-reindex": "npx tsx scripts/index-db.ts --reset-indexer",
     "index:db:refresh-metadata": "npx tsx scripts/index-db.ts --force-refresh-metadata",
     "score": "npx tsx scripts/score-leads.ts",
+    "score:v2": "npx tsx scripts/score-v2.ts",
     "typecheck": "tsc --noEmit",
     "contracts:compile": "hardhat compile",
     "contracts:deploy:vault:base-mainnet": "node scripts/deploy-vault.js",

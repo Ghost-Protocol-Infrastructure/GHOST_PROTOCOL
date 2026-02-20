@@ -46,6 +46,10 @@ jobs:
       SCORE_PRISMA_RETRY_ATTEMPTS: "4"
       SCORE_PRISMA_RETRY_DELAY_MS: "1000"
       SCORE_PRISMA_CONNECTION_TIMEOUT_MS: "12000"
+      SCORE_V2_ENABLED: "false"
+      SCORE_V2_SHADOW_ONLY: "true"
+      SCORE_V2_SCHEDULER_ENABLED: "false"
+      LEADERBOARD_READ_FROM_SNAPSHOT: "false"
 
     steps:
       - name: Checkout code
@@ -71,3 +75,7 @@ jobs:
 
       - name: Run scoring engine
         run: npm run score
+
+      - name: Run v2 scoring pipeline
+        if: env.SCORE_V2_ENABLED == 'true' && env.SCORE_V2_SCHEDULER_ENABLED == 'true'
+        run: npm run score:v2

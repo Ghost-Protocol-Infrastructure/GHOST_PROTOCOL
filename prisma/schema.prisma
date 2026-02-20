@@ -15,6 +15,12 @@ enum AgentTier {
   GHOST
 }
 
+enum SnapshotStatus {
+  BUILDING
+  READY
+  FAILED
+}
+
 model CreditBalance {
   walletAddress   String   @id
   credits         Int      @default(0)
@@ -44,9 +50,106 @@ model Agent {
   uptime      Float    @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  scoreInput  AgentScoreInput?
+  snapshots   LeaderboardSnapshotRow[]
 }
 
 model SystemState {
   key             String @id
   lastSyncedBlock BigInt @default(0)
+}
+
+model AgentScoreInput {
+  agentAddress     String   @id
+  agentId          String
+  name             String
+  creator          String
+  owner            String
+  image            String?
+  description      String?
+  telegram         String?
+  twitter          String?
+  website          String?
+  status           String   @default("active")
+  txSourceAddress  String?
+  txCount          Int      @default(0)
+  yield            Float    @default(0)
+  uptime           Float    @default(0)
+  isClaimed        Boolean  @default(false)
+  txCountUpdatedAt DateTime?
+  lastIngestedAt   DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  agent Agent @relation(fields: [agentAddress], references: [address], onDelete: Cascade)
+
+  @@index([txSourceAddress])
+  @@index([txCountUpdatedAt])
+}
+
+model LeaderboardSnapshot {
+  id              String         @id @default(cuid())
+  mode            String
+  txSource        String
+  status          SnapshotStatus @default(BUILDING)
+  isActive        Boolean        @default(false)
+  totalAgents     Int            @default(0)
+  maxTxCount      Int            @default(0)
+  maxClaimedYield Float          @default(0)
+  startedAt       DateTime       @default(now())
+  completedAt     DateTime?
+  failureReason   String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  rows LeaderboardSnapshotRow[]
+
+  @@index([isActive, status])
+  @@index([completedAt])
+}
+
+model LeaderboardSnapshotRow {
+  id          String   @id @default(cuid())
+  snapshotId  String
+  agentAddress String
+  agentId     String
+  name        String
+  creator     String
+  owner       String
+  image       String?
+  description String?
+  telegram    String?
+  twitter     String?
+  website     String?
+  status      String
+  rank        Int
+  tier        AgentTier
+  txCount     Int
+  reputation  Float
+  rankScore   Float
+  yield       Float
+  uptime      Float
+  volume      BigInt
+  score       Int
+  agentCreatedAt DateTime
+  agentUpdatedAt DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  snapshot LeaderboardSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  agent    Agent               @relation(fields: [agentAddress], references: [address], onDelete: Cascade)
+
+  @@unique([snapshotId, agentAddress])
+  @@index([snapshotId, rank])
+  @@index([snapshotId, rankScore])
+  @@index([snapshotId, owner])
+  @@index([snapshotId, txCount])
+}
+
+model ScorePipelineState {
+  key       String   @id
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

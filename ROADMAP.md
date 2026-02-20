@@ -6,6 +6,9 @@
 - `/api/agents` now returns `totalAgents` via `count()` and supports owner-filtered merchant queries.
 - SDK onboarding UI is live on `/agent/[agentId]` with tabbed Node.js/Python snippets.
 - Node SDK baseline gateway integration is live (EIP-712 signed `connect()`, configurable `baseUrl`).
+- Scoring pipeline hardened against common stalls (tx source dedupe, zero-address skip, timeout guards, bounded shutdown in CI).
+- Tx fetch anti-starvation rotation is live, and Data Refresh cron is now hourly (`0 * * * *`) to reduce overlapping runs.
+- V2 pipeline scaffolding is now implemented behind flags (new score-input/snapshot/state tables, `score:v2` runner, optional snapshot-serving API path, and cron-gated v2 step disabled by default).
 
 ## 1. Scoring Engine (Active)
 - **Issue:** Transaction count is still derived from owner wallet nonce, not strictly from the agent contract.
@@ -49,3 +52,48 @@
 - **Ownership Hardening:** Move `owner` from EOA to a multisig for operational and key-management safety.
 - **Cap-Floor Guardrail:** Enforce `setMaxTVL(newCap)` with `newCap >= totalLiability` to prevent accidental deposit freezes below outstanding liabilities.
 - **Emergency Policy:** Define and document a narrow emergency response policy (incident class, who can execute, and post-incident rollback/communication process).
+
+## 10. V2 Robust Data Pipeline (Flagged Rollout Plan)
+- **Goal:** Move from app-loop scoring to a scalable hybrid pipeline: incremental input updates + periodic global SQL re-rank + snapshot serving.
+- **Decision:** Build architecture now behind flags; switch operational runtime to VPS when ready.
+
+### Phase 0 (Now) - Keep Current Pipeline Stable
+- Keep existing GitHub Action flow as production path (`index -> score`).
+- Continue tuning tx fetch budget/concurrency and monitor fallback rates.
+- Maintain this as fallback path during all v2 rollout phases.
+
+### Phase 1 (Build Now, Behind Flags)
+- Add new tables (additive only, no destructive migration):
+  - `agent_score_inputs`
+  - `leaderboard_snapshot`
+  - `leaderboard_snapshot_rows`
+  - `score_pipeline_state`
+- Implement v2 jobs:
+  - Incremental ingest job updates `agent_score_inputs` for changed agents/owners using cursor/checkpoint state.
+  - Set-based SQL rank job computes global normalization + ranks all agents, writes a full snapshot atomically.
+- Add feature flags:
+  - `SCORE_V2_ENABLED`
+  - `SCORE_V2_SHADOW_ONLY`
+  - `LEADERBOARD_READ_FROM_SNAPSHOT`
+  - `SCORE_V2_SCHEDULER_ENABLED`
+
+### Phase 2 (Shadow Validation, Pre-VPS or Early VPS)
+- Run v2 in shadow mode only (`SCORE_V2_ENABLED=true`, `SCORE_V2_SHADOW_ONLY=true`).
+- Keep UI/API reading current path (`LEADERBOARD_READ_FROM_SNAPSHOT=false`).
+- Track parity and quality:
+  - Rank deltas between v1 and v2
+  - Snapshot freshness
+  - RPC timeout/fallback percentages
+  - Job duration and retry behavior
+- Define explicit cutover thresholds before read switch.
+
+### Phase 3 (VPS Runtime Cutover)
+- Deploy always-on worker/scheduler on VPS.
+- Enable v2 scheduler (`SCORE_V2_SCHEDULER_ENABLED=true`) on VPS runtime.
+- Switch leaderboard reads to snapshots (`LEADERBOARD_READ_FROM_SNAPSHOT=true`) only after parity signoff.
+- Disable or reduce GitHub scoring path to emergency fallback only.
+
+### Phase 4 (Post-Cutover Hardening)
+- Add alerting and dashboards for snapshot lag, ingest lag, and failed rank jobs.
+- Add idempotent replay/backfill tooling from `score_pipeline_state`.
+- Document incident runbook and rollback switch (flip read flag back to legacy path if needed).

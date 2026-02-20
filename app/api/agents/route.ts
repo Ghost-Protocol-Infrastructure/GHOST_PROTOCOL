@@ -15,6 +15,7 @@ const ONE_DAY_SECONDS = 24 * ONE_HOUR_SECONDS;
 const AGENT_INDEX_MODE = process.env.AGENT_INDEX_MODE?.trim().toLowerCase() === "olas" ? "olas" : "erc8004";
 const ACTIVE_CURSOR_KEY = AGENT_INDEX_MODE === "olas" ? "agent_indexer_olas" : "agent_indexer_erc8004";
 const LEGACY_CURSOR_KEY = "agent_indexer";
+const LEADERBOARD_READ_FROM_SNAPSHOT = process.env.LEADERBOARD_READ_FROM_SNAPSHOT?.trim().toLowerCase() === "true";
 
 type SyncHealth = "live" | "stale" | "offline" | "unknown";
 
@@ -119,6 +120,116 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       { error: "Invalid owner address." },
       { status: 400, headers: { "cache-control": "no-store" } },
     );
+  }
+
+  if (LEADERBOARD_READ_FROM_SNAPSHOT) {
+    const activeSnapshot = await prisma.leaderboardSnapshot.findFirst({
+      where: {
+        isActive: true,
+        status: "READY",
+      },
+      orderBy: [{ completedAt: "desc" }, { createdAt: "desc" }],
+      select: {
+        id: true,
+        totalAgents: true,
+      },
+    });
+
+    if (activeSnapshot) {
+      const snapshotOrderBy: Prisma.LeaderboardSnapshotRowOrderByWithRelationInput[] =
+        sort === "volume"
+          ? [{ txCount: "desc" as const }, { rankScore: "desc" as const }, { rank: "asc" as const }]
+          : [{ rank: "asc" as const }];
+      const snapshotFilters: Prisma.LeaderboardSnapshotRowWhereInput[] = [{ snapshotId: activeSnapshot.id }];
+      if (owner) {
+        snapshotFilters.push({
+          owner: {
+            equals: owner,
+            mode: "insensitive" as const,
+          },
+        });
+      }
+      if (query) {
+        snapshotFilters.push({
+          OR: [
+            { agentId: { contains: query, mode: "insensitive" as const } },
+            { name: { contains: query, mode: "insensitive" as const } },
+            { agentAddress: { contains: query, mode: "insensitive" as const } },
+            { owner: { contains: query, mode: "insensitive" as const } },
+            { creator: { contains: query, mode: "insensitive" as const } },
+          ],
+        });
+      }
+      const snapshotWhere: Prisma.LeaderboardSnapshotRowWhereInput =
+        snapshotFilters.length === 1 ? snapshotFilters[0] : { AND: snapshotFilters };
+
+      const [rows, filteredTotal, indexerStates] = await prisma.$transaction([
+        prisma.leaderboardSnapshotRow.findMany({
+          where: snapshotWhere,
+          orderBy: snapshotOrderBy,
+          take: limit,
+          skip,
+        }),
+        prisma.leaderboardSnapshotRow.count({ where: snapshotWhere }),
+        prisma.systemState.findMany({
+          where: {
+            key: {
+              in: [ACTIVE_CURSOR_KEY, LEGACY_CURSOR_KEY],
+            },
+          },
+          select: {
+            key: true,
+            lastSyncedBlock: true,
+          },
+        }),
+      ]);
+      const indexerState =
+        indexerStates.find((state) => state.key === ACTIVE_CURSOR_KEY) ??
+        indexerStates.find((state) => state.key === LEGACY_CURSOR_KEY) ??
+        null;
+      const syncMetadata = await resolveSyncMetadata(indexerState?.lastSyncedBlock);
+
+      return NextResponse.json(
+        {
+          totalAgents: activeSnapshot.totalAgents,
+          filteredTotal,
+          page,
+          limit,
+          totalPages: Math.max(1, Math.ceil(filteredTotal / limit)),
+          filteredAgents: rows.length,
+          lastSyncedBlock: indexerState?.lastSyncedBlock?.toString() ?? null,
+          syncHealth: syncMetadata.syncHealth,
+          syncAgeSeconds: syncMetadata.syncAgeSeconds,
+          lastSyncedAt: syncMetadata.lastSyncedAt,
+          agents: rows.map((row) => ({
+            address: row.agentAddress,
+            agentId: row.agentId,
+            name: row.name,
+            creator: row.creator,
+            owner: row.owner,
+            image: row.image,
+            description: row.description,
+            telegram: row.telegram,
+            twitter: row.twitter,
+            website: row.website,
+            status: row.status,
+            tier: row.tier,
+            txCount: row.txCount,
+            reputation: row.reputation,
+            rankScore: row.rankScore,
+            yield: row.yield,
+            uptime: row.uptime,
+            volume: row.volume.toString(),
+            score: row.score,
+            createdAt: row.agentCreatedAt.toISOString(),
+            updatedAt: row.agentUpdatedAt.toISOString(),
+          })),
+        },
+        {
+          headers: { "cache-control": "no-store" },
+        },
+      );
+    }
   }
 
   const orderBy: Prisma.AgentOrderByWithRelationInput[] =
