@@ -81,6 +81,22 @@ const sleep = (ms: number): Promise<void> =>
     setTimeout(resolve, ms);
   });
 
+const resolveTxFetchRotationSeed = (): number => {
+  const runId = process.env.GITHUB_RUN_ID?.trim();
+  if (runId && /^\d+$/.test(runId)) {
+    const maxSafeInteger = BigInt(Number.MAX_SAFE_INTEGER);
+    return Number(BigInt(runId) % maxSafeInteger);
+  }
+  return Date.now();
+};
+
+const rotateByOffset = <T>(items: T[], offset: number): T[] => {
+  if (items.length <= 1) return items;
+  const normalizedOffset = ((offset % items.length) + items.length) % items.length;
+  if (normalizedOffset === 0) return items;
+  return [...items.slice(normalizedOffset), ...items.slice(0, normalizedOffset)];
+};
+
 const withTimeout = async <T>(label: string, timeoutMs: number, operation: () => Promise<T>): Promise<T> => {
   let timeout: ReturnType<typeof setTimeout> | null = null;
   try {
@@ -288,11 +304,17 @@ const fetchTxCountsBySourceAddress = async (
   const publicClient = buildClient(SCORE_TX_RPC_TIMEOUT_MS);
   let failures = 0;
   const total = normalizedAddresses.length;
+  const rotationSeed = resolveTxFetchRotationSeed();
+  const rotationOffset = total > 0 ? rotationSeed % total : 0;
+  const orderedAddresses = rotateByOffset(normalizedAddresses, rotationOffset);
+  if (total > 1) {
+    console.log(`Heartbeat: txCount fetch order rotation => seed=${rotationSeed}, offset=${rotationOffset}, total=${total}`);
+  }
   const startedAt = Date.now();
   let fetched = 0;
   let budgetReached = false;
 
-  for (let index = 0; index < normalizedAddresses.length; index += SCORE_TX_CONCURRENCY) {
+  for (let index = 0; index < orderedAddresses.length; index += SCORE_TX_CONCURRENCY) {
     if (Date.now() - startedAt >= SCORE_TX_BUDGET_MS) {
       budgetReached = true;
       console.warn(
@@ -300,7 +322,7 @@ const fetchTxCountsBySourceAddress = async (
       );
       break;
     }
-    const batch = normalizedAddresses.slice(index, index + SCORE_TX_CONCURRENCY);
+    const batch = orderedAddresses.slice(index, index + SCORE_TX_CONCURRENCY);
 
     await Promise.all(
       batch.map(async ({ sourceAddressLower, sourceAddress }) => {
@@ -324,7 +346,7 @@ const fetchTxCountsBySourceAddress = async (
       console.log(`Heartbeat: fetched txCounts ${processed}/${total} ${SCORE_TX_SOURCE} addresses`);
     }
 
-    if (index + SCORE_TX_CONCURRENCY < normalizedAddresses.length && SCORE_TX_BATCH_DELAY_MS > 0) {
+    if (index + SCORE_TX_CONCURRENCY < orderedAddresses.length && SCORE_TX_BATCH_DELAY_MS > 0) {
       await sleep(SCORE_TX_BATCH_DELAY_MS);
     }
   }
