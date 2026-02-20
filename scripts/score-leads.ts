@@ -20,11 +20,35 @@ const INDEXER_RPC_ENV = process.env.BASE_RPC_URL_INDEXER?.trim()
   : process.env.BASE_RPC_URL?.trim()
     ? "BASE_RPC_URL"
     : "default";
-const CONCURRENCY_LIMIT = 5;
-const BATCH_DELAY_MS = 100;
-const UPDATE_BATCH_SIZE = 100;
-const HEARTBEAT_INTERVAL = 10;
-const DB_RECONNECT_THRESHOLD_MS = 5 * 60_000;
+const parseBoundedInt = (raw: string | undefined, fallback: number, min: number, max: number): number => {
+  const value = raw?.trim();
+  if (!value || !/^\d+$/.test(value)) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Math.max(min, Math.min(parsed, max));
+};
+
+const SCORE_TX_CONCURRENCY = parseBoundedInt(process.env.SCORE_TX_CONCURRENCY, 15, 1, 60);
+const SCORE_TX_BATCH_DELAY_MS = parseBoundedInt(process.env.SCORE_TX_BATCH_DELAY_MS, 25, 0, 2_000);
+const SCORE_DB_UPDATE_BATCH_SIZE = parseBoundedInt(process.env.SCORE_DB_UPDATE_BATCH_SIZE, 100, 25, 500);
+const SCORE_HEARTBEAT_INTERVAL = parseBoundedInt(process.env.SCORE_HEARTBEAT_INTERVAL, 10, 1, 500);
+const SCORE_DB_RECONNECT_THRESHOLD_MS = parseBoundedInt(
+  process.env.SCORE_DB_RECONNECT_THRESHOLD_MS,
+  5 * 60_000,
+  60_000,
+  30 * 60_000,
+);
+const SCORE_RPC_TIMEOUT_MS = parseBoundedInt(process.env.SCORE_RPC_TIMEOUT_MS, 15_000, 3_000, 30_000);
+const SCORE_RPC_RETRY_COUNT = parseBoundedInt(process.env.SCORE_RPC_RETRY_COUNT, 2, 0, 5);
+const SCORE_TX_CALL_TIMEOUT_MS = parseBoundedInt(process.env.SCORE_TX_CALL_TIMEOUT_MS, 12_000, 2_000, 60_000);
+const SCORE_TX_BUDGET_MS = parseBoundedInt(process.env.SCORE_TX_BUDGET_MS, 10 * 60_000, 60_000, 60 * 60_000);
+const SCORE_PRISMA_RETRY_ATTEMPTS = parseBoundedInt(process.env.SCORE_PRISMA_RETRY_ATTEMPTS, 4, 1, 8);
+const SCORE_PRISMA_RETRY_DELAY_MS = parseBoundedInt(process.env.SCORE_PRISMA_RETRY_DELAY_MS, 1_000, 100, 10_000);
+const SCORE_PRISMA_CONNECTION_TIMEOUT_MS = parseBoundedInt(
+  process.env.SCORE_PRISMA_CONNECTION_TIMEOUT_MS,
+  12_000,
+  2_000,
+  60_000,
+);
 
 const UNCLAIMED_REPUTATION_CAP = 80;
 const REPUTATION_TX_WEIGHT = 0.3;
@@ -51,6 +75,76 @@ const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+
+const withTimeout = async <T>(label: string, timeoutMs: number, operation: () => Promise<T>): Promise<T> => {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      operation(),
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+};
+
+const isRecoverablePrismaError = (error: unknown): boolean => {
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  return /(postgresql connection|kind:\s*closed|connection.*closed|engine is not yet connected|response from the engine was empty|genericfailure|prismaclientunknownrequesterror|P1001|P1017|timeout|timed out|socket hang up|ECONNRESET|connection reset)/i.test(
+    message,
+  );
+};
+
+const resetPrismaConnection = async (attempt: number): Promise<void> => {
+  try {
+    await withTimeout("score prisma.$disconnect", SCORE_PRISMA_CONNECTION_TIMEOUT_MS, () => prisma.$disconnect());
+  } catch (error) {
+    console.warn(
+      `score prisma.$disconnect failed during retry reset (attempt ${attempt}/${SCORE_PRISMA_RETRY_ATTEMPTS}). Continuing.`,
+    );
+    console.error(error);
+  }
+
+  await sleep(SCORE_PRISMA_RETRY_DELAY_MS * attempt);
+
+  try {
+    await withTimeout("score prisma.$connect", SCORE_PRISMA_CONNECTION_TIMEOUT_MS, () => prisma.$connect());
+  } catch (error) {
+    console.warn(
+      `score prisma.$connect failed during retry reset (attempt ${attempt}/${SCORE_PRISMA_RETRY_ATTEMPTS}).`,
+    );
+    console.error(error);
+  }
+};
+
+const withPrismaRetry = async <T>(label: string, operation: () => Promise<T>): Promise<T> => {
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= SCORE_PRISMA_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isRecoverablePrismaError(error) || attempt >= SCORE_PRISMA_RETRY_ATTEMPTS) {
+        throw error;
+      }
+
+      console.warn(
+        `${label} failed with recoverable Prisma error (attempt ${attempt}/${SCORE_PRISMA_RETRY_ATTEMPTS}). Retrying...`,
+      );
+      console.error(error);
+      await resetPrismaConnection(attempt);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(`${label} failed after retries`);
+};
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 const roundToTwo = (value: number): number => Math.round(value * 100) / 100;
@@ -110,9 +204,17 @@ const buildClient = () =>
   createPublicClient({
     chain: base,
     transport: fallback([
-      http(INDEXER_RPC_URL, { retryCount: 2, retryDelay: 250, timeout: 15_000 }),
-      http("https://base.llamarpc.com", { retryCount: 2, retryDelay: 250, timeout: 15_000 }),
-      http("https://1rpc.io/base", { retryCount: 2, retryDelay: 250, timeout: 15_000 }),
+      http(INDEXER_RPC_URL, { retryCount: SCORE_RPC_RETRY_COUNT, retryDelay: 250, timeout: SCORE_RPC_TIMEOUT_MS }),
+      http("https://base.llamarpc.com", {
+        retryCount: SCORE_RPC_RETRY_COUNT,
+        retryDelay: 250,
+        timeout: SCORE_RPC_TIMEOUT_MS,
+      }),
+      http("https://1rpc.io/base", {
+        retryCount: SCORE_RPC_RETRY_COUNT,
+        retryDelay: 250,
+        timeout: SCORE_RPC_TIMEOUT_MS,
+      }),
     ]),
   });
 
@@ -121,6 +223,9 @@ const fetchTxCountsBySourceAddress = async (
 ): Promise<{
   txCountBySourceAddressLower: Map<string, number>;
   failures: number;
+  fetched: number;
+  total: number;
+  budgetReached: boolean;
 }> => {
   const txCountBySourceAddressLower = new Map<string, number>();
   const normalizedAddresses = Array.from(
@@ -138,56 +243,74 @@ const fetchTxCountsBySourceAddress = async (
   const publicClient = buildClient();
   let failures = 0;
   const total = normalizedAddresses.length;
+  const startedAt = Date.now();
+  let fetched = 0;
+  let budgetReached = false;
 
-  for (let index = 0; index < normalizedAddresses.length; index += CONCURRENCY_LIMIT) {
-    const batch = normalizedAddresses.slice(index, index + CONCURRENCY_LIMIT);
+  for (let index = 0; index < normalizedAddresses.length; index += SCORE_TX_CONCURRENCY) {
+    if (Date.now() - startedAt >= SCORE_TX_BUDGET_MS) {
+      budgetReached = true;
+      console.warn(
+        `txCount fetch budget reached (${SCORE_TX_BUDGET_MS}ms). Reusing stored txCount values for remaining addresses.`,
+      );
+      break;
+    }
+    const batch = normalizedAddresses.slice(index, index + SCORE_TX_CONCURRENCY);
 
     await Promise.all(
       batch.map(async ({ sourceAddressLower, sourceAddress }) => {
         try {
-          const txCountRaw = await publicClient.getTransactionCount({ address: sourceAddress });
+          const txCountRaw = await withTimeout(
+            `txCount ${sourceAddress}`,
+            SCORE_TX_CALL_TIMEOUT_MS,
+            () => publicClient.getTransactionCount({ address: sourceAddress }),
+          );
           txCountBySourceAddressLower.set(sourceAddressLower, toSafeInt(txCountRaw));
+          fetched += 1;
         } catch (error) {
           failures += 1;
           txCountBySourceAddressLower.set(sourceAddressLower, 0);
           console.warn(`Failed txCount fetch for ${sourceAddress}. Defaulting to 0.`);
           console.error(error);
+          fetched += 1;
         }
       }),
     );
     const processed = Math.min(index + batch.length, total);
-    if (processed % HEARTBEAT_INTERVAL === 0 || processed === total) {
+    if (processed % SCORE_HEARTBEAT_INTERVAL === 0 || processed === total) {
       console.log(`Heartbeat: fetched txCounts ${processed}/${total} ${SCORE_TX_SOURCE} addresses`);
     }
 
-    if (index + CONCURRENCY_LIMIT < normalizedAddresses.length) {
-      await sleep(BATCH_DELAY_MS);
+    if (index + SCORE_TX_CONCURRENCY < normalizedAddresses.length && SCORE_TX_BATCH_DELAY_MS > 0) {
+      await sleep(SCORE_TX_BATCH_DELAY_MS);
     }
   }
 
-  return { txCountBySourceAddressLower, failures };
+  return { txCountBySourceAddressLower, failures, fetched, total, budgetReached };
 };
 
 const applyScoreUpdates = async (updates: ScoreUpdate[]): Promise<void> => {
   const total = updates.length;
-  for (let index = 0; index < updates.length; index += UPDATE_BATCH_SIZE) {
-    const chunk = updates.slice(index, index + UPDATE_BATCH_SIZE);
+  for (let index = 0; index < updates.length; index += SCORE_DB_UPDATE_BATCH_SIZE) {
+    const chunk = updates.slice(index, index + SCORE_DB_UPDATE_BATCH_SIZE);
 
-    await prisma.$transaction(
-      chunk.map((update) =>
-        prisma.agent.update({
-          where: { address: update.address },
-          data: {
-            txCount: update.txCount,
-            tier: update.tier,
-            reputation: update.reputation,
-            rankScore: update.rankScore,
-            yield: update.yieldEth,
-            uptime: update.uptimePct,
-            volume: update.volume,
-            score: update.score,
-          },
-        }),
+    await withPrismaRetry(`persist score batch ${index + 1}-${Math.min(index + chunk.length, total)}`, () =>
+      prisma.$transaction(
+        chunk.map((update) =>
+          prisma.agent.update({
+            where: { address: update.address },
+            data: {
+              txCount: update.txCount,
+              tier: update.tier,
+              reputation: update.reputation,
+              rankScore: update.rankScore,
+              yield: update.yieldEth,
+              uptime: update.uptimePct,
+              volume: update.volume,
+              score: update.score,
+            },
+          }),
+        ),
       ),
     );
 
@@ -197,26 +320,30 @@ const applyScoreUpdates = async (updates: ScoreUpdate[]): Promise<void> => {
 };
 
 async function main(): Promise<void> {
-  console.log(`Scoring config: mode=${AGENT_INDEX_MODE}, tx_source=${SCORE_TX_SOURCE}, rpc_env=${INDEXER_RPC_ENV}`);
+  console.log(
+    `Scoring config: mode=${AGENT_INDEX_MODE}, tx_source=${SCORE_TX_SOURCE}, rpc_env=${INDEXER_RPC_ENV}, tx_concurrency=${SCORE_TX_CONCURRENCY}, tx_call_timeout_ms=${SCORE_TX_CALL_TIMEOUT_MS}, tx_budget_ms=${SCORE_TX_BUDGET_MS}, db_batch_size=${SCORE_DB_UPDATE_BATCH_SIZE}`,
+  );
   const startedAt = Date.now();
-  const agents = await prisma.agent.findMany({
-    select: {
-      address: true,
-      creator: true,
-      owner: true,
-      status: true,
-      yield: true,
-      uptime: true,
-      txCount: true,
-    },
-  });
+  const agents = await withPrismaRetry("load agents for scoring", () =>
+    prisma.agent.findMany({
+      select: {
+        address: true,
+        creator: true,
+        owner: true,
+        status: true,
+        yield: true,
+        uptime: true,
+        txCount: true,
+      },
+    }),
+  );
 
   if (agents.length === 0) {
     console.log("No agents found. Skipping scoring run.");
     return;
   }
 
-  const { txCountBySourceAddressLower, failures } = await fetchTxCountsBySourceAddress(
+  const { txCountBySourceAddressLower, failures, fetched, total, budgetReached } = await fetchTxCountsBySourceAddress(
     agents.map((agent) => resolveTxSourceAddressLower(agent)),
   );
 
@@ -271,15 +398,17 @@ async function main(): Promise<void> {
     });
 
     const processed = index + 1;
-    if (processed % HEARTBEAT_INTERVAL === 0 || processed === totalAgents) {
+    if (processed % SCORE_HEARTBEAT_INTERVAL === 0 || processed === totalAgents) {
       console.log(`Heartbeat: scored ${processed}/${totalAgents} agents`);
     }
   }
 
-  if (Date.now() - startedAt > DB_RECONNECT_THRESHOLD_MS) {
+  if (Date.now() - startedAt > SCORE_DB_RECONNECT_THRESHOLD_MS) {
     console.log("Heartbeat: refreshing Prisma connection before final batch write");
-    await prisma.$disconnect();
-    await prisma.$connect();
+    await withPrismaRetry("refresh prisma connection", async () => {
+      await withTimeout("score prisma.$disconnect (refresh)", SCORE_PRISMA_CONNECTION_TIMEOUT_MS, () => prisma.$disconnect());
+      await withTimeout("score prisma.$connect (refresh)", SCORE_PRISMA_CONNECTION_TIMEOUT_MS, () => prisma.$connect());
+    });
   }
 
   await applyScoreUpdates(updates);
@@ -294,6 +423,7 @@ async function main(): Promise<void> {
 
   console.log(`Scored ${updates.length} agents and updated Postgres.`);
   console.log(`RPC txCount failures: ${failures}.`);
+  console.log(`Fetched txCounts for ${fetched}/${total} source addresses.${budgetReached ? " (Budget reached; fallback values used for the remainder.)" : ""}`);
   console.log(`Max txCount observed: ${maxTxCount}.`);
   console.log(
     `Tier distribution => WHALE: ${tierCounts.WHALE}, ACTIVE: ${tierCounts.ACTIVE}, NEW: ${tierCounts.NEW}, GHOST: ${tierCounts.GHOST}.`,

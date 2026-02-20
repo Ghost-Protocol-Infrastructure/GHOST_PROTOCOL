@@ -18,7 +18,7 @@ concurrency:
 jobs:
   data-refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       POSTGRES_PRISMA_URL: ${{ secrets.POSTGRES_PRISMA_URL }}
       POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}
@@ -35,6 +35,17 @@ jobs:
       AGENT_PRISMA_RETRY_DELAY_MS: "1000"
       AGENT_PRISMA_OPERATION_TIMEOUT_MS: "180000"
       AGENT_PRISMA_CONNECTION_TIMEOUT_MS: "12000"
+      SCORE_TX_CONCURRENCY: "20"
+      SCORE_TX_BATCH_DELAY_MS: "10"
+      SCORE_TX_CALL_TIMEOUT_MS: "10000"
+      SCORE_TX_BUDGET_MS: "600000"
+      SCORE_RPC_TIMEOUT_MS: "10000"
+      SCORE_RPC_RETRY_COUNT: "1"
+      SCORE_DB_UPDATE_BATCH_SIZE: "100"
+      SCORE_HEARTBEAT_INTERVAL: "25"
+      SCORE_PRISMA_RETRY_ATTEMPTS: "4"
+      SCORE_PRISMA_RETRY_DELAY_MS: "1000"
+      SCORE_PRISMA_CONNECTION_TIMEOUT_MS: "12000"
 
     steps:
       - name: Checkout code
