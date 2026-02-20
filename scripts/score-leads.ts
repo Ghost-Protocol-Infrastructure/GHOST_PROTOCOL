@@ -40,6 +40,7 @@ const SCORE_DB_RECONNECT_THRESHOLD_MS = parseBoundedInt(
 const SCORE_RPC_TIMEOUT_MS = parseBoundedInt(process.env.SCORE_RPC_TIMEOUT_MS, 15_000, 3_000, 30_000);
 const SCORE_RPC_RETRY_COUNT = parseBoundedInt(process.env.SCORE_RPC_RETRY_COUNT, 2, 0, 5);
 const SCORE_TX_CALL_TIMEOUT_MS = parseBoundedInt(process.env.SCORE_TX_CALL_TIMEOUT_MS, 12_000, 2_000, 60_000);
+const SCORE_TX_RPC_TIMEOUT_MS = Math.min(SCORE_TX_CALL_TIMEOUT_MS, SCORE_RPC_TIMEOUT_MS);
 const SCORE_TX_BUDGET_MS = parseBoundedInt(process.env.SCORE_TX_BUDGET_MS, 10 * 60_000, 60_000, 60 * 60_000);
 const SCORE_PRISMA_RETRY_ATTEMPTS = parseBoundedInt(process.env.SCORE_PRISMA_RETRY_ATTEMPTS, 4, 1, 8);
 const SCORE_PRISMA_RETRY_DELAY_MS = parseBoundedInt(process.env.SCORE_PRISMA_RETRY_DELAY_MS, 1_000, 100, 10_000);
@@ -56,6 +57,7 @@ const REPUTATION_UPTIME_WEIGHT = 0.5;
 const REPUTATION_YIELD_WEIGHT = 0.2;
 const RANK_REPUTATION_WEIGHT = 0.7;
 const RANK_VELOCITY_WEIGHT = 0.3;
+const ZERO_ADDRESS_LOWER = "0x0000000000000000000000000000000000000000";
 
 type AgentTier = "WHALE" | "ACTIVE" | "NEW" | "GHOST";
 
@@ -181,10 +183,30 @@ const parseAddress = (value: string): Address | null => {
   }
 };
 
-const resolveTxSourceAddressLower = (agent: { owner: string; creator: string }): string => {
+const normalizeSourceAddress = (
+  value: string,
+): {
+  sourceAddressLower: string;
+  sourceAddress: Address;
+} | null => {
+  const parsed = parseAddress(value.trim());
+  if (!parsed) return null;
+
+  const sourceAddressLower = parsed.toLowerCase();
+  if (sourceAddressLower === ZERO_ADDRESS_LOWER) return null;
+
+  return { sourceAddressLower, sourceAddress: parsed };
+};
+
+const resolveTxSourceAddressLower = (agent: { owner: string; creator: string }): string | null => {
   const primary = SCORE_TX_SOURCE === "owner" ? agent.owner : agent.creator;
   const secondary = SCORE_TX_SOURCE === "owner" ? agent.creator : agent.owner;
-  return (primary || secondary || "").trim().toLowerCase();
+
+  const normalizedPrimary = normalizeSourceAddress(primary ?? "");
+  if (normalizedPrimary) return normalizedPrimary.sourceAddressLower;
+
+  const normalizedSecondary = normalizeSourceAddress(secondary ?? "");
+  return normalizedSecondary ? normalizedSecondary.sourceAddressLower : null;
 };
 
 const statusIndicatesClaimed = (status: string): boolean => {
@@ -200,26 +222,26 @@ const getTier = (txCount: number, isClaimed: boolean): AgentTier => {
   return "NEW";
 };
 
-const buildClient = () =>
+const buildClient = (rpcTimeoutMs: number = SCORE_RPC_TIMEOUT_MS) =>
   createPublicClient({
     chain: base,
     transport: fallback([
-      http(INDEXER_RPC_URL, { retryCount: SCORE_RPC_RETRY_COUNT, retryDelay: 250, timeout: SCORE_RPC_TIMEOUT_MS }),
+      http(INDEXER_RPC_URL, { retryCount: SCORE_RPC_RETRY_COUNT, retryDelay: 250, timeout: rpcTimeoutMs }),
       http("https://base.llamarpc.com", {
         retryCount: SCORE_RPC_RETRY_COUNT,
         retryDelay: 250,
-        timeout: SCORE_RPC_TIMEOUT_MS,
+        timeout: rpcTimeoutMs,
       }),
       http("https://1rpc.io/base", {
         retryCount: SCORE_RPC_RETRY_COUNT,
         retryDelay: 250,
-        timeout: SCORE_RPC_TIMEOUT_MS,
+        timeout: rpcTimeoutMs,
       }),
     ]),
   });
 
 const fetchTxCountsBySourceAddress = async (
-  sourceAddresses: string[],
+  sourceAddresses: Array<string | null>,
 ): Promise<{
   txCountBySourceAddressLower: Map<string, number>;
   failures: number;
@@ -228,19 +250,39 @@ const fetchTxCountsBySourceAddress = async (
   budgetReached: boolean;
 }> => {
   const txCountBySourceAddressLower = new Map<string, number>();
-  const normalizedAddresses = Array.from(
-    new Set(
-      sourceAddresses
-        .map((sourceAddress) => sourceAddress.toLowerCase())
-        .map((sourceAddressLower) => {
-          const parsed = parseAddress(sourceAddressLower);
-          return parsed ? { sourceAddressLower, sourceAddress: parsed } : null;
-        })
-        .filter((value): value is { sourceAddressLower: string; sourceAddress: Address } => value !== null),
-    ),
+  const normalizedAddressByLower = new Map<string, Address>();
+  let invalidOrZeroCount = 0;
+
+  for (const sourceAddress of sourceAddresses) {
+    if (!sourceAddress) {
+      invalidOrZeroCount += 1;
+      continue;
+    }
+    const normalized = normalizeSourceAddress(sourceAddress);
+    if (!normalized) {
+      invalidOrZeroCount += 1;
+      continue;
+    }
+    if (!normalizedAddressByLower.has(normalized.sourceAddressLower)) {
+      normalizedAddressByLower.set(normalized.sourceAddressLower, normalized.sourceAddress);
+    }
+  }
+
+  const normalizedAddresses = Array.from(normalizedAddressByLower.entries()).map(
+    ([sourceAddressLower, sourceAddress]) => ({
+      sourceAddressLower,
+      sourceAddress,
+    }),
   );
 
-  const publicClient = buildClient();
+  const duplicateCount = Math.max(0, sourceAddresses.length - invalidOrZeroCount - normalizedAddresses.length);
+  if (invalidOrZeroCount > 0 || duplicateCount > 0) {
+    console.log(
+      `Heartbeat: txCount source normalization => requested=${sourceAddresses.length}, unique=${normalizedAddresses.length}, duplicate=${duplicateCount}, invalid_or_zero=${invalidOrZeroCount}`,
+    );
+  }
+
+  const publicClient = buildClient(SCORE_TX_RPC_TIMEOUT_MS);
   let failures = 0;
   const total = normalizedAddresses.length;
   const startedAt = Date.now();
@@ -260,11 +302,7 @@ const fetchTxCountsBySourceAddress = async (
     await Promise.all(
       batch.map(async ({ sourceAddressLower, sourceAddress }) => {
         try {
-          const txCountRaw = await withTimeout(
-            `txCount ${sourceAddress}`,
-            SCORE_TX_CALL_TIMEOUT_MS,
-            () => publicClient.getTransactionCount({ address: sourceAddress }),
-          );
+          const txCountRaw = await publicClient.getTransactionCount({ address: sourceAddress });
           txCountBySourceAddressLower.set(sourceAddressLower, toSafeInt(txCountRaw));
           fetched += 1;
         } catch (error) {
@@ -321,7 +359,7 @@ const applyScoreUpdates = async (updates: ScoreUpdate[]): Promise<void> => {
 
 async function main(): Promise<void> {
   console.log(
-    `Scoring config: mode=${AGENT_INDEX_MODE}, tx_source=${SCORE_TX_SOURCE}, rpc_env=${INDEXER_RPC_ENV}, tx_concurrency=${SCORE_TX_CONCURRENCY}, tx_call_timeout_ms=${SCORE_TX_CALL_TIMEOUT_MS}, tx_budget_ms=${SCORE_TX_BUDGET_MS}, db_batch_size=${SCORE_DB_UPDATE_BATCH_SIZE}`,
+    `Scoring config: mode=${AGENT_INDEX_MODE}, tx_source=${SCORE_TX_SOURCE}, rpc_env=${INDEXER_RPC_ENV}, tx_concurrency=${SCORE_TX_CONCURRENCY}, tx_call_timeout_ms=${SCORE_TX_CALL_TIMEOUT_MS}, tx_rpc_timeout_ms=${SCORE_TX_RPC_TIMEOUT_MS}, tx_budget_ms=${SCORE_TX_BUDGET_MS}, db_batch_size=${SCORE_DB_UPDATE_BATCH_SIZE}`,
   );
   const startedAt = Date.now();
   const agents = await withPrismaRetry("load agents for scoring", () =>
@@ -343,13 +381,16 @@ async function main(): Promise<void> {
     return;
   }
 
+  const txSourceAddressByAgent = agents.map((agent) => resolveTxSourceAddressLower(agent));
   const { txCountBySourceAddressLower, failures, fetched, total, budgetReached } = await fetchTxCountsBySourceAddress(
-    agents.map((agent) => resolveTxSourceAddressLower(agent)),
+    txSourceAddressByAgent,
   );
 
-  const txCounts = agents.map(
-    (agent) => txCountBySourceAddressLower.get(resolveTxSourceAddressLower(agent)) ?? agent.txCount ?? 0,
-  );
+  const txCounts = agents.map((agent, index) => {
+    const sourceAddressLower = txSourceAddressByAgent[index];
+    if (!sourceAddressLower) return 0;
+    return txCountBySourceAddressLower.get(sourceAddressLower) ?? agent.txCount ?? 0;
+  });
   const maxTxCount = Math.max(0, ...txCounts);
 
   const claimedYields = agents
@@ -365,7 +406,8 @@ async function main(): Promise<void> {
 
   for (let index = 0; index < totalAgents; index += 1) {
     const agent = agents[index];
-    const txCount = txCountBySourceAddressLower.get(resolveTxSourceAddressLower(agent)) ?? agent.txCount ?? 0;
+    const sourceAddressLower = txSourceAddressByAgent[index];
+    const txCount = sourceAddressLower ? (txCountBySourceAddressLower.get(sourceAddressLower) ?? agent.txCount ?? 0) : 0;
     const txVolumeNorm = normalizeLog100(txCount, maxTxCount);
     const velocityNorm = normalizeLog100(txCount, maxTxCount);
     const isClaimed = statusIndicatesClaimed(agent.status);
@@ -437,7 +479,9 @@ main()
   })
   .finally(async () => {
     try {
-      await prisma.$disconnect();
+      await withTimeout("score prisma.$disconnect (final)", SCORE_PRISMA_CONNECTION_TIMEOUT_MS, () =>
+        prisma.$disconnect(),
+      );
     } catch (disconnectError) {
       console.error("Failed to disconnect Prisma cleanly:", disconnectError);
     }
