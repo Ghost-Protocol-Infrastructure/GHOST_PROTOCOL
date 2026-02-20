@@ -50,6 +50,9 @@ const SCORE_PRISMA_CONNECTION_TIMEOUT_MS = parseBoundedInt(
   2_000,
   60_000,
 );
+const SCORE_FORCE_EXIT_ON_FINISH =
+  process.env.SCORE_FORCE_EXIT_ON_FINISH?.trim().toLowerCase() === "true" ||
+  process.env.CI?.trim().toLowerCase() === "true";
 
 const UNCLAIMED_REPUTATION_CAP = 80;
 const REPUTATION_TX_WEIGHT = 0.3;
@@ -302,7 +305,9 @@ const fetchTxCountsBySourceAddress = async (
     await Promise.all(
       batch.map(async ({ sourceAddressLower, sourceAddress }) => {
         try {
-          const txCountRaw = await publicClient.getTransactionCount({ address: sourceAddress });
+          const txCountRaw = await withTimeout(`txCount ${sourceAddress}`, SCORE_TX_CALL_TIMEOUT_MS, () =>
+            publicClient.getTransactionCount({ address: sourceAddress }),
+          );
           txCountBySourceAddressLower.set(sourceAddressLower, toSafeInt(txCountRaw));
           fetched += 1;
         } catch (error) {
@@ -484,5 +489,8 @@ main()
       );
     } catch (disconnectError) {
       console.error("Failed to disconnect Prisma cleanly:", disconnectError);
+    }
+    if (SCORE_FORCE_EXIT_ON_FINISH) {
+      process.exit(process.exitCode ?? 0);
     }
   });
