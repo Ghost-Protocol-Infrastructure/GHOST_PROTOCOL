@@ -31,6 +31,12 @@ jobs:
       CREDIT_RECONCILE_FAIL_ON_MISMATCH: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.credit_reconcile_fail_on_mismatch || 'true' }}
       CREDIT_ALERT_REPLAY_WINDOW_MINUTES: ${{ vars.CREDIT_ALERT_REPLAY_WINDOW_MINUTES || '60' }}
       CREDIT_ALERT_REPLAY_SPIKE_THRESHOLD: ${{ vars.CREDIT_ALERT_REPLAY_SPIKE_THRESHOLD || '25' }}
+      ALERT_SMTP_SERVER: ${{ secrets.ALERT_SMTP_SERVER }}
+      ALERT_SMTP_USERNAME: ${{ secrets.ALERT_SMTP_USERNAME }}
+      ALERT_SMTP_PASSWORD: ${{ secrets.ALERT_SMTP_PASSWORD }}
+      ALERT_FROM_EMAIL: ${{ secrets.ALERT_FROM_EMAIL }}
+      ALERT_SMTP_PORT: ${{ secrets.ALERT_SMTP_PORT || '587' }}
+      ALERT_SMTP_SECURE: ${{ secrets.ALERT_SMTP_SECURE || 'false' }}
 
     steps:
       - name: Checkout code
@@ -55,15 +61,15 @@ jobs:
         run: npm run monitor:credits
 
       - name: Send credit alert email
-        if: failure() && secrets.ALERT_SMTP_SERVER != '' && secrets.ALERT_SMTP_USERNAME != '' && secrets.ALERT_SMTP_PASSWORD != '' && secrets.ALERT_FROM_EMAIL != ''
+        if: ${{ failure() && env.ALERT_SMTP_SERVER != '' && env.ALERT_SMTP_USERNAME != '' && env.ALERT_SMTP_PASSWORD != '' && env.ALERT_FROM_EMAIL != '' }}
         uses: dawidd6/action-send-mail@v3
         with:
-          server_address: ${{ secrets.ALERT_SMTP_SERVER }}
-          server_port: ${{ secrets.ALERT_SMTP_PORT || '587' }}
-          secure: ${{ secrets.ALERT_SMTP_SECURE || 'false' }}
-          username: ${{ secrets.ALERT_SMTP_USERNAME }}
-          password: ${{ secrets.ALERT_SMTP_PASSWORD }}
-          from: ${{ secrets.ALERT_FROM_EMAIL }}
+          server_address: ${{ env.ALERT_SMTP_SERVER }}
+          server_port: ${{ env.ALERT_SMTP_PORT }}
+          secure: ${{ env.ALERT_SMTP_SECURE }}
+          username: ${{ env.ALERT_SMTP_USERNAME }}
+          password: ${{ env.ALERT_SMTP_PASSWORD }}
+          from: ${{ env.ALERT_FROM_EMAIL }}
           to: ghostprotocol.infra@gmail.com
           subject: "[Ghost Rank][Credit] Workflow Alert: ${{ github.workflow }}"
           body: |
@@ -82,6 +88,6 @@ jobs:
             - Any unexpected failure in credit-reconcile workflow
 
       - name: Warn when alert email secrets are missing
-        if: failure() && (secrets.ALERT_SMTP_SERVER == '' || secrets.ALERT_SMTP_USERNAME == '' || secrets.ALERT_SMTP_PASSWORD == '' || secrets.ALERT_FROM_EMAIL == '')
+        if: ${{ failure() && (env.ALERT_SMTP_SERVER == '' || env.ALERT_SMTP_USERNAME == '' || env.ALERT_SMTP_PASSWORD == '' || env.ALERT_FROM_EMAIL == '') }}
         run: |
           echo "::warning::Credit workflow failed but SMTP secrets are not fully configured. Set ALERT_SMTP_SERVER, ALERT_SMTP_USERNAME, ALERT_SMTP_PASSWORD, ALERT_FROM_EMAIL (and optional ALERT_SMTP_PORT/ALERT_SMTP_SECURE)."
