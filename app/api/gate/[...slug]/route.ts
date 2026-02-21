@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHmac } from "node:crypto";
 import {
   recoverTypedDataAddress,
   verifyTypedData,
   type Address,
 } from "viem";
-import { consumeUserCredits, getUserCredits } from "@/lib/db";
+import {
+  consumeUserCreditsForGate,
+  getServiceCreditCost,
+  getUserCredits,
+} from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -49,6 +54,38 @@ const DEFAULT_REQUEST_COST = (() => {
   return 1n;
 })();
 
+const ALLOW_CLIENT_COST_OVERRIDE = process.env.GHOST_GATE_ALLOW_CLIENT_COST_OVERRIDE !== "false";
+const NONCE_STORE_ENABLED = process.env.GHOST_GATE_NONCE_STORE_ENABLED === "true";
+const ENFORCE_NONCE_UNIQUENESS = process.env.GHOST_GATE_ENFORCE_NONCE_UNIQUENESS === "true";
+const ENABLE_DB_SERVICE_PRICING = process.env.GHOST_GATE_DB_SERVICE_PRICING_ENABLED === "true";
+const RECEIPT_SIGNING_SECRET = process.env.GHOST_GATE_RECEIPT_SIGNING_SECRET?.trim() ?? "";
+
+const ENV_SERVICE_PRICING = (() => {
+  const raw = process.env.GHOST_GATE_SERVICE_PRICING_JSON?.trim();
+  const pricing = new Map<string, bigint>();
+  if (!raw) return pricing;
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    for (const [service, value] of Object.entries(parsed)) {
+      if (typeof service !== "string") continue;
+
+      if (typeof value === "number" && Number.isInteger(value) && value > 0) {
+        pricing.set(service, BigInt(value));
+        continue;
+      }
+
+      if (typeof value === "string" && /^\d+$/.test(value) && value !== "0") {
+        pricing.set(service, BigInt(value));
+      }
+    }
+  } catch {
+    // Ignore malformed config and fall back to default pricing.
+  }
+
+  return pricing;
+})();
+
 const json = (body: unknown, status = 200): NextResponse =>
   NextResponse.json(body, {
     status,
@@ -71,7 +108,10 @@ const parseAndValidatePayload = (rawPayload: string): AccessPayload | null => {
   }
 
   if (typeof parsed.service !== "string" || parsed.service.length === 0) return null;
-  if (typeof parsed.nonce !== "string" || parsed.nonce.length === 0) return null;
+  if (typeof parsed.nonce !== "string" || parsed.nonce.length === 0 || parsed.nonce.length > 256) {
+    return null;
+  }
+  if (!/^[\x21-\x7E]+$/.test(parsed.nonce)) return null;
 
   const ts = parseTimestamp(parsed.timestamp);
   if (ts == null) return null;
@@ -110,10 +150,70 @@ const parseCreditCost = (value: string | null): bigint | null => {
   return parsed;
 };
 
-const resolveRequestCost = (request: NextRequest): bigint => {
+const resolveRequestCost = async (
+  request: NextRequest,
+  service: string,
+): Promise<{ cost: bigint; source: "header" | "db" | "env" | "default" }> => {
   const requestScopedCost = parseCreditCost(request.headers.get("x-ghost-credit-cost"));
-  if (requestScopedCost != null) return requestScopedCost;
-  return DEFAULT_REQUEST_COST;
+  if (ALLOW_CLIENT_COST_OVERRIDE && requestScopedCost != null) {
+    return { cost: requestScopedCost, source: "header" };
+  }
+
+  if (ENABLE_DB_SERVICE_PRICING) {
+    const dbServiceCost = await getServiceCreditCost(service);
+    if (dbServiceCost != null) {
+      return { cost: dbServiceCost, source: "db" };
+    }
+  }
+
+  const envServiceCost = ENV_SERVICE_PRICING.get(service);
+  if (envServiceCost != null) {
+    return { cost: envServiceCost, source: "env" };
+  }
+
+  return { cost: DEFAULT_REQUEST_COST, source: "default" };
+};
+
+const buildRequestId = (request: NextRequest, service: string, signer: Address, nonce: string): string => {
+  const explicitRequestId = request.headers.get("x-ghost-request-id")?.trim();
+  if (explicitRequestId && explicitRequestId.length <= 128) {
+    return explicitRequestId;
+  }
+
+  return `${service}:${signer.toLowerCase()}:${nonce}`;
+};
+
+const buildSignedReceipt = (input: {
+  service: string;
+  signer: Address;
+  cost: bigint;
+  remainingCredits: bigint;
+  nonce: string;
+  requestId: string;
+  issuedAt: string;
+}): { algorithm: "hmac-sha256"; signature: string; issuedAt: string; requestId: string } | null => {
+  if (!RECEIPT_SIGNING_SECRET) {
+    return null;
+  }
+
+  const canonical = JSON.stringify({
+    service: input.service,
+    signer: input.signer.toLowerCase(),
+    cost: input.cost.toString(),
+    remainingCredits: input.remainingCredits.toString(),
+    nonce: input.nonce,
+    requestId: input.requestId,
+    issuedAt: input.issuedAt,
+  });
+
+  const signature = createHmac("sha256", RECEIPT_SIGNING_SECRET).update(canonical).digest("hex");
+
+  return {
+    algorithm: "hmac-sha256",
+    signature,
+    issuedAt: input.issuedAt,
+    requestId: input.requestId,
+  };
 };
 
 const handle = async (request: NextRequest, context: RouteContext): Promise<NextResponse> => {
@@ -169,9 +269,30 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
     return json({ error: "Invalid Signature", code: 401 }, 401);
   }
 
-  const requestCost = resolveRequestCost(request);
-  const balance = await getUserCredits(signer);
-  if (balance < requestCost) {
+  const { cost: requestCost, source: requestCostSource } = await resolveRequestCost(request, requestedService);
+  const requestId = buildRequestId(request, requestedService, signer, payload.nonce);
+
+  const consumed = await consumeUserCreditsForGate(signer, requestCost, {
+    service: requestedService,
+    nonce: payload.nonce,
+    payloadTimestamp: payload.timestamp,
+    signature,
+    requestId,
+    enforceNonceUniqueness: ENFORCE_NONCE_UNIQUENESS && NONCE_STORE_ENABLED,
+  });
+
+  if (consumed.status === "replay") {
+    return json(
+      {
+        error: "Replay Detected",
+        code: 409,
+      },
+      409,
+    );
+  }
+
+  if (consumed.status === "insufficient_credits") {
+    const balance = await getUserCredits(signer);
     return json(
       {
         error: "Payment Required",
@@ -185,16 +306,16 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
     );
   }
 
-  const consumed = await consumeUserCredits(signer, requestCost);
-  if (!consumed) {
-    return json(
-      {
-        error: "Payment Required",
-        code: 402,
-      },
-      402,
-    );
-  }
+  const issuedAt = new Date().toISOString();
+  const receipt = buildSignedReceipt({
+    service: requestedService,
+    signer,
+    cost: requestCost,
+    remainingCredits: consumed.after,
+    nonce: payload.nonce,
+    requestId,
+    issuedAt,
+  });
 
   return json(
     {
@@ -204,6 +325,10 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
       signer,
       cost: requestCost.toString(),
       remainingCredits: consumed.after.toString(),
+      nonceAccepted: consumed.nonceAccepted,
+      requestId,
+      receipt,
+      costSource: requestCostSource,
     },
     200,
   );

@@ -8,7 +8,9 @@
 - Node SDK baseline gateway integration is live (EIP-712 signed `connect()`, configurable `baseUrl`).
 - Scoring pipeline hardened against common stalls (tx source dedupe, zero-address skip, timeout guards, bounded shutdown in CI).
 - Tx fetch anti-starvation rotation is live, and Data Refresh cron is now hourly (`0 * * * *`) to reduce overlapping runs.
-- V2 pipeline scaffolding is now implemented behind flags (new score-input/snapshot/state tables, `score:v2` runner, optional snapshot-serving API path, and cron-gated v2 step disabled by default).
+- V2 pipeline scaffolding is now implemented behind flags (new score-input/snapshot/state tables, `score:v2` runner, optional snapshot-serving API path).
+- Manual v2 shadow validation succeeded on February 20, 2026 (`Data Refresh #246`), including full snapshot write and clean job completion.
+- Scheduled Data Refresh now runs v2 in shadow mode by default while keeping the live read path on legacy scoring (`SCORE_V2_ENABLED=true`, `SCORE_V2_SCHEDULER_ENABLED=true`, `SCORE_V2_SHADOW_ONLY=true`, `LEADERBOARD_READ_FROM_SNAPSHOT=false` for schedule events).
 
 ## 1. Scoring Engine (Active)
 - **Issue:** Transaction count is still derived from owner wallet nonce, not strictly from the agent contract.
@@ -62,7 +64,7 @@
 - Continue tuning tx fetch budget/concurrency and monitor fallback rates.
 - Maintain this as fallback path during all v2 rollout phases.
 
-### Phase 1 (Build Now, Behind Flags)
+### Phase 1 (Built, Behind Flags)
 - Add new tables (additive only, no destructive migration):
   - `agent_score_inputs`
   - `leaderboard_snapshot`
@@ -77,7 +79,11 @@
   - `LEADERBOARD_READ_FROM_SNAPSHOT`
   - `SCORE_V2_SCHEDULER_ENABLED`
 
-### Phase 2 (Shadow Validation, Pre-VPS or Early VPS)
+### Phase 2 (Shadow Validation, In Progress)
+- Status as of February 20, 2026:
+  - Manual shadow run validated end-to-end (`Data Refresh #246`, success).
+  - Scheduled runs are configured to execute v2 shadow by default.
+  - Snapshot read path remains OFF (`LEADERBOARD_READ_FROM_SNAPSHOT=false`).
 - Run v2 in shadow mode only (`SCORE_V2_ENABLED=true`, `SCORE_V2_SHADOW_ONLY=true`).
 - Keep UI/API reading current path (`LEADERBOARD_READ_FROM_SNAPSHOT=false`).
 - Track parity and quality:

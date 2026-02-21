@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("POSTGRES_PRISMA_URL")
+  provider  = "postgresql"
+  url       = env("POSTGRES_PRISMA_URL")
   directUrl = env("POSTGRES_URL_NON_POOLING")
 }
 
@@ -21,16 +21,68 @@ enum SnapshotStatus {
   FAILED
 }
 
+enum CreditLedgerDirection {
+  CREDIT
+  DEBIT
+  ADJUSTMENT
+}
+
 model CreditBalance {
   walletAddress   String   @id
   credits         Int      @default(0)
   lastSyncedBlock BigInt   @default(0)
   updatedAt       DateTime @updatedAt
+
+  ledgerEntries CreditLedger[]
+}
+
+model AccessNonce {
+  id               String   @id @default(cuid())
+  signer           String
+  service          String
+  nonce            String
+  payloadTimestamp BigInt
+  signature        String?
+  createdAt        DateTime @default(now())
+
+  @@unique([signer, service, nonce])
+  @@index([service, signer])
+  @@index([createdAt])
+}
+
+model ServicePricing {
+  service   String   @id
+  cost      Int
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CreditLedger {
+  id            String                @id @default(cuid())
+  walletAddress String
+  direction     CreditLedgerDirection
+  amount        Int
+  balanceBefore Int
+  balanceAfter  Int
+  reason        String
+  service       String?
+  nonce         String?
+  requestId     String?
+  metadata      Json?
+  createdAt     DateTime              @default(now())
+
+  wallet CreditBalance @relation(fields: [walletAddress], references: [walletAddress], onDelete: Cascade)
+
+  @@unique([walletAddress, requestId])
+  @@index([walletAddress, createdAt])
+  @@index([reason, createdAt])
+  @@index([service, createdAt])
 }
 
 model Agent {
-  address     String   @id
-  agentId     String   @unique
+  address     String    @id
+  agentId     String    @unique
   name        String
   creator     String
   owner       String
@@ -39,20 +91,20 @@ model Agent {
   telegram    String?
   twitter     String?
   website     String?
-  status      String   @default("active")
-  volume      BigInt   @default(0)
-  score       Int      @default(0)
-  reputation  Float    @default(0)
-  rankScore   Float    @default(0)
+  status      String    @default("active")
+  volume      BigInt    @default(0)
+  score       Int       @default(0)
+  reputation  Float     @default(0)
+  rankScore   Float     @default(0)
   tier        AgentTier @default(NEW)
-  txCount     Int      @default(0)
-  yield       Float    @default(0)
-  uptime      Float    @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  txCount     Int       @default(0)
+  yield       Float     @default(0)
+  uptime      Float     @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  scoreInput  AgentScoreInput?
-  snapshots   LeaderboardSnapshotRow[]
+  scoreInput AgentScoreInput?
+  snapshots  LeaderboardSnapshotRow[]
 }
 
 model SystemState {
@@ -61,7 +113,7 @@ model SystemState {
 }
 
 model AgentScoreInput {
-  agentAddress     String   @id
+  agentAddress     String    @id
   agentId          String
   name             String
   creator          String
@@ -71,16 +123,16 @@ model AgentScoreInput {
   telegram         String?
   twitter          String?
   website          String?
-  status           String   @default("active")
+  status           String    @default("active")
   txSourceAddress  String?
-  txCount          Int      @default(0)
-  yield            Float    @default(0)
-  uptime           Float    @default(0)
-  isClaimed        Boolean  @default(false)
+  txCount          Int       @default(0)
+  yield            Float     @default(0)
+  uptime           Float     @default(0)
+  isClaimed        Boolean   @default(false)
   txCountUpdatedAt DateTime?
-  lastIngestedAt   DateTime @default(now())
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  lastIngestedAt   DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   agent Agent @relation(fields: [agentAddress], references: [address], onDelete: Cascade)
 
@@ -110,32 +162,32 @@ model LeaderboardSnapshot {
 }
 
 model LeaderboardSnapshotRow {
-  id          String   @id @default(cuid())
-  snapshotId  String
-  agentAddress String
-  agentId     String
-  name        String
-  creator     String
-  owner       String
-  image       String?
-  description String?
-  telegram    String?
-  twitter     String?
-  website     String?
-  status      String
-  rank        Int
-  tier        AgentTier
-  txCount     Int
-  reputation  Float
-  rankScore   Float
-  yield       Float
-  uptime      Float
-  volume      BigInt
-  score       Int
+  id             String    @id @default(cuid())
+  snapshotId     String
+  agentAddress   String
+  agentId        String
+  name           String
+  creator        String
+  owner          String
+  image          String?
+  description    String?
+  telegram       String?
+  twitter        String?
+  website        String?
+  status         String
+  rank           Int
+  tier           AgentTier
+  txCount        Int
+  reputation     Float
+  rankScore      Float
+  yield          Float
+  uptime         Float
+  volume         BigInt
+  score          Int
   agentCreatedAt DateTime
   agentUpdatedAt DateTime
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   snapshot LeaderboardSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
   agent    Agent               @relation(fields: [agentAddress], references: [address], onDelete: Cascade)
