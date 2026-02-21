@@ -29,6 +29,8 @@ const assert = (condition: boolean, message: string): void => {
   if (!condition) throw new Error(message);
 };
 
+type GateResponseBody = Record<string, unknown>;
+
 const callGate = async (
   gateGet: (request: NextRequest, context: { params: { slug: string[] } }) => Promise<Response>,
   input: {
@@ -38,7 +40,7 @@ const callGate = async (
     requestId: string;
     requestScopedCost: string;
   },
-): Promise<{ status: number; body: any }> => {
+): Promise<{ status: number; body: GateResponseBody }> => {
   const req = new NextRequest(`http://localhost/api/gate/${input.service}`, {
     method: "GET",
     headers: {
@@ -50,7 +52,8 @@ const callGate = async (
   });
 
   const res = await gateGet(req, { params: { slug: input.service.split("/") } });
-  return { status: res.status, body: await res.json() };
+  const body = (await res.json()) as GateResponseBody;
+  return { status: res.status, body };
 };
 
 const run = async (): Promise<void> => {

@@ -157,14 +157,6 @@ const withTimeout = async <T>(label: string, timeoutMs: number, operation: () =>
   }
 };
 
-const prismaTimeoutForLabel = (label: string): number => {
-  if (/upsert\s+erc-8004\s+agents\s+for\s+chunk/i.test(label)) {
-    // Reserved for logging/config visibility; Prisma operations are not raced against this timeout.
-    return Math.max(PRISMA_OPERATION_TIMEOUT_MS, 300_000);
-  }
-  return PRISMA_OPERATION_TIMEOUT_MS;
-};
-
 const isRecoverablePrismaError = (error: unknown): boolean => {
   const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
   return /(postgresql connection|kind:\s*closed|connection.*closed|engine is not yet connected|response from the engine was empty|genericfailure|prismaclientunknownrequesterror|P1001|P1017|timeout|timed out|socket hang up|ECONNRESET|connection reset)/i.test(

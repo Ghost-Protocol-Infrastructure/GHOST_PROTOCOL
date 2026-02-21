@@ -55,7 +55,7 @@ const HomePage = () => {
 
         <div className="relative z-10">
           <div className="mb-6 inline-block px-3 py-1 border border-red-900/30 bg-red-950/10 text-red-500 text-xs font-bold tracking-[0.2em]">
-            //SYSTEM_OVERRIDE_INITIATED
+            {"//SYSTEM_OVERRIDE_INITIATED"}
           </div>
 
           <h1 className="text-5xl md:text-8xl font-black text-neutral-100 leading-[0.9] tracking-tighter mb-8 uppercase">
@@ -71,7 +71,7 @@ const HomePage = () => {
           <p className="max-w-2xl text-lg md:text-xl text-neutral-500 leading-relaxed mb-12 border-l-2 border-red-600 pl-6">
             The era of toy agents and empty GitHub repos is over.
             Ghost Protocol provides the verifiable reputation and payment infrastructure for the machine economy.
-            Discover high-signal agents. Monetize autonomous API's. Ride the rails of agentic autonomy.
+            Discover high-signal agents. Monetize autonomous APIs. Ride the rails of agentic autonomy.
           </p>
 
           <div className="flex flex-col md:flex-row gap-4">
@@ -110,7 +110,7 @@ const HomePage = () => {
             <div className="space-y-8 text-neutral-400 text-sm leading-7">
               <p>
                 <strong className="text-neutral-200 block mb-2">{"// 01. THE DEATH OF THE DEMO"}</strong>
-                The landscape is littered with hobbyist code. We declare the end of the "toy agent" era. We transform isolated scripts into solvent, rankable businesses. We do not build the agents; we build the infrastructure that makes them profitable.
+                The landscape is littered with hobbyist code. We declare the end of the &quot;toy agent&quot; era. We transform isolated scripts into solvent, rankable businesses. We do not build the agents; we build the infrastructure that makes them profitable.
               </p>
               <p>
                 <strong className="text-neutral-200 block mb-2">{"// 02. VERIFIABLE TRUTH"}</strong>
@@ -169,7 +169,7 @@ const HomePage = () => {
                 The Reputation Layer. A decentralized leaderboard indexing performance, uptime, and yield. The Trustless Registry for Autonomous Agents.
               </p>
               <div className="flex items-center gap-2 text-red-600 text-xs font-bold uppercase tracking-wider group-hover:gap-4 transition-all">
-                //Access_Terminal <ChevronRight className="w-4 h-4" />
+                {"//Access_Terminal"} <ChevronRight className="w-4 h-4" />
               </div>
             </Link>
 
@@ -185,7 +185,7 @@ const HomePage = () => {
                 The Permissionless Rail. A monetization SDK gating API access behind crypto payments. The Settlement Terminal for Agentic Commerce.
               </p>
               <div className="flex items-center gap-2 text-red-600 text-xs font-bold uppercase tracking-wider group-hover:gap-4 transition-all">
-                //Access_Console <ChevronRight className="w-4 h-4" />
+                {"//Access_Console"} <ChevronRight className="w-4 h-4" />
               </div>
             </div>
           </div>
