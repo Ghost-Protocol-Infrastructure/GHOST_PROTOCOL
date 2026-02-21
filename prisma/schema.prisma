@@ -27,6 +27,16 @@ enum CreditLedgerDirection {
   ADJUSTMENT
 }
 
+enum GateAccessOutcome {
+  AUTHORIZED
+  REPLAY
+  INSUFFICIENT_CREDITS
+  MALFORMED_AUTH
+  SERVICE_MISMATCH
+  SIGNATURE_EXPIRED
+  INVALID_SIGNATURE
+}
+
 model CreditBalance {
   walletAddress   String   @id
   credits         Int      @default(0)
@@ -78,6 +88,24 @@ model CreditLedger {
   @@index([walletAddress, createdAt])
   @@index([reason, createdAt])
   @@index([service, createdAt])
+}
+
+model GateAccessEvent {
+  id               String            @id @default(cuid())
+  service          String
+  signer           String?
+  nonce            String?
+  requestId        String?
+  outcome          GateAccessOutcome
+  cost             Int?
+  remainingCredits Int?
+  metadata         Json?
+  createdAt        DateTime          @default(now())
+
+  @@index([createdAt])
+  @@index([outcome, createdAt])
+  @@index([service, createdAt])
+  @@index([signer, createdAt])
 }
 
 model Agent {

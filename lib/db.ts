@@ -1,10 +1,12 @@
 import { config as loadEnv } from "dotenv";
-import { PrismaClient, type Prisma } from "@prisma/client";
+import { PrismaClient, type GateAccessOutcome, Prisma } from "@prisma/client";
 import { getAddress, type Address } from "viem";
 
 const MAX_PRISMA_INT = 2_147_483_647n;
 const CREDIT_LEDGER_ENABLED = process.env.GHOST_CREDIT_LEDGER_ENABLED === "true";
 const GATE_NONCE_STORE_ENABLED = process.env.GHOST_GATE_NONCE_STORE_ENABLED === "true";
+const GATE_ACCESS_EVENT_LOG_ENABLED = process.env.GHOST_GATE_ACCESS_EVENT_LOG_ENABLED !== "false";
+let gateAccessEventTableAvailable: boolean | null = null;
 
 if (!process.env.POSTGRES_PRISMA_URL) {
   loadEnv({ path: ".env", quiet: true });
@@ -28,6 +30,21 @@ const toPrismaInt = (value: bigint, field: string): number => {
     throw new Error(`${field} exceeds Int column capacity.`);
   }
   return Number(value);
+};
+
+const toPrismaOptionalInt = (value: bigint | null | undefined): number | null => {
+  if (value == null) return null;
+  if (value < 0n || value > MAX_PRISMA_INT) return null;
+  return Number(value);
+};
+
+const normalizeSignerForLog = (signer: Address | string | null | undefined): string | null => {
+  if (!signer) return null;
+  try {
+    return normalizeSignerKey(signer);
+  } catch {
+    return null;
+  }
 };
 
 export const prisma =
@@ -54,6 +71,17 @@ const mapCreditBalance = (record: CreditBalanceRecord) => ({
 
 export type CreditBalanceState = ReturnType<typeof mapCreditBalance>;
 
+export type GateAccessEventInput = {
+  service: string;
+  outcome: GateAccessOutcome;
+  signer?: Address | string | null;
+  nonce?: string | null;
+  requestId?: string | null;
+  cost?: bigint | null;
+  remainingCredits?: bigint | null;
+  metadata?: unknown;
+};
+
 type CreditLedgerWriteInput = {
   walletAddress: string;
   direction: "CREDIT" | "DEBIT" | "ADJUSTMENT";
@@ -79,12 +107,6 @@ type AccessNonceWriteInput = {
 type AccessNoncePersistenceResult = {
   accepted: boolean;
 };
-
-const isUniqueConstraintError = (error: unknown): boolean =>
-  typeof error === "object" &&
-  error !== null &&
-  "code" in error &&
-  (error as { code?: string }).code === "P2002";
 
 class AccessNonceReplayError extends Error {
   constructor() {
@@ -132,23 +154,67 @@ const persistAccessNonce = async (
     signature: input.signature ?? null,
   };
 
-  if (input.enforceUnique) {
-    try {
-      await tx.accessNonce.create({ data });
-      return { accepted: true };
-    } catch (error) {
-      if (isUniqueConstraintError(error)) {
-        throw new AccessNonceReplayError();
-      }
-      throw error;
-    }
-  }
-
   const created = await tx.accessNonce.createMany({
     data: [data],
     skipDuplicates: true,
   });
+
+  if (input.enforceUnique && created.count === 0) {
+    throw new AccessNonceReplayError();
+  }
+
   return { accepted: created.count > 0 };
+};
+
+const resolveGateAccessEventTableAvailability = async (): Promise<boolean> => {
+  if (gateAccessEventTableAvailable != null) {
+    return gateAccessEventTableAvailable;
+  }
+
+  try {
+    const tableCheck = await prisma.$queryRaw<Array<{ relation: string | null }>>(Prisma.sql`
+      SELECT to_regclass('public."GateAccessEvent"')::text AS relation
+    `);
+    gateAccessEventTableAvailable = Boolean(tableCheck[0]?.relation);
+  } catch {
+    gateAccessEventTableAvailable = false;
+  }
+
+  return gateAccessEventTableAvailable;
+};
+
+export const logGateAccessEvent = async (input: GateAccessEventInput): Promise<void> => {
+  if (!GATE_ACCESS_EVENT_LOG_ENABLED) return;
+
+  const hasTable = await resolveGateAccessEventTableAvailability();
+  if (!hasTable) return;
+
+  try {
+    await prisma.gateAccessEvent.create({
+      data: {
+        service: input.service,
+        outcome: input.outcome,
+        signer: normalizeSignerForLog(input.signer),
+        nonce: input.nonce ?? null,
+        requestId: input.requestId ?? null,
+        cost: toPrismaOptionalInt(input.cost),
+        remainingCredits: toPrismaOptionalInt(input.remainingCredits),
+        metadata: (input.metadata as Prisma.InputJsonValue | null | undefined) ?? undefined,
+      },
+    });
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "P2021"
+    ) {
+      gateAccessEventTableAvailable = false;
+      return;
+    }
+
+    console.error("Failed to log gate access event.", error);
+  }
 };
 
 export const getCreditBalance = async (userAddress: Address): Promise<CreditBalanceState | null> => {

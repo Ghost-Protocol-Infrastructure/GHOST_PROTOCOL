@@ -9,6 +9,7 @@ import {
   consumeUserCreditsForGate,
   getServiceCreditCost,
   getUserCredits,
+  logGateAccessEvent,
 } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -222,24 +223,77 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
     return json({ error: "Missing service slug", code: 400 }, 400);
   }
 
+  const respondWithOutcome = async (input: {
+    outcome:
+      | "AUTHORIZED"
+      | "REPLAY"
+      | "INSUFFICIENT_CREDITS"
+      | "MALFORMED_AUTH"
+      | "SERVICE_MISMATCH"
+      | "SIGNATURE_EXPIRED"
+      | "INVALID_SIGNATURE";
+    status: number;
+    body: Record<string, unknown>;
+    signer?: Address | string | null;
+    nonce?: string | null;
+    requestId?: string | null;
+    cost?: bigint | null;
+    remainingCredits?: bigint | null;
+    metadata?: Record<string, unknown>;
+  }): Promise<NextResponse> => {
+    await logGateAccessEvent({
+      service: requestedService,
+      outcome: input.outcome,
+      signer: input.signer ?? null,
+      nonce: input.nonce ?? null,
+      requestId: input.requestId ?? null,
+      cost: input.cost ?? null,
+      remainingCredits: input.remainingCredits ?? null,
+      metadata: input.metadata ?? null,
+    });
+    return json(input.body, input.status);
+  };
+
   const rawSig = request.headers.get("x-ghost-sig");
   const rawPayload = request.headers.get("x-ghost-payload");
   if (!rawSig || !rawPayload) {
-    return json({ error: "Missing required auth headers", code: 400 }, 400);
+    return respondWithOutcome({
+      outcome: "MALFORMED_AUTH",
+      status: 400,
+      body: { error: "Missing required auth headers", code: 400 },
+      metadata: { reason: "missing_auth_headers" },
+    });
   }
 
   const signature = parseSignature(rawSig);
   const payload = parseAndValidatePayload(rawPayload);
   if (!signature || !payload) {
-    return json({ error: "Malformed signature or payload", code: 400 }, 400);
+    return respondWithOutcome({
+      outcome: "MALFORMED_AUTH",
+      status: 400,
+      body: { error: "Malformed signature or payload", code: 400 },
+      metadata: { reason: "malformed_signature_or_payload" },
+    });
   }
 
   if (payload.service !== requestedService) {
-    return json({ error: "Service mismatch", code: 401 }, 401);
+    return respondWithOutcome({
+      outcome: "SERVICE_MISMATCH",
+      status: 401,
+      body: { error: "Service mismatch", code: 401 },
+      nonce: payload.nonce,
+      metadata: { payloadService: payload.service },
+    });
   }
 
   if (!isReplayWindowValid(payload.timestamp)) {
-    return json({ error: "Signature expired", code: 401 }, 401);
+    return respondWithOutcome({
+      outcome: "SIGNATURE_EXPIRED",
+      status: 401,
+      body: { error: "Signature expired", code: 401 },
+      nonce: payload.nonce,
+      metadata: { payloadTimestamp: payload.timestamp.toString() },
+    });
   }
 
   let signer: Address;
@@ -262,11 +316,24 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
       signature,
     });
   } catch {
-    return json({ error: "Invalid Signature", code: 401 }, 401);
+    return respondWithOutcome({
+      outcome: "INVALID_SIGNATURE",
+      status: 401,
+      body: { error: "Invalid Signature", code: 401 },
+      nonce: payload.nonce,
+      metadata: { reason: "recover_or_verify_throw" },
+    });
   }
 
   if (!isValidSig) {
-    return json({ error: "Invalid Signature", code: 401 }, 401);
+    return respondWithOutcome({
+      outcome: "INVALID_SIGNATURE",
+      status: 401,
+      body: { error: "Invalid Signature", code: 401 },
+      signer,
+      nonce: payload.nonce,
+      metadata: { reason: "verify_false" },
+    });
   }
 
   const { cost: requestCost, source: requestCostSource } = await resolveRequestCost(request, requestedService);
@@ -282,19 +349,26 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
   });
 
   if (consumed.status === "replay") {
-    return json(
-      {
+    return respondWithOutcome({
+      outcome: "REPLAY",
+      status: 409,
+      body: {
         error: "Replay Detected",
         code: 409,
       },
-      409,
-    );
+      signer,
+      nonce: payload.nonce,
+      requestId,
+      cost: requestCost,
+    });
   }
 
   if (consumed.status === "insufficient_credits") {
     const balance = await getUserCredits(signer);
-    return json(
-      {
+    return respondWithOutcome({
+      outcome: "INSUFFICIENT_CREDITS",
+      status: 402,
+      body: {
         error: "Payment Required",
         code: 402,
         details: {
@@ -302,8 +376,12 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
           required: requestCost.toString(),
         },
       },
-      402,
-    );
+      signer,
+      nonce: payload.nonce,
+      requestId,
+      cost: requestCost,
+      remainingCredits: balance,
+    });
   }
 
   const issuedAt = new Date().toISOString();
@@ -317,8 +395,10 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
     issuedAt,
   });
 
-  return json(
-    {
+  return respondWithOutcome({
+    outcome: "AUTHORIZED",
+    status: 200,
+    body: {
       authorized: true,
       code: 200,
       service: requestedService,
@@ -330,8 +410,16 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
       receipt,
       costSource: requestCostSource,
     },
-    200,
-  );
+    signer,
+    nonce: payload.nonce,
+    requestId,
+    cost: requestCost,
+    remainingCredits: consumed.after,
+    metadata: {
+      nonceAccepted: consumed.nonceAccepted,
+      costSource: requestCostSource,
+    },
+  });
 };
 
 export async function GET(request: NextRequest, context: RouteContext): Promise<NextResponse> {

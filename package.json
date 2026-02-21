@@ -12,6 +12,8 @@
     "score": "npx tsx scripts/score-leads.ts",
     "score:v2": "npx tsx scripts/score-v2.ts",
     "reconcile:credits": "npx tsx scripts/reconcile-credits.ts",
+    "monitor:credits": "npx tsx scripts/monitor-credit-alerts.ts",
+    "test:credits:regression": "npx tsx scripts/test-credit-regression.ts",
     "typecheck": "tsc --noEmit",
     "contracts:compile": "hardhat compile",
     "contracts:deploy:vault:base-mainnet": "node scripts/deploy-vault.js",

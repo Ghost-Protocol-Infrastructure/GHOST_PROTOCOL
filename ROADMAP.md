@@ -12,6 +12,8 @@
 - Manual v2 shadow validation succeeded on February 20, 2026 (`Data Refresh #246`), including full snapshot write and clean job completion.
 - Scheduled Data Refresh now runs v2 in shadow mode by default while keeping the live read path on legacy scoring (`SCORE_V2_ENABLED=true`, `SCORE_V2_SCHEDULER_ENABLED=true`, `SCORE_V2_SHADOW_ONLY=true`, `LEADERBOARD_READ_FROM_SNAPSHOT=false` for schedule events).
 - Credit API hardening schema migration completed on February 21, 2026 (`AccessNonce`, `CreditLedger`, and `ServicePricing` live in production DB).
+- Credit operational hardening is now active: dedicated `credit-reconcile` workflow, replay-rate monitoring (`GateAccessEvent`), and workflow-failure email alerts to `ghostprotocol.infra@gmail.com`.
+- Credit gate regression coverage added for nonce replay blocking and client cost-override ignore path (`scripts/test-credit-regression.ts`).
 
 ## 1. Scoring Engine (Active)
 - **Issue:** Transaction count is still derived from owner wallet nonce, not strictly from the agent contract.
