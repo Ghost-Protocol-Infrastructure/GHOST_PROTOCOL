@@ -4,13 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { useAccount } from "wagmi";
-import { Copy } from "lucide-react";
+import { Bot, Copy, Crown } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import { isClaimedAgent } from "@/lib/agent-claim";
 
 type Network = "MEGAETH" | "BASE";
 type LeadTier = "WHALE" | "ACTIVE" | "NEW" | "GHOST";
 type SyncHealth = "live" | "stale" | "offline" | "unknown";
+const STALE_SYNC_THRESHOLD_SECONDS = 3 * 60 * 60;
 
 type ApiAgent = {
   address: string;
@@ -48,6 +49,7 @@ type ProcessedLead = {
 type AgentApiResponse = {
   agents: ApiAgent[];
   totalAgents?: number;
+  activatedAgents?: number;
   filteredTotal?: number;
   page?: number;
   limit?: number;
@@ -121,7 +123,7 @@ const resolveSyncHealth = (rawSyncHealth: string | null | undefined, syncAgeSeco
 
   if (syncAgeSeconds == null) return "unknown";
   if (syncAgeSeconds > 24 * 60 * 60) return "offline";
-  if (syncAgeSeconds > 60 * 60) return "stale";
+  if (syncAgeSeconds > STALE_SYNC_THRESHOLD_SECONDS) return "stale";
   return "live";
 };
 
@@ -130,7 +132,7 @@ const getBaseNetworkStatusDisplay = (syncHealth: SyncHealth): NetworkStatusDispl
     case "live":
       return {
         label: "LIVE_ON_BASE",
-        description: "Systems nominal Real-time data",
+        description: "Systems nominal, real-time data",
         textClassName: "text-neutral-300",
         descriptionClassName: "text-neutral-500",
         pingClassName: "bg-red-500",
@@ -141,7 +143,7 @@ const getBaseNetworkStatusDisplay = (syncHealth: SyncHealth): NetworkStatusDispl
     case "stale":
       return {
         label: "SYNC_LAG",
-        description: "Indexer is behind by 1+ hours",
+        description: "Indexer is behind by several hours...",
         textClassName: "text-yellow-500",
         descriptionClassName: "text-yellow-500/90",
         pingClassName: "bg-yellow-500",
@@ -294,6 +296,7 @@ export default function Home() {
   const [copiedOwner, setCopiedOwner] = useState<string | null>(null);
   const [baseLeads, setBaseLeads] = useState<ProcessedLead[]>([]);
   const [totalAgentsCount, setTotalAgentsCount] = useState<number>(0);
+  const [activatedAgentsCount, setActivatedAgentsCount] = useState<number>(0);
   const [filteredAgentsCount, setFilteredAgentsCount] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [totalPages, setTotalPages] = useState<number>(1);
@@ -357,6 +360,10 @@ export default function Home() {
           typeof payload.totalPages === "number" && Number.isFinite(payload.totalPages)
             ? payload.totalPages
             : Math.max(1, Math.ceil(filteredTotal / PAGE_SIZE));
+        const activatedAgents =
+          typeof payload.activatedAgents === "number" && Number.isFinite(payload.activatedAgents)
+            ? Math.max(0, Math.trunc(payload.activatedAgents))
+            : 0;
 
         if (!isActive) return;
         if (currentPage > resolvedTotalPages) {
@@ -366,6 +373,7 @@ export default function Home() {
         const parsedSyncAgeSeconds = parseSyncAgeSeconds(payload.syncAgeSeconds);
         setBaseLeads(buildLeadsFromApi(agents));
         setTotalAgentsCount(Math.max(0, Math.trunc(totalAgents)));
+        setActivatedAgentsCount(activatedAgents);
         setFilteredAgentsCount(Math.max(0, Math.trunc(filteredTotal)));
         setTotalPages(Math.max(1, Math.trunc(resolvedTotalPages)));
         setLastSyncedBlock(payload.lastSyncedBlock ?? null);
@@ -378,6 +386,7 @@ export default function Home() {
         setLoadError(message);
         setBaseLeads([]);
         setTotalAgentsCount(0);
+        setActivatedAgentsCount(0);
         setFilteredAgentsCount(0);
         setTotalPages(1);
         setLastSyncedBlock(null);
@@ -407,7 +416,6 @@ export default function Home() {
     }));
   }, [baseLeads, network, currentPage]);
 
-  const claimedCount = useMemo(() => baseLeads.filter((agent) => agent.isClaimed).length, [baseLeads]);
   const networkStatusDisplay =
     network === "MEGAETH" ? MEGAETH_STATUS_DISPLAY : getBaseNetworkStatusDisplay(syncHealth);
   const canGoPrev = currentPage > 1;
@@ -534,9 +542,9 @@ export default function Home() {
           </div>
         </div>
         <div className="p-6 group hover:bg-neutral-900/30 transition-colors">
-          <div className="mb-4 text-xs tracking-widest uppercase text-neutral-600 font-bold">Claimed Agents</div>
+          <div className="mb-4 text-xs tracking-widest uppercase text-neutral-600 font-bold">Activated Agents</div>
           <div className="text-xl text-neutral-100 font-bold">
-            {network === "BASE" ? (isLoadingLeads ? "--/--" : `${claimedCount}/${totalAgentsCount}`) : "--"}
+            {network === "BASE" ? (isLoadingLeads ? "--/--" : `${activatedAgentsCount}/${totalAgentsCount}`) : "--"}
           </div>
         </div>
       </div>
@@ -633,7 +641,6 @@ export default function Home() {
               const showYieldZeroState = agent.isClaimed && safeYieldEth === 0;
               const showUptimeZeroState = agent.isClaimed && safeUptimePct === 0;
               const showAvatar = Boolean(agent.imageUrl) && !brokenAvatars.has(rowKey);
-              const avatarFallback = agent.displayName.trim().charAt(0).toUpperCase() || "#";
               const yieldClassName = !agent.isClaimed
                 ? "text-neutral-600"
                 : showYieldZeroState
@@ -644,16 +651,29 @@ export default function Home() {
                 : showUptimeZeroState
                   ? "text-neutral-500"
                   : "text-neutral-300";
+              const rankTextClassName =
+                agent.rank === 1
+                  ? "text-amber-300"
+                  : agent.rank === 2
+                    ? "text-slate-300"
+                    : agent.rank === 3
+                      ? "text-amber-600"
+                      : "text-neutral-400";
 
               return (
                 <div
                   key={rowKey}
                   className="grid grid-cols-12 gap-0 items-center hover:bg-neutral-900/30 transition-colors group"
                 >
-                  <div className="col-span-1 py-4 px-6 border-r border-neutral-800 text-neutral-400 font-bold">{String(agent.rank).padStart(2, '0')}</div>
+                  <div className={`col-span-1 py-4 px-6 border-r border-neutral-800 font-bold ${rankTextClassName}`}>
+                    <div className="inline-flex items-center gap-1.5">
+                      <span>{String(agent.rank).padStart(2, "0")}</span>
+                      {agent.rank === 1 ? <Crown className="ml-1.5 h-5 w-5 text-amber-300" /> : null}
+                    </div>
+                  </div>
                   <div className="col-span-3 py-4 px-6">
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded border border-neutral-800 bg-neutral-900 text-xs font-bold text-neutral-400">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded border border-neutral-800 bg-neutral-900 text-xs font-bold text-neutral-400">
                         {showAvatar ? (
                           <Image
                             src={agent.imageUrl as string}
@@ -667,14 +687,16 @@ export default function Home() {
                             onError={() => markAvatarBroken(rowKey)}
                           />
                         ) : (
-                          <span>{avatarFallback}</span>
+                          <Bot className="h-5 w-5 text-neutral-500" aria-hidden="true" />
                         )}
                       </div>
 
                       <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-2">
                           <span className="truncate text-neutral-100 font-bold">{agent.displayName}</span>
-                          <span className="inline-flex border border-neutral-800 bg-neutral-900 px-1.5 py-0.5 text-[10px] text-neutral-500 font-bold">
+                        </div>
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="inline-flex shrink-0 border border-neutral-800 bg-neutral-900 px-1.5 py-0.5 text-[10px] text-neutral-500 font-bold">
                             #{agent.agentId}
                           </span>
                           <span className={`inline-flex border px-2 py-0.5 text-[10px] tracking-widest uppercase font-bold ${tierClassName[agent.tier]}`}>

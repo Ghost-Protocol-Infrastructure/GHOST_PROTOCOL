@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { Prisma } from "@prisma/client";
+import { Prisma, type Prisma as PrismaTypes } from "@prisma/client";
 import { createPublicClient, fallback, http } from "viem";
 import { base } from "viem/chains";
 import { prisma } from "@/lib/db";
@@ -12,6 +12,7 @@ const DEFAULT_PAGE = 1;
 const MAX_QUERY_LENGTH = 120;
 const ONE_HOUR_SECONDS = 60 * 60;
 const ONE_DAY_SECONDS = 24 * ONE_HOUR_SECONDS;
+const STALE_SYNC_THRESHOLD_SECONDS = 3 * ONE_HOUR_SECONDS;
 const AGENT_INDEX_MODE = process.env.AGENT_INDEX_MODE?.trim().toLowerCase() === "olas" ? "olas" : "erc8004";
 const ACTIVE_CURSOR_KEY = AGENT_INDEX_MODE === "olas" ? "agent_indexer_olas" : "agent_indexer_erc8004";
 const LEGACY_CURSOR_KEY = "agent_indexer";
@@ -66,6 +67,70 @@ const parseOwner = (rawOwner: string | null): string | null => {
   return normalized;
 };
 
+const normalizeActivatedAgentIdFromService = (service: string): string | null => {
+  const normalized = service.trim();
+  if (!normalized) return null;
+
+  const lower = normalized.toLowerCase();
+  const prefixes = ["agent-", "agent_", "agent:", "agent/"] as const;
+  for (const prefix of prefixes) {
+    if (!lower.startsWith(prefix)) continue;
+
+    const suffix = normalized.slice(prefix.length).trim();
+    if (!suffix) return null;
+
+    const firstSegment = suffix.split("/")[0]?.trim();
+    if (!firstSegment) return null;
+    return firstSegment.toLowerCase();
+  }
+
+  return null;
+};
+
+const resolveActivatedAgentsCount = async (): Promise<number> => {
+  try {
+    const authorizedServices = await prisma.gateAccessEvent.findMany({
+      where: { outcome: "AUTHORIZED" },
+      distinct: ["service"],
+      select: { service: true },
+    });
+
+    if (authorizedServices.length === 0) return 0;
+
+    const normalizedAgentIds = Array.from(
+      new Set(
+        authorizedServices
+          .map((row) => normalizeActivatedAgentIdFromService(row.service))
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+
+    if (normalizedAgentIds.length === 0) return 0;
+
+    const countRows = await prisma.$queryRaw<Array<{ count: bigint | number }>>(Prisma.sql`
+      SELECT COUNT(*)::bigint AS count
+      FROM "Agent"
+      WHERE LOWER("agentId") IN (${Prisma.join(normalizedAgentIds)})
+    `);
+
+    const rawCount = countRows[0]?.count;
+    if (typeof rawCount === "bigint") return Number(rawCount);
+    if (typeof rawCount === "number") return rawCount;
+    return 0;
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "P2021"
+    ) {
+      return 0;
+    }
+    console.error("Failed to resolve activated agent count from gate events.", error);
+    return 0;
+  }
+};
+
 const resolveSyncMetadata = async (lastSyncedBlock: bigint | null | undefined): Promise<SyncMetadata> => {
   if (!lastSyncedBlock || lastSyncedBlock <= 0n) {
     return {
@@ -89,7 +154,11 @@ const resolveSyncMetadata = async (lastSyncedBlock: bigint | null | undefined): 
     const nowSeconds = Math.floor(Date.now() / 1000);
     const syncAgeSeconds = Math.max(0, nowSeconds - syncedAtSeconds);
     const syncHealth: SyncHealth =
-      syncAgeSeconds > ONE_DAY_SECONDS ? "offline" : syncAgeSeconds > ONE_HOUR_SECONDS ? "stale" : "live";
+      syncAgeSeconds > ONE_DAY_SECONDS
+        ? "offline"
+        : syncAgeSeconds > STALE_SYNC_THRESHOLD_SECONDS
+          ? "stale"
+          : "live";
 
     return {
       syncHealth,
@@ -114,6 +183,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const skip = (page - 1) * limit;
   const ownerQuery = request.nextUrl.searchParams.get("owner");
   const owner = parseOwner(ownerQuery);
+  const activatedAgentsPromise = resolveActivatedAgentsCount();
 
   if (ownerQuery && !owner) {
     return NextResponse.json(
@@ -136,11 +206,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     });
 
     if (activeSnapshot) {
-      const snapshotOrderBy: Prisma.LeaderboardSnapshotRowOrderByWithRelationInput[] =
+      const snapshotOrderBy: PrismaTypes.LeaderboardSnapshotRowOrderByWithRelationInput[] =
         sort === "volume"
           ? [{ txCount: "desc" as const }, { rankScore: "desc" as const }, { rank: "asc" as const }]
           : [{ rank: "asc" as const }];
-      const snapshotFilters: Prisma.LeaderboardSnapshotRowWhereInput[] = [{ snapshotId: activeSnapshot.id }];
+      const snapshotFilters: PrismaTypes.LeaderboardSnapshotRowWhereInput[] = [{ snapshotId: activeSnapshot.id }];
       if (owner) {
         snapshotFilters.push({
           owner: {
@@ -160,7 +230,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           ],
         });
       }
-      const snapshotWhere: Prisma.LeaderboardSnapshotRowWhereInput =
+      const snapshotWhere: PrismaTypes.LeaderboardSnapshotRowWhereInput =
         snapshotFilters.length === 1 ? snapshotFilters[0] : { AND: snapshotFilters };
 
       const [rows, filteredTotal, indexerStates] = await prisma.$transaction([
@@ -188,10 +258,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         indexerStates.find((state) => state.key === LEGACY_CURSOR_KEY) ??
         null;
       const syncMetadata = await resolveSyncMetadata(indexerState?.lastSyncedBlock);
+      const activatedAgents = await activatedAgentsPromise;
 
       return NextResponse.json(
         {
           totalAgents: activeSnapshot.totalAgents,
+          activatedAgents,
           filteredTotal,
           page,
           limit,
@@ -232,11 +304,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
   }
 
-  const orderBy: Prisma.AgentOrderByWithRelationInput[] =
+  const orderBy: PrismaTypes.AgentOrderByWithRelationInput[] =
     sort === "volume"
       ? [{ txCount: "desc" as const }, { rankScore: "desc" as const }]
       : [{ rankScore: "desc" as const }, { reputation: "desc" as const }, { txCount: "desc" as const }];
-  const filters: Prisma.AgentWhereInput[] = [];
+  const filters: PrismaTypes.AgentWhereInput[] = [];
   if (owner) {
     filters.push({
       owner: {
@@ -256,7 +328,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       ],
     });
   }
-  const where: Prisma.AgentWhereInput | undefined =
+  const where: PrismaTypes.AgentWhereInput | undefined =
     filters.length === 0 ? undefined : filters.length === 1 ? filters[0] : { AND: filters };
 
   const [agents, totalAgents, filteredTotal, indexerStates] = await prisma.$transaction([
@@ -285,10 +357,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     indexerStates.find((state) => state.key === LEGACY_CURSOR_KEY) ??
     null;
   const syncMetadata = await resolveSyncMetadata(indexerState?.lastSyncedBlock);
+  const activatedAgents = await activatedAgentsPromise;
 
   return NextResponse.json(
     {
       totalAgents,
+      activatedAgents,
       filteredTotal,
       page,
       limit,
