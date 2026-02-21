@@ -35,16 +35,8 @@ on:
         options:
           - "false"
           - "true"
-      credit_reconcile_fail_on_mismatch:
-        description: "Fail credit reconcile job when balance/ledger drift is detected"
-        required: false
-        default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
   schedule:
-    - cron: "0 * * * *"
+    - cron: "0 1-23/2 * * *"
   push:
     branches:
       - main
@@ -91,7 +83,6 @@ jobs:
       SCORE_V2_SHADOW_ONLY: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.score_v2_shadow_only || 'true' }}
       SCORE_V2_SCHEDULER_ENABLED: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.score_v2_scheduler_enabled || 'false' }}
       LEADERBOARD_READ_FROM_SNAPSHOT: ${{ github.event_name == 'schedule' && 'false' || github.event.inputs.leaderboard_read_from_snapshot || 'false' }}
-      CREDIT_RECONCILE_FAIL_ON_MISMATCH: ${{ github.event_name == 'schedule' && 'false' || github.event.inputs.credit_reconcile_fail_on_mismatch || 'false' }}
 
     steps:
       - name: Checkout code
@@ -121,6 +112,3 @@ jobs:
       - name: Run v2 scoring pipeline
         if: env.SCORE_V2_ENABLED == 'true' && env.SCORE_V2_SCHEDULER_ENABLED == 'true'
         run: npm run score:v2
-
-      - name: Run credit reconciliation
-        run: npm run reconcile:credits
