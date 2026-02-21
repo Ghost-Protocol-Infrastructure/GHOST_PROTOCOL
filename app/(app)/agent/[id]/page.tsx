@@ -28,10 +28,10 @@ type AgentSummary = {
 };
 
 const tierClassName: Record<AgentSummary["tier"], string> = {
-  WHALE: "border-neutral-800 bg-neutral-900 text-neutral-300",
-  ACTIVE: "border-neutral-800 bg-neutral-900 text-neutral-300",
-  NEW: "border-neutral-800 bg-neutral-900 text-neutral-500",
-  GHOST: "border-neutral-800 bg-neutral-900 text-neutral-600",
+  WHALE: "border-violet-400 bg-violet-500/20 text-violet-300 animate-pulse shadow-[0_0_10px_rgba(139,92,246,0.5)]",
+  ACTIVE: "border-amber-400/40 bg-amber-500/20 text-amber-300",
+  NEW: "border-slate-500/40 bg-slate-500/20 text-slate-300",
+  GHOST: "border-slate-700/60 bg-slate-800/40 text-slate-500",
 };
 
 const toTitleCase = (value: string): string =>
@@ -65,9 +65,18 @@ const normalizeAgentDescription = (description: string | null): string | null =>
   const cleaned = description.trim();
   if (!cleaned) return null;
 
-  const fallbackMatch = cleaned.match(/^Fallback-indexed registry service\s+(\d+)\s+\(CreateService \+ ownerOf\)\.?$/i);
-  if (fallbackMatch) {
-    return `Indexed via fallback registry path for Agent #${fallbackMatch[1]}.`;
+  const fallbackRegistryMatch = cleaned.match(/^Fallback-indexed registry service\s+(\d+)\s+\(CreateService \+ ownerOf\)\.?$/i);
+  if (fallbackRegistryMatch) {
+    return `On-chain identity verified for Agent #${fallbackRegistryMatch[1]}. Additional profile metadata is syncing.`;
+  }
+
+  const fallbackErc8004Match = cleaned.match(/^Fallback-indexed ERC-8004 token\s+(\d+)\s+\(Transfer \+ ownerOf\)\.?$/i);
+  if (fallbackErc8004Match) {
+    return `On-chain identity verified for Agent #${fallbackErc8004Match[1]}. Additional profile metadata is syncing.`;
+  }
+
+  if (cleaned.toLowerCase().startsWith("fallback-indexed")) {
+    return "On-chain identity verified. Additional profile metadata is syncing.";
   }
 
   return cleaned;
@@ -114,17 +123,18 @@ export default async function AgentProfilePage({ params, searchParams }: AgentPa
   const agentImageUrl = resolveAgentImageUrl(agent.image);
   const merchantSetupHref = `/dashboard?mode=merchant&agentId=${encodeURIComponent(agent.agentId)}&owner=${encodeURIComponent(ownerAddress)}`;
   const consumerTerminalHref = `/dashboard?mode=consumer&agentId=${encodeURIComponent(agent.agentId)}&owner=${encodeURIComponent(ownerAddress)}`;
+  const agentConsoleHref = `/dashboard?agentId=${encodeURIComponent(agent.agentId)}&owner=${encodeURIComponent(ownerAddress)}`;
 
   return (
-    <main className="min-h-screen font-mono text-neutral-400 bg-neutral-950 [background-image:none]">
+    <main className="min-h-screen font-mono text-neutral-400 bg-neutral-950 [background-image:none] max-w-7xl mx-auto border-l border-r border-neutral-900">
       <div className="mx-auto max-w-5xl px-4 py-10 md:px-8">
         <div className="mb-6 flex items-center justify-between">
-          <h1 className="text-sm uppercase tracking-[0.18em] text-neutral-500 font-bold">Agent Profile</h1>
+          <h1 className="text-sm uppercase tracking-[0.18em] text-neutral-500 font-bold">{"// AGENT PROFILE"}</h1>
           <Link
             href="/rank"
             className="border border-neutral-900 bg-neutral-950 px-3 py-2 text-xs uppercase tracking-[0.12em] text-neutral-400 transition hover:border-red-600 hover:text-red-500 font-bold"
           >
-            Back to Rank
+            {"//BACK_TO_RANK"}
           </Link>
         </div>
 
@@ -234,16 +244,10 @@ export default async function AgentProfilePage({ params, searchParams }: AgentPa
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Link
-              href={consumerTerminalHref}
+              href={agentConsoleHref}
               className="border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs uppercase tracking-[0.12em] text-neutral-400 transition hover:border-red-600 hover:text-red-500 font-bold"
             >
-              Open Consumer Terminal
-            </Link>
-            <Link
-              href={merchantSetupHref}
-              className="border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs uppercase tracking-[0.12em] text-neutral-400 transition hover:border-red-600 hover:text-red-500 font-bold"
-            >
-              Merchant Setup
+              {"//ACCESS_AGENT_TERMINAL"}
             </Link>
           </div>
         </section>

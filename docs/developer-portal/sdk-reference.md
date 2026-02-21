@@ -29,7 +29,7 @@ new GhostAgent(config?: {
 | `baseUrl` | string | No | `https://ghostprotocol.cc` | Root URL for Ghost API. |
 | `privateKey` | `0x...` string | Yes (for connect) | `null` | Signer for EIP-712 authorization. |
 | `chainId` | number | No | `8453` | EIP-712 domain chain ID. |
-| `serviceSlug` | string | No | `connect` | Path segment for `/api/gate/[service]`. |
+| `serviceSlug` | string | No | `connect` | Path segment for `/api/gate/[service]` (set `agent-<agentId>` for platform integrations). |
 | `creditCost` | number | No | `1` | Credit cost sent in `x-ghost-credit-cost`. |
 
 > [!IMPORTANT]
@@ -40,6 +40,7 @@ new GhostAgent(config?: {
 #### `connect(apiKey: string): Promise<ConnectResult>`
 
 Sends signed request to `/api/gate/[serviceSlug]`.
+`apiKey` is used by the SDK for client context/prefix reporting; Gate authorization itself is signature + credits based.
 
 ```ts
 type ConnectResult = {
@@ -65,7 +66,7 @@ Returns `"{baseUrl}/api/gate"`.
 const sdk = new GhostAgent({
   baseUrl: process.env.GHOST_BASE_URL,
   privateKey: process.env.GHOST_SIGNER_PRIVATE_KEY as `0x${string}`,
-  serviceSlug: "connect",
+  serviceSlug: "agent-2212",
   creditCost: 1,
 });
 
@@ -114,7 +115,8 @@ Decorator that verifies access with Ghost Gate before running your handler.
 
 #### `send_pulse(agent_id: Optional[str] = None) -> bool`
 
-Sends heartbeat to `/api/telemetry/pulse`.
+Sends best-effort heartbeat payload to `/api/telemetry/pulse`.
+Current server telemetry behavior is lightweight/stubbed.
 
 #### `report_consumer_outcome(*, success: bool, status_code: Optional[int] = None, agent_id: Optional[str] = None) -> bool`
 
@@ -131,10 +133,12 @@ gate = GhostGate(
     base_url="http://localhost:3000",
 )
 
-@gate.guard(cost=1, service="connect", method="POST")
+@gate.guard(cost=1, service="agent-2212", method="POST")
 def handler():
     return {"ok": True}
 ```
+
+For platform integrations, use service slug format `agent-<agentId>` (example: `agent-2212`).
 
 ## Canonical flow mapping: `connect()`, `pulse()`, `outcome()`
 
@@ -151,4 +155,3 @@ Current SDK names:
 | `connect()` | `connect(apiKey)` | `guard(...)/_verify_access(...)` |
 | `pulse()` | HTTP call to `/api/telemetry/pulse` | `send_pulse(...)` |
 | `outcome()` | HTTP call to `/api/telemetry/outcome` | `report_consumer_outcome(...)` |
-

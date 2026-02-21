@@ -42,3 +42,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .env*.local
+
+# private planning/spec docs (local only)
+PROJECT_SPEC.md
+PROJECT_ROADMAP.md
+TO-DO.md
+TO_DO.md

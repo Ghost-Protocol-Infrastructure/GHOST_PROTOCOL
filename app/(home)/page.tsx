@@ -79,7 +79,7 @@ const HomePage = () => {
               href="/rank"
               className="group relative px-8 py-4 bg-neutral-100 text-neutral-950 font-bold text-sm tracking-widest uppercase hover:bg-red-600 hover:text-white transition-colors duration-200"
             >
-              Enter_Terminal
+              {"//Enter_Terminal"}
             </a>
             <a
               href="https://github.com/Ghost-Protocol-Infrastructure"
@@ -173,7 +173,10 @@ const HomePage = () => {
               </div>
             </Link>
 
-            <div className="p-8 md:p-12 hover:bg-neutral-900/30 transition-colors group cursor-pointer">
+            <Link
+              href="/dashboard"
+              className="block p-8 md:p-12 hover:bg-neutral-900/30 transition-colors group cursor-pointer"
+            >
               <div className="flex justify-between items-start mb-6">
                 <Lock className="w-8 h-8 text-neutral-600 group-hover:text-neutral-100 transition-colors" />
                 <span className="text-[10px] border border-neutral-800 px-2 py-1 text-neutral-500">
@@ -185,9 +188,9 @@ const HomePage = () => {
                 The Permissionless Rail. A monetization SDK gating API access behind crypto payments. The Settlement Terminal for Agentic Commerce.
               </p>
               <div className="flex items-center gap-2 text-red-600 text-xs font-bold uppercase tracking-wider group-hover:gap-4 transition-all">
-                {"//Access_Console"} <ChevronRight className="w-4 h-4" />
+                {"//Access_TERMINAL"} <ChevronRight className="w-4 h-4" />
               </div>
-            </div>
+            </Link>
           </div>
         </div>
       </section>
@@ -214,8 +217,8 @@ const HomePage = () => {
               <a href="#" className="hover:text-red-500 transition-colors">MegaETH</a>
             </div>
             <div className="flex flex-col gap-3">
-              <span className="text-neutral-500 font-bold mb-1">Uplink</span>
-              <a href="https://twitter.com/GhostProtocol_0" target="_blank" rel="noreferrer" className="hover:text-red-500 transition-colors">Twitter_X</a>
+              <span className="text-neutral-500 font-bold mb-1">Links</span>
+              <a href="https://x.com/ghostprotoinfra?s=21&t=DTmOC6wgBREeCQeyz6wQRg" target="_blank" rel="noreferrer" className="hover:text-red-500 transition-colors">Twitter_X</a>
               <a href="https://github.com/Ghost-Protocol-Infrastructure" target="_blank" rel="noreferrer" className="hover:text-red-500 transition-colors">Github</a>
             </div>
           </div>

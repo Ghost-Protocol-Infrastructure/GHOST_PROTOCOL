@@ -25,6 +25,7 @@ Example:
 | `400` | `400` | Missing or malformed auth headers/payload | Rebuild signed headers and JSON payload. |
 | `401` | `401` | Signature invalid, expired, or service mismatch | Re-sign payload and confirm `service` path + `chainId`. |
 | `402` | `402` | Insufficient credits | Deposit and sync credits. |
+| `409` | `409` | Replay detected (nonce reuse) | Generate a fresh nonce and re-sign payload. |
 | `500` | `500` | Internal server issue (for example sync failure) | Retry with backoff; inspect logs. |
 
 ## Normalized client error codes (recommended)
@@ -36,6 +37,7 @@ For SDKs and dashboards, use a stable normalized map:
 | `GHOST_400` | HTTP `400` | Bad request headers/payload |
 | `GHOST_401` | HTTP `401` | Signature invalid/expired/service mismatch |
 | `GHOST_402` | HTTP `402` | Credits required |
+| `GHOST_409` | HTTP `409` | Replay detected |
 | `GHOST_403` | Reserved | Auth forbidden by policy (future use) |
 | `GHOST_429` | Reserved | Rate/cap guardrail (future use) |
 | `GHOST_500` | HTTP `500` | Internal processing failure |
@@ -75,7 +77,7 @@ Use bounded retries for network and `5xx` only:
 
 1. Retry up to 3 times.
 2. Use exponential backoff (250ms, 500ms, 1000ms).
-3. Do not retry `401` or `402` blindly.
+3. Do not retry `401`, `402`, or `409` blindly.
 
 ## Signature troubleshooting checklist
 
@@ -89,4 +91,3 @@ Use bounded retries for network and `5xx` only:
    - `service` (string)
    - `timestamp` (uint256)
    - `nonce` (string)
-

@@ -286,7 +286,7 @@ const buildLeadsFromApi = (agents: ApiAgent[]): ProcessedLead[] => {
 
 const tierClassName: Record<LeadTier, string> = {
   WHALE:
-    "border-neon-purple border-violet-400 bg-emerald-500/20 text-emerald-300 animate-pulse shadow-[0_0_10px_rgba(139,92,246,0.5)]",
+    "border-neon-purple border-violet-400 bg-violet-500/20 text-violet-300 animate-pulse shadow-[0_0_10px_rgba(139,92,246,0.5)]",
   ACTIVE: "border-amber-400/40 bg-amber-500/20 text-amber-300",
   NEW: "border-slate-500/40 bg-slate-500/20 text-slate-300",
   GHOST: "border-slate-700/60 bg-slate-800/40 text-slate-500",
@@ -486,302 +486,311 @@ export default function Home() {
 
   return (
     <>
-      <main className="min-h-screen p-8 pb-20 max-w-7xl mx-auto space-y-12 relative z-[50] font-mono text-neutral-400 bg-neutral-950 [background-image:none] border-l border-r border-neutral-900">
-      <Navbar />
+      <main className="min-h-screen p-8 pb-20 space-y-12 relative z-[50] font-mono text-neutral-400 bg-neutral-950 [background-image:none]">
+        <Navbar />
 
-      <section className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-neutral-800 pb-8">
-        <div className="relative w-full max-w-xs group">
-          <select
-            value={networkSelectValue}
-            onChange={(event) => setNetwork(event.target.value === "base" ? "BASE" : "MEGAETH")}
-            className="w-full appearance-none border border-neutral-800 bg-neutral-950 py-3 pl-4 pr-10 text-xs font-bold uppercase tracking-widest text-neutral-300 outline-none transition-all hover:border-neutral-600 focus:border-red-600 rounded-none"
-            aria-label="Select network"
-          >
-            <option value="base">BASE_MAINNET</option>
-            <option value="megaeth">MEGAETH_TESTNET</option>
-          </select>
-          <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-neutral-500 group-hover:text-neutral-300 transition-colors">
-            <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2">
-              <path d="M19 9l-7 7-7-7" strokeLinecap="square" strokeLinejoin="miter" />
-            </svg>
-          </span>
-        </div>
-
-        <input
-          type="text"
-          value={searchInput}
-          onChange={(event) => setSearchInput(event.target.value)}
-          placeholder="SEARCH_AGENT_ID_NAME_OR_OWNER..."
-          className="w-full md:flex-1 border border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-bold tracking-widest text-neutral-300 placeholder:text-neutral-700 focus:outline-none focus:border-red-600 transition-all rounded-none uppercase"
-        />
-      </section>
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-0 border border-neutral-800 bg-neutral-950 text-neutral-400">
-        <div className="p-6 border-r border-neutral-800 group hover:bg-neutral-900/30 transition-colors">
-          <div className="mb-4 text-xs tracking-widest uppercase text-neutral-600 font-bold">Total Agents</div>
-          <div className="text-3xl text-neutral-100 font-bold">
-            {network === "BASE" ? (isLoadingLeads ? "--" : totalAgentsCount) : 0}
-          </div>
-        </div>
-        <div className="p-6 border-r border-neutral-800 group hover:bg-neutral-900/30 transition-colors">
-          <div className="mb-4 text-xs tracking-widest uppercase text-neutral-600 font-bold">Network Status</div>
-          <div className="text-sm font-bold flex flex-col items-start gap-1">
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-2 w-2">
-                {networkStatusDisplay.showPing ? (
-                  <span
-                    className={`animate-ping absolute inline-flex h-full w-full rounded-full ${networkStatusDisplay.pingClassName} opacity-75`}
-                  ></span>
-                ) : null}
-                <span
-                  className={`relative inline-flex rounded-full h-2 w-2 ${networkStatusDisplay.dotClassName}`}
-                ></span>
-              </span>
-              <span className={networkStatusDisplay.textClassName}>{networkStatusDisplay.label}</span>
-            </div>
-            <p className={`text-[11px] leading-tight font-normal ${networkStatusDisplay.descriptionClassName}`}>
-              {networkStatusDisplay.description}
-            </p>
-          </div>
-        </div>
-        <div className="p-6 border-r border-neutral-800 group hover:bg-neutral-900/30 transition-colors">
-          <div className="mb-4 text-xs tracking-widest uppercase text-neutral-600 font-bold">Sync Height</div>
-          <div className="text-3xl text-neutral-100 font-bold">
-            {network === "BASE" ? (isLoadingLeads ? "--" : formatBlockHeight(lastSyncedBlock)) : "--"}
-          </div>
-        </div>
-        <div className="p-6 group hover:bg-neutral-900/30 transition-colors">
-          <div className="mb-4 text-xs tracking-widest uppercase text-neutral-600 font-bold">Activated Agents</div>
-          <div className="text-xl text-neutral-100 font-bold">
-            {network === "BASE" ? (isLoadingLeads ? "--/--" : `${activatedAgentsCount}/${totalAgentsCount}`) : "--"}
-          </div>
-        </div>
-      </div>
-
-      <section className="relative border border-neutral-800 bg-neutral-950">
-        <div className="flex items-center justify-between border-b border-neutral-800 px-6 py-3 text-xs uppercase tracking-widest">
-          <div className="text-neutral-600">
-            Showing {visibleStart}-{visibleEnd} of {filteredAgentsCount}
-            {searchQuery ? " (filtered)" : ""}
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-neutral-500">
-              Page {currentPage} / {totalPages}
+        <section className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-neutral-800 pb-8">
+          <div className="relative w-full max-w-xs group">
+            <select
+              value={networkSelectValue}
+              onChange={(event) => setNetwork(event.target.value === "base" ? "BASE" : "MEGAETH")}
+              className="w-full appearance-none border border-neutral-800 bg-neutral-950 py-3 pl-4 pr-10 text-xs font-bold uppercase tracking-widest text-neutral-300 outline-none transition-all hover:border-neutral-600 focus:border-red-600 rounded-none"
+              aria-label="Select network"
+            >
+              <option value="base">BASE_MAINNET</option>
+              <option value="megaeth">MEGAETH_TESTNET</option>
+            </select>
+            <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-neutral-500 group-hover:text-neutral-300 transition-colors">
+              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2">
+                <path d="M19 9l-7 7-7-7" strokeLinecap="square" strokeLinejoin="miter" />
+              </svg>
             </span>
-            <button
-              type="button"
-              onClick={() => setCurrentPage((previous) => Math.max(1, previous - 1))}
-              disabled={!canGoPrev || isPagerDisabled}
-              className="inline-flex h-8 w-8 items-center justify-center border border-neutral-800 text-neutral-400 transition hover:border-neutral-500 hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label="Previous page"
-            >
-              {"<"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setCurrentPage((previous) => Math.min(totalPages, previous + 1))}
-              disabled={!canGoNext || isPagerDisabled}
-              className="inline-flex h-8 w-8 items-center justify-center border border-neutral-800 text-neutral-400 transition hover:border-neutral-500 hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label="Next page"
-            >
-              {">"}
-            </button>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={pageInput}
-              onChange={(event) => {
-                const next = event.target.value;
-                if (/^\d*$/.test(next)) {
-                  setPageInput(next);
-                }
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  submitPageJump();
-                }
-              }}
-              disabled={isPagerDisabled}
-              className="h-8 w-16 border border-neutral-800 bg-neutral-950 px-2 text-center text-xs text-neutral-300 outline-none transition focus:border-neutral-500 disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label="Page number"
-            />
-            <button
-              type="button"
-              onClick={submitPageJump}
-              disabled={isPagerDisabled}
-              className="inline-flex h-8 items-center justify-center border border-neutral-800 px-3 text-[10px] text-neutral-400 transition hover:border-neutral-500 hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label="Go to page"
-            >
-              GO
-            </button>
+          </div>
+
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder="SEARCH_AGENT_ID_NAME_OR_OWNER..."
+            className="w-full md:flex-1 border border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-bold tracking-widest text-neutral-300 placeholder:text-neutral-700 focus:outline-none focus:border-red-600 transition-all rounded-none uppercase"
+          />
+        </section>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-0 border border-neutral-800 bg-neutral-950 text-neutral-400">
+          <div className="p-6 border-r border-neutral-800 group hover:bg-neutral-900/30 transition-colors">
+            <div className="mb-4 text-xs tracking-widest uppercase text-neutral-600 font-bold">Total Agents</div>
+            <div className="text-3xl text-neutral-100 font-bold">
+              {network === "BASE" ? (isLoadingLeads ? "--" : totalAgentsCount.toLocaleString()) : 0}
+            </div>
+          </div>
+          <div className="p-6 border-r border-neutral-800 group hover:bg-neutral-900/30 transition-colors">
+            <div className="mb-4 text-xs tracking-widest uppercase text-neutral-600 font-bold">Network Status</div>
+            <div className="text-sm font-bold flex flex-col items-start gap-1">
+              <div className="flex items-center gap-2">
+                <span className="relative flex h-2 w-2">
+                  {networkStatusDisplay.showPing ? (
+                    <span
+                      className={`animate-ping absolute inline-flex h-full w-full rounded-full ${networkStatusDisplay.pingClassName} opacity-75`}
+                    ></span>
+                  ) : null}
+                  <span
+                    className={`relative inline-flex rounded-full h-2 w-2 ${networkStatusDisplay.dotClassName}`}
+                  ></span>
+                </span>
+                <span className={networkStatusDisplay.textClassName}>{networkStatusDisplay.label}</span>
+              </div>
+              <p className={`text-[11px] leading-tight font-normal ${networkStatusDisplay.descriptionClassName}`}>
+                {networkStatusDisplay.description}
+              </p>
+            </div>
+          </div>
+          <div className="p-6 border-r border-neutral-800 group hover:bg-neutral-900/30 transition-colors">
+            <div className="mb-4 text-xs tracking-widest uppercase text-neutral-600 font-bold">Sync Height</div>
+            <div className="text-3xl text-neutral-100 font-bold">
+              {network === "BASE" ? (isLoadingLeads ? "--" : formatBlockHeight(lastSyncedBlock)) : "--"}
+            </div>
+          </div>
+          <div className="p-6 group hover:bg-neutral-900/30 transition-colors">
+            <div className="mb-4 text-xs tracking-widest uppercase text-neutral-600 font-bold">Activated Agents</div>
+            <div className="text-xl text-neutral-100 font-bold">
+              {network === "BASE" ? (isLoadingLeads ? "--/--" : `${activatedAgentsCount.toLocaleString()}/${totalAgentsCount.toLocaleString()}`) : "--"}
+            </div>
           </div>
         </div>
 
-        <div className="max-h-[1000px] overflow-y-auto">
-          <div className="sticky top-0 z-10 grid grid-cols-12 gap-0 border-b border-neutral-800 bg-neutral-950 text-xs uppercase tracking-widest text-neutral-600 font-bold">
-            <div className="col-span-1 py-4 px-6 border-r border-neutral-800">RANK</div>
-            <div className="col-span-3 py-4 px-6">AGENT</div>
-            <div className="col-span-1 py-4 px-6 border-l border-r border-neutral-800 text-right">TXS</div>
-            <div className="col-span-2 py-4 px-6 border-r border-neutral-800 text-right">REPUTATION</div>
-            <div className="col-span-2 py-4 px-6 border-r border-neutral-800 text-right">YIELD</div>
-            <div className="col-span-1 py-4 px-6 border-r border-neutral-800 text-right">UPTIME</div>
-            <div className="col-span-2 py-4 px-6 text-right">ACTION</div>
+        <section className="relative border border-neutral-800 bg-neutral-950">
+          <div className="flex items-center justify-between border-b border-neutral-800 px-6 py-3 text-xs uppercase tracking-widest">
+            <div className="text-neutral-600">
+              Showing {visibleStart.toLocaleString()}-{visibleEnd.toLocaleString()} of {filteredAgentsCount.toLocaleString()}
+              {searchQuery ? " (filtered)" : ""}
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-neutral-500">
+                Page {currentPage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((previous) => Math.max(1, previous - 1))}
+                disabled={!canGoPrev || isPagerDisabled}
+                className="inline-flex h-8 w-8 items-center justify-center border border-neutral-800 text-neutral-400 transition hover:border-neutral-500 hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Previous page"
+              >
+                {"<"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((previous) => Math.min(totalPages, previous + 1))}
+                disabled={!canGoNext || isPagerDisabled}
+                className="inline-flex h-8 w-8 items-center justify-center border border-neutral-800 text-neutral-400 transition hover:border-neutral-500 hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Next page"
+              >
+                {">"}
+              </button>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={pageInput}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  if (/^\d*$/.test(next)) {
+                    setPageInput(next);
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    submitPageJump();
+                  }
+                }}
+                disabled={isPagerDisabled}
+                className="h-8 w-16 border border-neutral-800 bg-neutral-950 px-2 text-center text-xs text-neutral-300 outline-none transition focus:border-neutral-500 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Page number"
+              />
+              <button
+                type="button"
+                onClick={submitPageJump}
+                disabled={isPagerDisabled}
+                className="inline-flex h-8 items-center justify-center border border-neutral-800 px-3 text-[10px] text-neutral-400 transition hover:border-neutral-500 hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Go to page"
+              >
+                GO
+              </button>
+            </div>
           </div>
 
-          {network !== "BASE" ? (
-            <div className="py-24 text-center text-xs uppercase tracking-[0.2em] text-neutral-600">
-              MegaETH telemetry is not verified yet. Switch to BASE (LIVE).
+          <div className="max-h-[1000px] overflow-y-auto">
+            <div className="sticky top-0 z-10 grid grid-cols-12 gap-0 border-b border-neutral-800 bg-neutral-950 text-xs uppercase tracking-widest text-neutral-600 font-bold">
+              <div className="col-span-1 py-4 px-6 border-r border-neutral-800">RANK</div>
+              <div className="col-span-3 py-4 px-6">AGENT</div>
+              <div className="col-span-1 py-4 px-6 border-l border-r border-neutral-800 text-right">TXS</div>
+              <div className="col-span-2 py-4 px-6 border-r border-neutral-800 text-right">REPUTATION</div>
+              <div className="col-span-2 py-4 px-6 border-r border-neutral-800 text-right">YIELD</div>
+              <div className="col-span-1 py-4 px-6 border-r border-neutral-800 text-right">UPTIME</div>
+              <div className="col-span-2 py-4 px-6 text-right">ACTION</div>
             </div>
-          ) : isLoadingLeads ? (
-            <div className="py-24 text-center text-xs uppercase tracking-[0.2em] text-neutral-600 animate-pulse">
-              Loading live agents...
-            </div>
-          ) : loadError ? (
-            <div className="py-24 text-center text-xs uppercase tracking-[0.2em] text-red-500">
-              Live data fetch failed: {loadError}
-            </div>
-          ) : (
-            <div className="divide-y divide-neutral-800">
-              {rankedAgents.map((agent) => {
-              const rowKey = `${agent.agentId}-${agent.owner}`;
-              const isOwner = userAddress?.toLowerCase() === agent.owner.toLowerCase();
-              const safeYieldEth = agent.isClaimed ? Math.max(0, agent.yieldEth ?? 0) : 0;
-              const safeUptimePct = agent.isClaimed ? clamp(agent.uptimePct ?? 0, 0, 100) : 0;
-              const showYieldZeroState = agent.isClaimed && safeYieldEth === 0;
-              const showUptimeZeroState = agent.isClaimed && safeUptimePct === 0;
-              const showAvatar = Boolean(agent.imageUrl) && !brokenAvatars.has(rowKey);
-              const agentProfileHref = `/agent/${encodeURIComponent(agent.agentId)}`;
-              const yieldClassName = !agent.isClaimed
-                ? "text-neutral-600"
-                : showYieldZeroState
-                  ? "text-neutral-500"
-                  : "text-neutral-300";
-              const uptimeClassName = !agent.isClaimed
-                ? "text-neutral-600"
-                : showUptimeZeroState
-                  ? "text-neutral-500"
-                  : "text-neutral-300";
-              const rankTextClassName =
-                agent.rank === 1
-                  ? "text-amber-300"
-                  : agent.rank === 2
-                    ? "text-slate-300"
-                    : agent.rank === 3
-                      ? "text-amber-600"
-                      : "text-neutral-400";
 
-                return (
-                  <div
-                    key={rowKey}
-                    className="grid grid-cols-12 gap-0 items-center hover:bg-neutral-900/30 transition-colors group"
-                  >
-                  <div className={`col-span-1 py-3 px-6 border-r border-neutral-800 font-bold ${rankTextClassName}`}>
-                    <div className="inline-flex items-center gap-1.5">
-                      <span>{String(agent.rank).padStart(2, "0")}</span>
-                      {agent.rank === 1 ? <Crown className="ml-1.5 h-5 w-5 text-amber-300" /> : null}
-                    </div>
-                  </div>
-                  <div className="col-span-3 py-3 px-6">
-                    <div className="flex items-center gap-3">
-                      <Link
-                        href={agentProfileHref}
-                        className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded border border-neutral-800 bg-neutral-900 text-xs font-bold text-neutral-400 transition hover:border-neutral-600"
-                        aria-label={`Open profile for ${agent.displayName}`}
-                      >
-                        {showAvatar ? (
-                          <Image
-                            src={agent.imageUrl as string}
-                            alt={`${agent.displayName} avatar`}
-                            width={40}
-                            height={40}
-                            className="h-full w-full object-cover"
-                            unoptimized
-                            loading="lazy"
-                            referrerPolicy="no-referrer"
-                            onError={() => markAvatarBroken(rowKey)}
-                          />
-                        ) : (
-                          <Bot className="h-5 w-5 text-neutral-500" aria-hidden="true" />
-                        )}
-                      </Link>
+            {network !== "BASE" ? (
+              <div className="py-24 text-center text-xs uppercase tracking-[0.2em] text-neutral-600">
+                MegaETH telemetry is not verified yet. Switch to BASE (LIVE).
+              </div>
+            ) : isLoadingLeads ? (
+              <div className="py-24 text-center text-xs uppercase tracking-[0.2em] text-neutral-600 animate-pulse">
+                Loading live agents...
+              </div>
+            ) : loadError ? (
+              <div className="py-24 text-center text-xs uppercase tracking-[0.2em] text-red-500">
+                Live data fetch failed: {loadError}
+              </div>
+            ) : (
+              <div className="divide-y divide-neutral-800">
+                {rankedAgents.map((agent) => {
+                  const rowKey = `${agent.agentId}-${agent.owner}`;
+                  const isOwner = userAddress?.toLowerCase() === agent.owner.toLowerCase();
+                  const safeYieldEth = agent.isClaimed ? Math.max(0, agent.yieldEth ?? 0) : 0;
+                  const safeUptimePct = agent.isClaimed ? clamp(agent.uptimePct ?? 0, 0, 100) : 0;
+                  const showYieldZeroState = agent.isClaimed && safeYieldEth === 0;
+                  const showUptimeZeroState = agent.isClaimed && safeUptimePct === 0;
+                  const showAvatar = Boolean(agent.imageUrl) && !brokenAvatars.has(rowKey);
+                  const agentProfileHref = `/agent/${encodeURIComponent(agent.agentId)}`;
+                  const yieldClassName = !agent.isClaimed
+                    ? "text-neutral-600"
+                    : showYieldZeroState
+                      ? "text-neutral-500"
+                      : "text-neutral-300";
+                  const uptimeClassName = !agent.isClaimed
+                    ? "text-neutral-600"
+                    : showUptimeZeroState
+                      ? "text-neutral-500"
+                      : "text-neutral-300";
+                  const hasTopRankBadge = agent.rank <= 3;
+                  const rankBadgeClassName =
+                    agent.rank === 1
+                      ? "border border-red-500/70 bg-red-600 text-neutral-100"
+                      : agent.rank === 2
+                        ? "border border-neutral-300 bg-neutral-100 text-neutral-900"
+                        : agent.rank === 3
+                          ? "border border-neutral-500 bg-neutral-500 text-neutral-100"
+                          : "";
 
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <Link
-                            href={agentProfileHref}
-                            className="truncate text-neutral-100 font-bold transition hover:text-neutral-300"
+                  return (
+                    <div
+                      key={rowKey}
+                      className="grid grid-cols-12 gap-0 items-center hover:bg-neutral-900/30 transition-colors group"
+                    >
+                      <div className="col-span-1 py-3 px-6 border-r border-neutral-800 font-bold text-neutral-400">
+                        <div className="inline-flex items-center gap-1.5">
+                          <span
+                            className={
+                              hasTopRankBadge
+                                ? `inline-flex min-w-[2.5ch] items-center justify-center px-1.5 py-0.5 ${rankBadgeClassName}`
+                                : ""
+                            }
                           >
-                            {agent.displayName}
-                          </Link>
-                        </div>
-                        <div className="mt-1 flex items-center gap-2">
-                          <span className="inline-flex shrink-0 border border-neutral-800 bg-neutral-900 px-1.5 py-0.5 text-[10px] text-neutral-500 font-bold">
-                            #{agent.agentId}
+                            {String(agent.rank).padStart(2, "0")}
                           </span>
-                          <span className={`inline-flex border px-2 py-0.5 text-[10px] tracking-widest uppercase font-bold ${tierClassName[agent.tier]}`}>
-                            {agent.tier}
-                          </span>
-                          {agent.isClaimed && (
-                            <span className="inline-flex shrink-0 items-center border border-red-900/30 bg-red-950/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-red-600 whitespace-nowrap">
-                              RESERVED
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-1 flex items-center gap-2 text-[10px] text-neutral-600 font-mono">
-                          <span title={agent.owner}>{truncateAddress(agent.owner)}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyOwner(agent.owner)}
-                            className="inline-flex items-center justify-center border border-neutral-800 px-1 py-0.5 text-neutral-500 transition hover:border-neutral-600 hover:text-neutral-300"
-                            aria-label={`Copy ${agent.owner}`}
-                            title={copiedOwner === agent.owner ? "Copied" : "Copy full address"}
-                          >
-                            <Copy className="h-3 w-3" />
-                          </button>
+                          {agent.rank === 1 ? <Crown className="ml-3 h-7 w-7 text-red-600" /> : null}
                         </div>
                       </div>
-                    </div>
-                  </div>
-                  <div className="col-span-1 py-3 px-6 border-l border-r border-neutral-800 text-right text-neutral-400 font-mono">{agent.txCount}</div>
-                  <div className={`col-span-2 py-3 px-6 border-r border-neutral-800 text-right font-mono ${reputationColor(agent.reputationScore)}`}>
-                    {formatReputation(agent.reputationScore)}
-                  </div>
-                  <div className={`col-span-2 py-3 px-6 border-r border-neutral-800 text-right font-mono ${yieldClassName}`}>
-                    {agent.isClaimed ? formatYield(safeYieldEth) : "---"}
-                  </div>
-                  <div className={`col-span-1 py-3 px-6 border-r border-neutral-800 text-right font-mono ${uptimeClassName}`}>
-                    {agent.isClaimed ? formatUptime(safeUptimePct) : "---"}
-                  </div>
-                  <div className="col-span-2 py-3 px-6 text-right">
-                    {!userAddress ? (
-                      <span className="text-[10px] uppercase tracking-widest text-neutral-600 font-bold">
-                        CONNECT_WALLET
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleOpenDashboard(isOwner ? "merchant" : "consumer", agent.agentId, agent.owner)}
-                        className={`inline-flex min-w-[120px] items-center justify-center px-4 py-3 text-[10px] uppercase tracking-widest font-bold border transition-colors duration-200 ${isOwner
-                          ? "bg-neutral-100 text-neutral-950 border-neutral-100 hover:bg-neutral-300 hover:border-neutral-300"
-                          : "text-neutral-400 border-neutral-800 hover:text-neutral-100 hover:border-neutral-100"
-                          }`}
-                      >
-                        {isOwner ? "MANAGE" : "ACCESS_TERMINAL"}
-                      </button>
-                    )}
-                  </div>
-                  </div>
-                );
-              })}
+                      <div className="col-span-3 py-3 px-6">
+                        <div className="flex items-center gap-3">
+                          <Link
+                            href={agentProfileHref}
+                            className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded border border-neutral-800 bg-neutral-900 text-xs font-bold text-neutral-400 transition hover:border-neutral-600"
+                            aria-label={`Open profile for ${agent.displayName}`}
+                          >
+                            {showAvatar ? (
+                              <Image
+                                src={agent.imageUrl as string}
+                                alt={`${agent.displayName} avatar`}
+                                width={40}
+                                height={40}
+                                className="h-full w-full object-cover"
+                                unoptimized
+                                loading="lazy"
+                                referrerPolicy="no-referrer"
+                                onError={() => markAvatarBroken(rowKey)}
+                              />
+                            ) : (
+                              <Bot className="h-5 w-5 text-neutral-500" aria-hidden="true" />
+                            )}
+                          </Link>
 
-              {rankedAgents.length === 0 && (
-                <div className="py-24 text-center text-xs uppercase tracking-[0.2em] text-neutral-600">No agents match your filter.</div>
-              )}
-            </div>
-          )}
-        </div>
-      </section>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <Link
+                                href={agentProfileHref}
+                                className="truncate text-neutral-100 font-bold transition hover:text-neutral-300"
+                              >
+                                {agent.displayName}
+                              </Link>
+                            </div>
+                            <div className="mt-1 flex items-center gap-2">
+                              <span className="text-[10px] text-neutral-500 font-bold">
+                                #{agent.agentId}
+                              </span>
+                              <span className={`inline-flex border px-2 py-0.5 text-[10px] tracking-widest uppercase font-bold ${tierClassName[agent.tier]}`}>
+                                {agent.tier}
+                              </span>
+                              {agent.isClaimed && (
+                                <span className="inline-flex shrink-0 items-center border border-red-900/30 bg-red-950/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-red-600 whitespace-nowrap">
+                                  RESERVED
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1 flex items-center gap-2 text-[10px] text-neutral-600 font-mono">
+                              <span title={agent.owner}>{truncateAddress(agent.owner)}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyOwner(agent.owner)}
+                                className="inline-flex items-center justify-center border border-neutral-800 px-1 py-0.5 text-neutral-500 transition hover:border-neutral-600 hover:text-neutral-300"
+                                aria-label={`Copy ${agent.owner}`}
+                                title={copiedOwner === agent.owner ? "Copied" : "Copy full address"}
+                              >
+                                <Copy className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="col-span-1 py-3 px-6 border-l border-r border-neutral-800 text-right text-neutral-400 font-mono">{agent.txCount.toLocaleString()}</div>
+                      <div className={`col-span-2 py-3 px-6 border-r border-neutral-800 text-right font-mono ${reputationColor(agent.reputationScore)}`}>
+                        {formatReputation(agent.reputationScore)}
+                      </div>
+                      <div className={`col-span-2 py-3 px-6 border-r border-neutral-800 text-right font-mono ${yieldClassName}`}>
+                        {agent.isClaimed ? formatYield(safeYieldEth) : "---"}
+                      </div>
+                      <div className={`col-span-1 py-3 px-6 border-r border-neutral-800 text-right font-mono ${uptimeClassName}`}>
+                        {agent.isClaimed ? formatUptime(safeUptimePct) : "---"}
+                      </div>
+                      <div className="col-span-2 py-3 px-6 text-right">
+                        {!userAddress ? (
+                          <span className="text-[10px] uppercase tracking-widest text-neutral-600 font-bold">
+                            CONNECT_WALLET
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenDashboard(isOwner ? "merchant" : "consumer", agent.agentId, agent.owner)}
+                            className={`inline-flex min-w-[120px] items-center justify-center px-4 py-3 text-[10px] uppercase tracking-widest font-bold border transition-colors duration-200 hover:bg-red-600 hover:text-neutral-100 hover:border-red-600 ${isOwner
+                              ? "bg-neutral-100 text-neutral-950 border-neutral-100"
+                              : "text-neutral-400 border-neutral-800"
+                              }`}
+                          >
+                            {isOwner ? "MANAGE_AGENT" : "ACCESS_TERMINAL"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {rankedAgents.length === 0 && (
+                  <div className="py-24 text-center text-xs uppercase tracking-[0.2em] text-neutral-600">No agents match your filter.</div>
+                )}
+              </div>
+            )}
+          </div>
+        </section>
       </main>
 
       <footer className="border-t border-neutral-900 bg-neutral-950 py-12 px-6">
@@ -807,7 +816,7 @@ export default function Home() {
             </div>
             <div className="flex flex-col gap-3">
               <span className="text-neutral-500 font-bold mb-1">Uplink</span>
-              <a href="https://twitter.com/GhostProtocol_0" target="_blank" rel="noreferrer" className="hover:text-red-500 transition-colors">Twitter_X</a>
+              <a href="https://x.com/ghostprotoinfra?s=21&t=DTmOC6wgBREeCQeyz6wQRg" target="_blank" rel="noreferrer" className="hover:text-red-500 transition-colors">Twitter_X</a>
               <a href="https://github.com/Ghost-Protocol-Infrastructure" target="_blank" rel="noreferrer" className="hover:text-red-500 transition-colors">Github</a>
             </div>
           </div>

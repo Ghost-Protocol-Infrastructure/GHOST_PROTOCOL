@@ -379,7 +379,23 @@ def run_agent():
 
   const requestedMode = searchParams.get("mode");
   const forceConsumerView = requestedMode === "consumer";
-  const showMerchantView = ownedAgents.length > 0 && !forceConsumerView;
+  const forceMerchantView = requestedMode === "merchant";
+  const requestedAgentIsOwned = useMemo(() => {
+    if (!normalizedRequestedAgentId) return false;
+    return ownedAgents.some((agent) => agent.agentId === normalizedRequestedAgentId);
+  }, [normalizedRequestedAgentId, ownedAgents]);
+  const showMerchantView = useMemo(() => {
+    if (forceConsumerView) return false;
+    if (forceMerchantView) return ownedAgents.length > 0;
+    if (normalizedRequestedAgentId) return requestedAgentIsOwned;
+    return ownedAgents.length > 0;
+  }, [
+    forceConsumerView,
+    forceMerchantView,
+    normalizedRequestedAgentId,
+    ownedAgents.length,
+    requestedAgentIsOwned,
+  ]);
 
   useEffect(() => {
     if (!ownedAgents.length) {
@@ -391,9 +407,8 @@ def run_agent():
 
     // Only use URL agentId for initial/default selection.
     if (!selectedAgentId) {
-      const requestedIsOwned = requestedAgentId != null && ownedAgents.some((agent) => agent.agentId === requestedAgentId);
-      if (requestedIsOwned && requestedAgentId != null) {
-        setSelectedAgentId(requestedAgentId);
+      if (requestedAgentIsOwned && normalizedRequestedAgentId != null) {
+        setSelectedAgentId(normalizedRequestedAgentId);
         return;
       }
 
@@ -404,7 +419,7 @@ def run_agent():
     if (!selectedIsOwned) {
       setSelectedAgentId(ownedAgents[0].agentId);
     }
-  }, [ownedAgents, requestedAgentId, selectedAgentId]);
+  }, [ownedAgents, normalizedRequestedAgentId, requestedAgentIsOwned, selectedAgentId]);
 
   const merchantApiKey = useMemo(() => {
     if (!address || !selectedOwnedAgent) return "sk_live_[WALLET]...";
@@ -499,9 +514,9 @@ def my_agent():
   };
 
   return (
-    <main className="min-h-screen font-mono text-neutral-400">
-      <div className="mx-auto w-full max-w-6xl px-4 py-8 md:px-8">
-        <header className="mb-12 flex flex-col gap-4 border-b border-neutral-900 pb-8 md:flex-row md:items-center md:justify-between">
+    <main className="min-h-screen font-mono text-neutral-400 bg-neutral-950 [background-image:none]">
+      <div className="w-full px-4 py-8 md:px-8">
+        <header className="mb-12 flex flex-col gap-4 border-b border-neutral-900 pb-6 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
             <GhostLogo className="h-5 w-5" />
             <h1 className="text-sm tracking-[0.2em] text-neutral-100 md:text-base font-bold">
@@ -757,12 +772,11 @@ def my_agent():
                     </button>
                   </div>
                 )}
-
                 <button
                   type="button"
                   onClick={handlePurchase}
                   disabled={!canPurchase}
-                  className="w-full border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm uppercase tracking-wider text-neutral-300 font-bold transition hover:bg-neutral-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  className="w-full border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm uppercase tracking-wider text-neutral-300 font-bold transition hover:bg-red-600 hover:border-red-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isSwitchingChain
                     ? "Switching network..."
