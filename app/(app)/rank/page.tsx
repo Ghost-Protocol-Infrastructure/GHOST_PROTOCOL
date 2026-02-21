@@ -609,31 +609,32 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="grid grid-cols-12 gap-0 border-b border-neutral-800 bg-neutral-950 text-xs uppercase tracking-widest text-neutral-600 font-bold">
-          <div className="col-span-1 py-4 px-6 border-r border-neutral-800">RANK</div>
-          <div className="col-span-3 py-4 px-6 border-r border-neutral-800">AGENT</div>
-          <div className="col-span-1 py-4 px-6 border-r border-neutral-800 text-right">TXS</div>
-          <div className="col-span-2 py-4 px-6 border-r border-neutral-800 text-right">REPUTATION</div>
-          <div className="col-span-2 py-4 px-6 border-r border-neutral-800 text-right">YIELD</div>
-          <div className="col-span-1 py-4 px-6 border-r border-neutral-800 text-right">UPTIME</div>
-          <div className="col-span-2 py-4 px-6 text-right">ACTION</div>
-        </div>
+        <div className="max-h-[1000px] overflow-y-auto">
+          <div className="sticky top-0 z-10 grid grid-cols-12 gap-0 border-b border-neutral-800 bg-neutral-950 text-xs uppercase tracking-widest text-neutral-600 font-bold">
+            <div className="col-span-1 py-4 px-6 border-r border-neutral-800">RANK</div>
+            <div className="col-span-3 py-4 px-6">AGENT</div>
+            <div className="col-span-1 py-4 px-6 border-l border-r border-neutral-800 text-right">TXS</div>
+            <div className="col-span-2 py-4 px-6 border-r border-neutral-800 text-right">REPUTATION</div>
+            <div className="col-span-2 py-4 px-6 border-r border-neutral-800 text-right">YIELD</div>
+            <div className="col-span-1 py-4 px-6 border-r border-neutral-800 text-right">UPTIME</div>
+            <div className="col-span-2 py-4 px-6 text-right">ACTION</div>
+          </div>
 
-        {network !== "BASE" ? (
-          <div className="py-24 text-center text-xs uppercase tracking-[0.2em] text-neutral-600">
-            MegaETH telemetry is not verified yet. Switch to BASE (LIVE).
-          </div>
-        ) : isLoadingLeads ? (
-          <div className="py-24 text-center text-xs uppercase tracking-[0.2em] text-neutral-600 animate-pulse">
-            Loading live agents...
-          </div>
-        ) : loadError ? (
-          <div className="py-24 text-center text-xs uppercase tracking-[0.2em] text-red-500">
-            Live data fetch failed: {loadError}
-          </div>
-        ) : (
-          <div className="max-h-[1000px] overflow-y-auto divide-y divide-neutral-800">
-            {rankedAgents.map((agent) => {
+          {network !== "BASE" ? (
+            <div className="py-24 text-center text-xs uppercase tracking-[0.2em] text-neutral-600">
+              MegaETH telemetry is not verified yet. Switch to BASE (LIVE).
+            </div>
+          ) : isLoadingLeads ? (
+            <div className="py-24 text-center text-xs uppercase tracking-[0.2em] text-neutral-600 animate-pulse">
+              Loading live agents...
+            </div>
+          ) : loadError ? (
+            <div className="py-24 text-center text-xs uppercase tracking-[0.2em] text-red-500">
+              Live data fetch failed: {loadError}
+            </div>
+          ) : (
+            <div className="divide-y divide-neutral-800">
+              {rankedAgents.map((agent) => {
               const rowKey = `${agent.agentId}-${agent.owner}`;
               const isOwner = userAddress?.toLowerCase() === agent.owner.toLowerCase();
               const safeYieldEth = agent.isClaimed ? Math.max(0, agent.yieldEth ?? 0) : 0;
@@ -660,18 +661,18 @@ export default function Home() {
                       ? "text-amber-600"
                       : "text-neutral-400";
 
-              return (
-                <div
-                  key={rowKey}
-                  className="grid grid-cols-12 gap-0 items-center hover:bg-neutral-900/30 transition-colors group"
-                >
-                  <div className={`col-span-1 py-4 px-6 border-r border-neutral-800 font-bold ${rankTextClassName}`}>
+                return (
+                  <div
+                    key={rowKey}
+                    className="grid grid-cols-12 gap-0 items-center hover:bg-neutral-900/30 transition-colors group"
+                  >
+                  <div className={`col-span-1 py-3 px-6 border-r border-neutral-800 font-bold ${rankTextClassName}`}>
                     <div className="inline-flex items-center gap-1.5">
                       <span>{String(agent.rank).padStart(2, "0")}</span>
                       {agent.rank === 1 ? <Crown className="ml-1.5 h-5 w-5 text-amber-300" /> : null}
                     </div>
                   </div>
-                  <div className="col-span-3 py-4 px-6">
+                  <div className="col-span-3 py-3 px-6">
                     <div className="flex items-center gap-3">
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded border border-neutral-800 bg-neutral-900 text-xs font-bold text-neutral-400">
                         {showAvatar ? (
@@ -723,17 +724,17 @@ export default function Home() {
                       </div>
                     </div>
                   </div>
-                  <div className="col-span-1 py-4 px-6 border-l border-r border-neutral-800 text-right text-neutral-400 font-mono">{agent.txCount}</div>
-                  <div className={`col-span-2 py-4 px-6 border-r border-neutral-800 text-right font-mono ${reputationColor(agent.reputationScore)}`}>
+                  <div className="col-span-1 py-3 px-6 border-l border-r border-neutral-800 text-right text-neutral-400 font-mono">{agent.txCount}</div>
+                  <div className={`col-span-2 py-3 px-6 border-r border-neutral-800 text-right font-mono ${reputationColor(agent.reputationScore)}`}>
                     {formatReputation(agent.reputationScore)}
                   </div>
-                  <div className={`col-span-2 py-4 px-6 border-r border-neutral-800 text-right font-mono ${yieldClassName}`}>
+                  <div className={`col-span-2 py-3 px-6 border-r border-neutral-800 text-right font-mono ${yieldClassName}`}>
                     {agent.isClaimed ? formatYield(safeYieldEth) : "---"}
                   </div>
-                  <div className={`col-span-1 py-4 px-6 border-r border-neutral-800 text-right font-mono ${uptimeClassName}`}>
+                  <div className={`col-span-1 py-3 px-6 border-r border-neutral-800 text-right font-mono ${uptimeClassName}`}>
                     {agent.isClaimed ? formatUptime(safeUptimePct) : "---"}
                   </div>
-                  <div className="col-span-2 py-4 px-6 text-right">
+                  <div className="col-span-2 py-3 px-6 text-right">
                     {!userAddress ? (
                       <span className="text-[10px] uppercase tracking-widest text-neutral-600 font-bold">
                         CONNECT_WALLET
@@ -751,15 +752,16 @@ export default function Home() {
                       </button>
                     )}
                   </div>
-                </div>
-              );
-            })}
+                  </div>
+                );
+              })}
 
-            {rankedAgents.length === 0 && (
-              <div className="py-24 text-center text-xs uppercase tracking-[0.2em] text-neutral-600">No agents match your filter.</div>
-            )}
-          </div>
-        )}
+              {rankedAgents.length === 0 && (
+                <div className="py-24 text-center text-xs uppercase tracking-[0.2em] text-neutral-600">No agents match your filter.</div>
+              )}
+            </div>
+          )}
+        </div>
       </section>
       </main>
 
