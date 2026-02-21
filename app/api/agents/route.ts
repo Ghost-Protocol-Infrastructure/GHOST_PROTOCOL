@@ -26,6 +26,11 @@ type SyncMetadata = {
   lastSyncedAt: string | null;
 };
 
+type RankedAddressRow = {
+  address: string;
+  rank: bigint | number;
+};
+
 const basePublicClient = createPublicClient({
   chain: base,
   transport: fallback([
@@ -175,6 +180,42 @@ const resolveSyncMetadata = async (lastSyncedBlock: bigint | null | undefined): 
   }
 };
 
+const resolveGlobalRankByAddress = async (sort: string | null, addresses: string[]): Promise<Map<string, number>> => {
+  if (addresses.length === 0) return new Map();
+
+  const rankOrderSql =
+    sort === "volume"
+      ? Prisma.sql`ORDER BY a."txCount" DESC, a."rankScore" DESC, a."reputation" DESC, a."address" ASC`
+      : Prisma.sql`ORDER BY a."rankScore" DESC, a."reputation" DESC, a."txCount" DESC, a."address" ASC`;
+
+  const rows = await prisma.$queryRaw<RankedAddressRow[]>(Prisma.sql`
+    WITH ranked AS (
+      SELECT
+        a."address",
+        ROW_NUMBER() OVER (${rankOrderSql}) AS rank
+      FROM "Agent" a
+    )
+    SELECT ranked."address", ranked.rank
+    FROM ranked
+    WHERE ranked."address" IN (${Prisma.join(addresses)})
+  `);
+
+  const rankByAddress = new Map<string, number>();
+  for (const row of rows) {
+    const normalizedAddress = row.address.toLowerCase();
+    const normalizedRank =
+      typeof row.rank === "bigint"
+        ? Number(row.rank)
+        : typeof row.rank === "number" && Number.isFinite(row.rank)
+          ? Math.trunc(row.rank)
+          : null;
+    if (normalizedRank && normalizedRank > 0) {
+      rankByAddress.set(normalizedAddress, normalizedRank);
+    }
+  }
+  return rankByAddress;
+};
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const sort = request.nextUrl.searchParams.get("sort");
   const limit = parseLimit(request.nextUrl.searchParams.get("limit"));
@@ -274,6 +315,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           syncAgeSeconds: syncMetadata.syncAgeSeconds,
           lastSyncedAt: syncMetadata.lastSyncedAt,
           agents: rows.map((row) => ({
+            rank: row.rank,
             address: row.agentAddress,
             agentId: row.agentId,
             name: row.name,
@@ -306,8 +348,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   const orderBy: PrismaTypes.AgentOrderByWithRelationInput[] =
     sort === "volume"
-      ? [{ txCount: "desc" as const }, { rankScore: "desc" as const }]
-      : [{ rankScore: "desc" as const }, { reputation: "desc" as const }, { txCount: "desc" as const }];
+      ? [
+          { txCount: "desc" as const },
+          { rankScore: "desc" as const },
+          { reputation: "desc" as const },
+          { address: "asc" as const },
+        ]
+      : [
+          { rankScore: "desc" as const },
+          { reputation: "desc" as const },
+          { txCount: "desc" as const },
+          { address: "asc" as const },
+        ];
   const filters: PrismaTypes.AgentWhereInput[] = [];
   if (owner) {
     filters.push({
@@ -358,6 +410,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     null;
   const syncMetadata = await resolveSyncMetadata(indexerState?.lastSyncedBlock);
   const activatedAgents = await activatedAgentsPromise;
+  const filteredWithExplicitRank = Boolean(query || owner);
+  const rankByAddress = filteredWithExplicitRank
+    ? await resolveGlobalRankByAddress(
+        sort,
+        agents.map((agent) => agent.address),
+      )
+    : new Map<string, number>();
 
   return NextResponse.json(
     {
@@ -372,7 +431,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       syncHealth: syncMetadata.syncHealth,
       syncAgeSeconds: syncMetadata.syncAgeSeconds,
       lastSyncedAt: syncMetadata.lastSyncedAt,
-      agents: agents.map((agent) => ({
+      agents: agents.map((agent, index) => ({
+        rank: rankByAddress.get(agent.address.toLowerCase()) ?? skip + index + 1,
         address: agent.address,
         agentId: agent.agentId ?? agent.address,
         name: agent.name,

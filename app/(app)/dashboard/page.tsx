@@ -141,6 +141,13 @@ function DashboardPageContent() {
 
   const requestedAgentId = searchParams.get("agentId");
   const requestedOwner = searchParams.get("owner");
+  const normalizedRequestedAgentId = useMemo(() => {
+    const candidate = requestedAgentId?.trim();
+    return candidate && candidate.length > 0 ? candidate : null;
+  }, [requestedAgentId]);
+  const consumerServiceSlug = normalizedRequestedAgentId
+    ? `agent-${normalizedRequestedAgentId}`
+    : "agent-your-agent-id";
   const requestedAgentAddress = useMemo(
     () => normalizeAddress(requestedOwner),
     [requestedOwner],
@@ -268,13 +275,13 @@ function DashboardPageContent() {
 const sdk = new GhostAgent({
   baseUrl: "${APP_BASE_URL}",
   privateKey: process.env.GHOST_SIGNER_PRIVATE_KEY as \`0x\${string}\`,
-  serviceSlug: "weather",
+  serviceSlug: "${consumerServiceSlug}",
   creditCost: 1,
 });
 
 const result = await sdk.connect(process.env.GHOST_API_KEY!);
 console.log(result);`,
-    [],
+    [consumerServiceSlug],
   );
 
   const pythonConsumerUsageExample = useMemo(
@@ -287,10 +294,10 @@ gate = GhostGate(
     base_url="${APP_BASE_URL}",
 )
 
-@gate.guard(cost=1, service="weather", method="POST")
+@gate.guard(cost=1, service="${consumerServiceSlug}", method="POST")
 def run_agent():
     return {"ok": True}`,
-    [],
+    [consumerServiceSlug],
   );
 
   const consumerUsageExample =
@@ -407,8 +414,10 @@ def run_agent():
   const selectedAgentProfileHref = selectedOwnedAgent
     ? `/agent/${encodeURIComponent(selectedOwnedAgent.agentId)}`
     : "/rank";
-  const nodeGuideHref = `${selectedAgentProfileHref}?sdk=node`;
-  const pythonGuideHref = `${selectedAgentProfileHref}?sdk=python`;
+  const selectedAgentConsumerTerminalHref = selectedOwnedAgent
+    ? `/dashboard?mode=consumer&agentId=${encodeURIComponent(selectedOwnedAgent.agentId)}&owner=${encodeURIComponent(selectedOwnedAgent.owner)}`
+    : "/dashboard?mode=consumer";
+  const merchantServiceSlug = selectedOwnedAgent ? `agent-${selectedOwnedAgent.agentId}` : "agent-your-agent-id";
 
   const merchantSdkExample = useMemo(
     () =>
@@ -418,10 +427,10 @@ gate = GhostGate(api_key="${merchantApiKey}")
 # Agent ID: ${selectedOwnedAgent?.agentId ?? "YOUR_AGENT_ID"}
 
 @app.route('/ask', methods=['POST'])
-@gate.guard(cost=1, service="weather")
+@gate.guard(cost=1, service="${merchantServiceSlug}")
 def my_agent():
     return "AI Response"`,
-    [merchantApiKey, selectedOwnedAgent],
+    [merchantApiKey, selectedOwnedAgent, merchantServiceSlug],
   );
 
   const canPurchase =
@@ -607,19 +616,13 @@ def my_agent():
                 href={selectedAgentProfileHref}
                 className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:bg-neutral-900 hover:text-neutral-200"
               >
-                OPEN INTEGRATION GUIDE
+                OPEN PUBLIC PROFILE
               </a>
               <a
-                href={nodeGuideHref}
+                href={selectedAgentConsumerTerminalHref}
                 className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:bg-neutral-900 hover:text-neutral-200"
               >
-                NODE.JS SETUP
-              </a>
-              <a
-                href={pythonGuideHref}
-                className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:bg-neutral-900 hover:text-neutral-200"
-              >
-                PYTHON SETUP
+                OPEN CONSUMER TERMINAL
               </a>
               <div className="inline-flex flex-col items-start">
                 <button
@@ -836,7 +839,7 @@ def my_agent():
                   {consumerSdk === "node"
                     ? "The Node SDK signs and routes verification requests to"
                     : "The Python SDK automatically routes verification requests to"}{" "}
-                  <span className="text-neutral-300 font-mono">{APP_BASE_URL}/api/gate/&lt;your-service-name&gt;.</span>{" "}
+                  <span className="text-neutral-300 font-mono">{APP_BASE_URL}/api/gate/{consumerServiceSlug}.</span>{" "}
                   <span className="text-neutral-300 font-mono">1 Request = 1 Credit.</span>
                 </p>
               </div>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import Image from "next/image";
 import { prisma } from "@/lib/db";
-import IntegrationTabs from "./IntegrationTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +14,7 @@ type AgentSummary = {
   agentId: string;
   address: string;
   name: string;
+  image: string | null;
   creator: string;
   owner: string;
   status: string;
@@ -41,6 +42,22 @@ const toTitleCase = (value: string): string =>
     .join(" ");
 
 const truncateAddress = (address: string): string => `${address.slice(0, 6)}...${address.slice(-4)}`;
+
+const resolveAgentImageUrl = (raw: string | null | undefined): string | null => {
+  const image = raw?.trim();
+  if (!image) return null;
+  if (image.startsWith("data:image/")) return image;
+  if (image.startsWith("<svg")) {
+    return `data:image/svg+xml;utf8,${encodeURIComponent(image)}`;
+  }
+  if (image.startsWith("ipfs://ipfs/")) {
+    return `https://ipfs.io/ipfs/${image.slice("ipfs://ipfs/".length)}`;
+  }
+  if (image.startsWith("ipfs://")) {
+    return `https://ipfs.io/ipfs/${image.slice("ipfs://".length)}`;
+  }
+  return image;
+};
 
 const normalizeAgentDescription = (description: string | null): string | null => {
   if (!description) return null;
@@ -71,6 +88,7 @@ export default async function AgentProfilePage({ params, searchParams }: AgentPa
       agentId: true,
       address: true,
       name: true,
+      image: true,
       creator: true,
       owner: true,
       status: true,
@@ -89,9 +107,13 @@ export default async function AgentProfilePage({ params, searchParams }: AgentPa
   }
 
   const statusLabel = toTitleCase(agent.status);
-  const initialSdkTab = resolvedSearchParams?.sdk?.toLowerCase() === "python" ? "python" : "node";
+  const requestedSdkTab = resolvedSearchParams?.sdk?.toLowerCase();
+  const hasLegacySetupParam = requestedSdkTab === "node" || requestedSdkTab === "python";
   const ownerAddress = agent.owner ?? agent.creator;
   const agentDescription = normalizeAgentDescription(agent.description);
+  const agentImageUrl = resolveAgentImageUrl(agent.image);
+  const merchantSetupHref = `/dashboard?mode=merchant&agentId=${encodeURIComponent(agent.agentId)}&owner=${encodeURIComponent(ownerAddress)}`;
+  const consumerTerminalHref = `/dashboard?mode=consumer&agentId=${encodeURIComponent(agent.agentId)}&owner=${encodeURIComponent(ownerAddress)}`;
 
   return (
     <main className="min-h-screen font-mono text-neutral-400 bg-neutral-950 [background-image:none]">
@@ -106,70 +128,124 @@ export default async function AgentProfilePage({ params, searchParams }: AgentPa
           </Link>
         </div>
 
-        <section className="mb-6 border border-neutral-900 bg-neutral-950 p-6">
-          <div className="mb-4 flex flex-wrap items-center gap-3">
-            <h2 className="text-2xl font-bold tracking-tight text-neutral-100">{agent.name || `Agent #${agent.agentId}`}</h2>
-            <span className="border border-red-900/30 bg-red-950/10 px-2 py-1 text-xs uppercase tracking-[0.16em] text-red-600 font-bold">
-              #{agent.agentId}
-            </span>
-            <span className={`border px-2 py-1 text-xs uppercase tracking-[0.16em] font-bold ${tierClassName[agent.tier]}`}>
-              {agent.tier}
-            </span>
-          </div>
+        {hasLegacySetupParam ? (
+          <section className="mb-6 border border-amber-700/40 bg-amber-950/10 p-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-amber-300 font-bold">
+              Setup snippets moved to Merchant Console
+            </p>
+            <p className="mt-2 text-sm text-amber-100/80">
+              This page is now a public agent profile. Use Merchant Console for SDK initialization and setup.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Link
+                href={merchantSetupHref}
+                className="border border-amber-600/50 bg-amber-950/20 px-3 py-2 text-xs uppercase tracking-[0.12em] text-amber-300 transition hover:border-amber-500 hover:text-amber-200 font-bold"
+              >
+                Open Merchant Console
+              </Link>
+              <Link
+                href={consumerTerminalHref}
+                className="border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs uppercase tracking-[0.12em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200 font-bold"
+              >
+                Open Consumer Terminal
+              </Link>
+            </div>
+          </section>
+        ) : null}
 
-          <div className="grid grid-cols-1 gap-4 text-xs md:grid-cols-2">
-            <div className="border border-neutral-900 bg-neutral-900 p-3">
-              <p className="mb-1 uppercase tracking-[0.16em] text-neutral-500 font-bold">Creator Wallet</p>
-              <p className="text-neutral-300 font-mono" title={agent.creator}>
-                {truncateAddress(agent.creator)}
-              </p>
+        <section className="mb-6 border border-neutral-900 bg-neutral-950 p-6">
+          <div className="grid grid-cols-1 items-stretch gap-8 lg:grid-cols-[300px_minmax(0,1fr)]">
+            <div className="relative aspect-square w-full max-w-[300px] self-start overflow-hidden border border-neutral-800 bg-neutral-900">
+              {agentImageUrl ? (
+                <Image
+                  src={agentImageUrl}
+                  alt={`${agent.name || `Agent #${agent.agentId}`} avatar`}
+                  fill
+                  className="object-cover"
+                  unoptimized
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-4xl font-bold text-neutral-600">
+                  {(agent.name || "A").slice(0, 1).toUpperCase()}
+                </div>
+              )}
             </div>
-            <div className="border border-neutral-900 bg-neutral-900 p-3">
-              <p className="mb-1 uppercase tracking-[0.16em] text-neutral-500 font-bold">Owner Wallet</p>
-              <p className="text-neutral-300 font-mono" title={ownerAddress}>
-                {truncateAddress(ownerAddress)}
-              </p>
-            </div>
-            <div className="border border-neutral-900 bg-neutral-900 p-3">
-              <p className="mb-1 uppercase tracking-[0.16em] text-neutral-500 font-bold">Status</p>
-              <p className="text-neutral-300 font-mono">{statusLabel}</p>
-            </div>
-            <div className="border border-neutral-900 bg-neutral-900 p-3">
-              <p className="mb-1 uppercase tracking-[0.16em] text-neutral-500 font-bold">Rank Score</p>
-              <p className="text-neutral-300 font-mono">{agent.rankScore.toFixed(2)}</p>
-            </div>
-            <div className="border border-neutral-900 bg-neutral-900 p-3">
-              <p className="mb-1 uppercase tracking-[0.16em] text-neutral-500 font-bold">Reputation</p>
-              <p className="text-neutral-300 font-mono">{agent.reputation.toFixed(2)}</p>
-            </div>
-            <div className="border border-neutral-900 bg-neutral-900 p-3">
-              <p className="mb-1 uppercase tracking-[0.16em] text-neutral-500 font-bold">Transactions</p>
-              <p className="text-neutral-300 font-mono">{agent.txCount}</p>
+
+            <div className="min-w-0 flex flex-col">
+              <div className="mb-6 flex flex-wrap items-baseline gap-4">
+                <h2 className="text-4xl font-black uppercase tracking-tight text-neutral-100">{agent.name || `Agent #${agent.agentId}`}</h2>
+                <div className="flex items-center gap-2">
+                  <span className="text-red-600 font-bold text-sm tracking-widest">#{agent.agentId}</span>
+                  <span className={`border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] font-bold ${tierClassName[agent.tier]}`}>
+                    {agent.tier}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-0 border border-neutral-800 text-xs md:grid-cols-2 flex-1">
+                <div className="border-b md:border-r border-neutral-800 bg-neutral-900 p-4 transition-colors hover:bg-neutral-800/70">
+                  <p className="mb-2 uppercase tracking-[0.2em] text-neutral-500 font-bold text-[10px]">Creator Wallet</p>
+                  <p className="text-neutral-200 font-mono text-sm" title={agent.creator}>
+                    {truncateAddress(agent.creator)}
+                  </p>
+                </div>
+                <div className="border-b border-neutral-800 bg-neutral-900 p-4 transition-colors hover:bg-neutral-800/70">
+                  <p className="mb-2 uppercase tracking-[0.2em] text-neutral-500 font-bold text-[10px]">Owner Wallet</p>
+                  <p className="text-neutral-200 font-mono text-sm" title={ownerAddress}>
+                    {truncateAddress(ownerAddress)}
+                  </p>
+                </div>
+                <div className="border-b md:border-r border-neutral-800 bg-neutral-900 p-4 transition-colors hover:bg-neutral-800/70">
+                  <p className="mb-2 uppercase tracking-[0.2em] text-neutral-500 font-bold text-[10px]">Status</p>
+                  <p className="text-neutral-200 font-mono text-sm uppercase">{statusLabel}</p>
+                </div>
+                <div className="border-b border-neutral-800 bg-neutral-900 p-4 transition-colors hover:bg-neutral-800/70">
+                  <p className="mb-2 uppercase tracking-[0.2em] text-neutral-500 font-bold text-[10px]">Rank Score</p>
+                  <p className="text-neutral-200 font-mono text-sm">{agent.rankScore.toFixed(2)}</p>
+                </div>
+                <div className="md:border-r border-neutral-800 bg-neutral-900 p-4 transition-colors hover:bg-neutral-800/70 md:border-b-0 border-b">
+                  <p className="mb-2 uppercase tracking-[0.2em] text-neutral-500 font-bold text-[10px]">Reputation</p>
+                  <p className="text-neutral-200 font-mono text-sm">{agent.reputation.toFixed(2)}</p>
+                </div>
+                <div className="bg-neutral-900 p-4 transition-colors hover:bg-neutral-800/70">
+                  <p className="mb-2 uppercase tracking-[0.2em] text-neutral-500 font-bold text-[10px]">Transactions</p>
+                  <p className="text-neutral-200 font-mono text-sm">{agent.txCount}</p>
+                </div>
+              </div>
             </div>
           </div>
 
           {agentDescription ? (
-            <div className="mt-4 border border-neutral-900 bg-neutral-900 p-3 text-sm text-neutral-400 font-mono">
+            <div className="mt-4 border border-neutral-800 bg-neutral-900 p-3 text-sm text-neutral-400 font-mono">
               {agentDescription}
             </div>
           ) : null}
         </section>
 
         <section className="border border-neutral-900 bg-neutral-950 p-6">
-          <h3 className="mb-3 text-sm uppercase tracking-[0.16em] text-neutral-100 font-bold">Connect</h3>
+          <h3 className="mb-3 text-sm uppercase tracking-[0.16em] text-neutral-100 font-bold">Agent Access</h3>
           <p className="mb-3 text-sm text-neutral-400">
-            Choose your SDK runtime and copy the integration starter below.
+            Use this profile to inspect metadata and confirm agent identity.
           </p>
           <div className="border border-neutral-800 bg-neutral-900 p-4">
             <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Agent ID</p>
             <code className="block break-all text-lg text-neutral-200 font-mono">{agent.agentId}</code>
           </div>
-          <div className="mt-4">
-            <IntegrationTabs agentId={agent.agentId} initialTab={initialSdkTab} />
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Link
+              href={consumerTerminalHref}
+              className="border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs uppercase tracking-[0.12em] text-neutral-400 transition hover:border-red-600 hover:text-red-500 font-bold"
+            >
+              Open Consumer Terminal
+            </Link>
+            <Link
+              href={merchantSetupHref}
+              className="border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs uppercase tracking-[0.12em] text-neutral-400 transition hover:border-red-600 hover:text-red-500 font-bold"
+            >
+              Merchant Setup
+            </Link>
           </div>
-          <p className="mt-3 text-xs text-neutral-500">
-            The snippets above are pre-filled with this agent identifier so onboarding stays consistent.
-          </p>
         </section>
       </div>
     </main>

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Image from "next/image";
 import { useAccount } from "wagmi";
 import { Bot, Copy, Crown } from "lucide-react";
@@ -14,6 +15,7 @@ type SyncHealth = "live" | "stale" | "offline" | "unknown";
 const STALE_SYNC_THRESHOLD_SECONDS = 3 * 60 * 60;
 
 type ApiAgent = {
+  rank?: number;
   address: string;
   agentId?: string;
   name: string;
@@ -32,6 +34,7 @@ type ApiAgent = {
 };
 
 type ProcessedLead = {
+  rank: number | null;
   agentId: string;
   displayName: string;
   imageUrl: string | null;
@@ -259,6 +262,10 @@ const buildLeadsFromApi = (agents: ApiAgent[]): ProcessedLead[] => {
     const ownerSource = agent.owner ?? agent.creator;
 
     return {
+      rank:
+        typeof agent.rank === "number" && Number.isFinite(agent.rank) && agent.rank > 0
+          ? Math.trunc(agent.rank)
+          : null,
       agentId,
       displayName: normalizeDisplayName(agent, agentId),
       imageUrl: resolveAgentImageUrl(agent.image),
@@ -274,8 +281,7 @@ const buildLeadsFromApi = (agents: ApiAgent[]): ProcessedLead[] => {
     };
   });
 
-  return seeded
-    .sort((a, b) => b.rankScore - a.rankScore || b.reputationScore - a.reputationScore || b.txCount - a.txCount);
+  return seeded;
 };
 
 const tierClassName: Record<LeadTier, string> = {
@@ -333,6 +339,9 @@ export default function Home() {
         });
         if (searchQuery) {
           params.set("q", searchQuery);
+          if (isHexAddress(searchQuery)) {
+            params.set("owner", searchQuery.toLowerCase());
+          }
         }
 
         const response = await fetch(`/api/agents?${params.toString()}`, {
@@ -412,7 +421,7 @@ export default function Home() {
     const rankOffset = (currentPage - 1) * PAGE_SIZE;
     return source.map((agent, index) => ({
       ...agent,
-      rank: rankOffset + index + 1,
+      rank: agent.rank ?? rankOffset + index + 1,
     }));
   }, [baseLeads, network, currentPage]);
 
@@ -502,7 +511,7 @@ export default function Home() {
           type="text"
           value={searchInput}
           onChange={(event) => setSearchInput(event.target.value)}
-          placeholder="SEARCH_AGENT_ID_OR_NAME..."
+          placeholder="SEARCH_AGENT_ID_NAME_OR_OWNER..."
           className="w-full md:flex-1 border border-neutral-800 bg-neutral-950 px-4 py-3 text-xs font-bold tracking-widest text-neutral-300 placeholder:text-neutral-700 focus:outline-none focus:border-red-600 transition-all rounded-none uppercase"
         />
       </section>
@@ -642,6 +651,7 @@ export default function Home() {
               const showYieldZeroState = agent.isClaimed && safeYieldEth === 0;
               const showUptimeZeroState = agent.isClaimed && safeUptimePct === 0;
               const showAvatar = Boolean(agent.imageUrl) && !brokenAvatars.has(rowKey);
+              const agentProfileHref = `/agent/${encodeURIComponent(agent.agentId)}`;
               const yieldClassName = !agent.isClaimed
                 ? "text-neutral-600"
                 : showYieldZeroState
@@ -674,7 +684,11 @@ export default function Home() {
                   </div>
                   <div className="col-span-3 py-3 px-6">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded border border-neutral-800 bg-neutral-900 text-xs font-bold text-neutral-400">
+                      <Link
+                        href={agentProfileHref}
+                        className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded border border-neutral-800 bg-neutral-900 text-xs font-bold text-neutral-400 transition hover:border-neutral-600"
+                        aria-label={`Open profile for ${agent.displayName}`}
+                      >
                         {showAvatar ? (
                           <Image
                             src={agent.imageUrl as string}
@@ -690,11 +704,16 @@ export default function Home() {
                         ) : (
                           <Bot className="h-5 w-5 text-neutral-500" aria-hidden="true" />
                         )}
-                      </div>
+                      </Link>
 
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="truncate text-neutral-100 font-bold">{agent.displayName}</span>
+                          <Link
+                            href={agentProfileHref}
+                            className="truncate text-neutral-100 font-bold transition hover:text-neutral-300"
+                          >
+                            {agent.displayName}
+                          </Link>
                         </div>
                         <div className="mt-1 flex items-center gap-2">
                           <span className="inline-flex shrink-0 border border-neutral-800 bg-neutral-900 px-1.5 py-0.5 text-[10px] text-neutral-500 font-bold">
