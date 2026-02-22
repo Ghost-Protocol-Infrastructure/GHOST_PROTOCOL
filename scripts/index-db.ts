@@ -444,12 +444,14 @@ const resolveErc8004Record = async (
       },
     };
   } catch (error) {
-    console.warn(`Skipping ERC-8004 token ${tokenIdText} due to ownerOf failure.`);
+    console.warn(
+      `ownerOf failed for ERC-8004 token ${tokenIdText}. Writing fallback row and continuing index progress.`,
+    );
     console.error(error);
     return {
       serviceIdText: tokenIdText,
       metadataUsedFallback: true,
-      record: null,
+      record: buildErc8004TimeoutFallbackRecord(tokenIdText, creatorHint),
     };
   }
 };
