@@ -29,8 +29,9 @@ const HomePage = () => {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-400 font-mono selection:bg-red-900 selection:text-white overflow-x-hidden">
-      <div className="fixed top-0 left-0 w-full z-50 border-b border-neutral-900 bg-neutral-950/90 backdrop-blur-sm h-12 flex items-center px-4 justify-between text-xs tracking-widest">
-        <div className="flex items-center gap-4">
+      <div className="fixed top-0 left-0 w-full z-50 border-b border-neutral-900 bg-neutral-950/90 backdrop-blur-sm px-4 py-2 text-xs tracking-widest">
+        <div className="flex flex-col gap-2 md:h-12 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-4">
           <span className="text-neutral-100 font-bold flex items-center gap-2">
             <GhostLogo className="h-4 w-4" />
             GHOST_PROTOCOL
@@ -38,17 +39,18 @@ const HomePage = () => {
           <span className="hidden md:inline text-neutral-600">
             {"// INDEXING_V1.0"}
           </span>
-        </div>
-        <div className="flex items-center gap-6">
-          <LatencyIndicator />
-          <div className="flex items-center gap-2">
-            <span className="text-neutral-600">STATUS:</span>
-            <span className="text-neutral-100">OPERATIONAL</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <LatencyIndicator />
+            <div className="flex items-center gap-2">
+              <span className="text-neutral-600">STATUS:</span>
+              <span className="text-neutral-100">OPERATIONAL</span>
+            </div>
           </div>
         </div>
       </div>
 
-      <main className="pt-32 pb-20 px-6 max-w-7xl mx-auto relative border-l border-r border-neutral-900 min-h-screen flex flex-col justify-center">
+      <main className="pt-36 md:pt-32 pb-20 px-6 max-w-7xl mx-auto relative border-l border-r border-neutral-900 min-h-screen flex flex-col justify-center">
         <div className="absolute top-20 right-0 w-1/2 h-full opacity-10 pointer-events-none overflow-hidden">
           <div className="w-full h-full bg-gradient-to-b from-neutral-800 to-transparent transform -skew-x-12 translate-x-20" />
         </div>

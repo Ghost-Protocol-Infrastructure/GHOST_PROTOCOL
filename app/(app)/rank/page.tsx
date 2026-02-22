@@ -6,7 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useAccount } from "wagmi";
 import { Bot, Copy, Crown } from "lucide-react";
-import Navbar from "@/components/Navbar";
+import TerminalHeader from "@/components/TerminalHeader";
 import { isClaimedAgent } from "@/lib/agent-claim";
 
 type Network = "MEGAETH" | "BASE";
@@ -486,11 +486,12 @@ export default function Home() {
 
   return (
     <>
-      <main className="min-h-screen p-8 pb-20 space-y-12 relative z-[50] font-mono text-neutral-400 bg-neutral-950 [background-image:none]">
-        <Navbar />
+      <main className="min-h-screen relative z-[50] font-mono text-neutral-400 bg-neutral-950 [background-image:none]">
+        <div className="w-full px-4 py-8 md:px-8 space-y-12">
+          <TerminalHeader title="ghost_rank // REPUTATION LEADERBOARD" />
 
-        <section className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-neutral-800 pb-8">
-          <div className="relative w-full max-w-xs group">
+          <section className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-neutral-800 pb-8">
+          <div className="relative w-full group md:max-w-xs">
             <select
               value={networkSelectValue}
               onChange={(event) => setNetwork(event.target.value === "base" ? "BASE" : "MEGAETH")}
@@ -517,13 +518,13 @@ export default function Home() {
         </section>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-0 border border-neutral-800 bg-neutral-950 text-neutral-400">
-          <div className="p-6 border-r border-neutral-800 group hover:bg-neutral-900/30 transition-colors">
+          <div className="p-6 border-b border-neutral-800 md:border-b-0 md:border-r group hover:bg-neutral-900/30 transition-colors">
             <div className="mb-4 text-xs tracking-widest uppercase text-neutral-600 font-bold">Total Agents</div>
             <div className="text-3xl text-neutral-100 font-bold">
               {network === "BASE" ? (isLoadingLeads ? "--" : totalAgentsCount.toLocaleString()) : 0}
             </div>
           </div>
-          <div className="p-6 border-r border-neutral-800 group hover:bg-neutral-900/30 transition-colors">
+          <div className="p-6 border-b border-neutral-800 md:border-b-0 md:border-r group hover:bg-neutral-900/30 transition-colors">
             <div className="mb-4 text-xs tracking-widest uppercase text-neutral-600 font-bold">Network Status</div>
             <div className="text-sm font-bold flex flex-col items-start gap-1">
               <div className="flex items-center gap-2">
@@ -544,7 +545,7 @@ export default function Home() {
               </p>
             </div>
           </div>
-          <div className="p-6 border-r border-neutral-800 group hover:bg-neutral-900/30 transition-colors">
+          <div className="p-6 border-b border-neutral-800 md:border-b-0 md:border-r group hover:bg-neutral-900/30 transition-colors">
             <div className="mb-4 text-xs tracking-widest uppercase text-neutral-600 font-bold">Sync Height</div>
             <div className="text-3xl text-neutral-100 font-bold">
               {network === "BASE" ? (isLoadingLeads ? "--" : formatBlockHeight(lastSyncedBlock)) : "--"}
@@ -559,12 +560,12 @@ export default function Home() {
         </div>
 
         <section className="relative border border-neutral-800 bg-neutral-950">
-          <div className="flex items-center justify-between border-b border-neutral-800 px-6 py-3 text-xs uppercase tracking-widest">
+          <div className="flex flex-col gap-3 border-b border-neutral-800 px-4 py-3 text-[10px] uppercase tracking-widest sm:text-xs md:flex-row md:items-center md:justify-between md:px-6">
             <div className="text-neutral-600">
               Showing {visibleStart.toLocaleString()}-{visibleEnd.toLocaleString()} of {filteredAgentsCount.toLocaleString()}
               {searchQuery ? " (filtered)" : ""}
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2 md:justify-end md:gap-3">
               <span className="text-neutral-500">
                 Page {currentPage} / {totalPages}
               </span>
@@ -618,7 +619,180 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="max-h-[1000px] overflow-y-auto">
+          <div className="md:hidden">
+            {network !== "BASE" ? (
+              <div className="py-16 px-4 text-center text-xs uppercase tracking-[0.2em] text-neutral-600">
+                MegaETH telemetry is not verified yet. Switch to BASE (LIVE).
+              </div>
+            ) : isLoadingLeads ? (
+              <div className="py-16 px-4 text-center text-xs uppercase tracking-[0.2em] text-neutral-600 animate-pulse">
+                Loading live agents...
+              </div>
+            ) : loadError ? (
+              <div className="py-16 px-4 text-center text-xs uppercase tracking-[0.2em] text-red-500">
+                Live data fetch failed: {loadError}
+              </div>
+            ) : (
+              <div className="divide-y divide-neutral-800">
+                {rankedAgents.map((agent) => {
+                  const rowKey = `${agent.agentId}-${agent.owner}`;
+                  const isOwner = userAddress?.toLowerCase() === agent.owner.toLowerCase();
+                  const safeYieldEth = agent.isClaimed ? Math.max(0, agent.yieldEth ?? 0) : 0;
+                  const safeUptimePct = agent.isClaimed ? clamp(agent.uptimePct ?? 0, 0, 100) : 0;
+                  const showYieldZeroState = agent.isClaimed && safeYieldEth === 0;
+                  const showUptimeZeroState = agent.isClaimed && safeUptimePct === 0;
+                  const showAvatar = Boolean(agent.imageUrl) && !brokenAvatars.has(rowKey);
+                  const agentProfileHref = `/agent/${encodeURIComponent(agent.agentId)}`;
+                  const yieldClassName = !agent.isClaimed
+                    ? "text-neutral-600"
+                    : showYieldZeroState
+                      ? "text-neutral-500"
+                      : "text-neutral-300";
+                  const uptimeClassName = !agent.isClaimed
+                    ? "text-neutral-600"
+                    : showUptimeZeroState
+                      ? "text-neutral-500"
+                      : "text-neutral-300";
+                  const hasTopRankBadge = agent.rank <= 3;
+                  const rankBadgeClassName =
+                    agent.rank === 1
+                      ? "border border-red-500/70 bg-red-600 text-neutral-100"
+                      : agent.rank === 2
+                        ? "border border-neutral-300 bg-neutral-100 text-neutral-900"
+                        : agent.rank === 3
+                          ? "border border-neutral-500 bg-neutral-500 text-neutral-100"
+                          : "";
+
+                  return (
+                    <article key={rowKey} className="space-y-3 px-4 py-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="inline-flex items-center gap-2 text-sm font-bold text-neutral-400">
+                          <span
+                            className={
+                              hasTopRankBadge
+                                ? `inline-flex min-w-[2.5ch] items-center justify-center px-1.5 py-0.5 ${rankBadgeClassName}`
+                                : ""
+                            }
+                          >
+                            {String(agent.rank).padStart(2, "0")}
+                          </span>
+                          {agent.rank === 1 ? <Crown className="h-5 w-5 text-red-600" /> : null}
+                        </div>
+                        {!userAddress ? (
+                          <span className="text-[10px] uppercase tracking-widest text-neutral-600 font-bold">
+                            CONNECT_WALLET
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenDashboard(isOwner ? "merchant" : "consumer", agent.agentId, agent.owner)}
+                            className={`inline-flex items-center justify-center px-3 py-2 text-[10px] uppercase tracking-widest font-bold border transition-colors duration-200 hover:bg-red-600 hover:text-neutral-100 hover:border-red-600 ${isOwner
+                              ? "bg-neutral-100 text-neutral-950 border-neutral-100"
+                              : "text-neutral-400 border-neutral-800"
+                              }`}
+                          >
+                            {isOwner ? "MANAGE_AGENT" : "ACCESS_TERMINAL"}
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex items-start gap-3">
+                        <Link
+                          href={agentProfileHref}
+                          className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded border border-neutral-800 bg-neutral-900 text-xs font-bold text-neutral-400 transition hover:border-neutral-600"
+                          aria-label={`Open profile for ${agent.displayName}`}
+                        >
+                          {showAvatar ? (
+                            <Image
+                              src={agent.imageUrl as string}
+                              alt={`${agent.displayName} avatar`}
+                              width={44}
+                              height={44}
+                              className="h-full w-full object-cover"
+                              unoptimized
+                              loading="lazy"
+                              referrerPolicy="no-referrer"
+                              onError={() => markAvatarBroken(rowKey)}
+                            />
+                          ) : (
+                            <Bot className="h-5 w-5 text-neutral-500" aria-hidden="true" />
+                          )}
+                        </Link>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <Link
+                              href={agentProfileHref}
+                              className="truncate text-neutral-100 font-bold transition hover:text-neutral-300"
+                            >
+                              {agent.displayName}
+                            </Link>
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <span className="text-[10px] text-neutral-500 font-bold">
+                              #{agent.agentId}
+                            </span>
+                            <span className={`inline-flex border px-2 py-0.5 text-[10px] tracking-widest uppercase font-bold ${tierClassName[agent.tier]}`}>
+                              {agent.tier}
+                            </span>
+                            {agent.isClaimed && (
+                              <span className="inline-flex shrink-0 items-center border border-red-900/30 bg-red-950/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-red-600 whitespace-nowrap">
+                                RESERVED
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-1 flex items-center gap-2 text-[10px] text-neutral-600 font-mono">
+                            <span title={agent.owner}>{truncateAddress(agent.owner)}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyOwner(agent.owner)}
+                              className="inline-flex items-center justify-center border border-neutral-800 px-1 py-0.5 text-neutral-500 transition hover:border-neutral-600 hover:text-neutral-300"
+                              aria-label={`Copy ${agent.owner}`}
+                              title={copiedOwner === agent.owner ? "Copied" : "Copy full address"}
+                            >
+                              <Copy className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-[10px] uppercase tracking-[0.14em]">
+                        <div className="border border-neutral-800 bg-neutral-950 p-2">
+                          <p className="mb-1 text-neutral-600 font-bold">TXS</p>
+                          <p className="text-right text-neutral-400 font-mono">{agent.txCount.toLocaleString()}</p>
+                        </div>
+                        <div className="border border-neutral-800 bg-neutral-950 p-2">
+                          <p className="mb-1 text-neutral-600 font-bold">REPUTATION</p>
+                          <p className={`text-right font-mono ${reputationColor(agent.reputationScore)}`}>
+                            {formatReputation(agent.reputationScore)}
+                          </p>
+                        </div>
+                        <div className="border border-neutral-800 bg-neutral-950 p-2">
+                          <p className="mb-1 text-neutral-600 font-bold">YIELD</p>
+                          <p className={`text-right font-mono ${yieldClassName}`}>
+                            {agent.isClaimed ? formatYield(safeYieldEth) : "---"}
+                          </p>
+                        </div>
+                        <div className="border border-neutral-800 bg-neutral-950 p-2">
+                          <p className="mb-1 text-neutral-600 font-bold">UPTIME</p>
+                          <p className={`text-right font-mono ${uptimeClassName}`}>
+                            {agent.isClaimed ? formatUptime(safeUptimePct) : "---"}
+                          </p>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+
+                {rankedAgents.length === 0 && (
+                  <div className="py-16 px-4 text-center text-xs uppercase tracking-[0.2em] text-neutral-600">No agents match your filter.</div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="hidden md:block">
+            <div className="max-h-[1000px] overflow-y-auto">
             <div className="sticky top-0 z-10 grid grid-cols-12 gap-0 border-b border-neutral-800 bg-neutral-950 text-xs uppercase tracking-widest text-neutral-600 font-bold">
               <div className="col-span-1 py-4 px-6 border-r border-neutral-800">RANK</div>
               <div className="col-span-3 py-4 px-6">AGENT</div>
@@ -789,8 +963,10 @@ export default function Home() {
                 )}
               </div>
             )}
+            </div>
           </div>
-        </section>
+          </section>
+        </div>
       </main>
 
       <footer className="border-t border-neutral-900 bg-neutral-950 py-12 px-6">

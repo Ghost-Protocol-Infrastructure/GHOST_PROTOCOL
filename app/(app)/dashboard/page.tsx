@@ -2,7 +2,6 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { AlertTriangle, Code, Copy, Info, Wallet } from "lucide-react";
 import {
   useAccount,
@@ -19,8 +18,7 @@ import {
   PROTOCOL_TREASURY_FALLBACK_ADDRESS,
 } from "@/lib/constants";
 import { isClaimedAgent } from "@/lib/agent-claim";
-import GhostLogo from "@/components/GhostLogo";
-import LatencyIndicator from "@/components/LatencyIndicator";
+import TerminalHeader from "@/components/TerminalHeader";
 
 const CREDIT_PRICE_WEI = parseEther("0.00001");
 const SUPPORTED_CHAIN_IDS = new Set<number>([base.id]);
@@ -516,22 +514,7 @@ def my_agent():
   return (
     <main className="min-h-screen font-mono text-neutral-400 bg-neutral-950 [background-image:none]">
       <div className="w-full px-4 py-8 md:px-8">
-        <header className="mb-12 flex flex-col gap-4 border-b border-neutral-900 pb-6 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
-            <GhostLogo className="h-5 w-5" />
-            <h1 className="text-sm tracking-[0.2em] text-neutral-100 md:text-base font-bold">
-              ghost_gate // SETTLEMENT TERMINAL
-            </h1>
-          </div>
-          <div className="flex items-center gap-4">
-            <LatencyIndicator
-              labelClassName="text-neutral-600 text-[10px] tracking-[0.16em]"
-              valueClassName="text-red-500 font-bold text-[10px] tracking-[0.16em]"
-              offlineValueClassName="text-neutral-500 font-bold text-[10px] tracking-[0.16em]"
-            />
-            <ConnectButton showBalance={false} chainStatus="icon" accountStatus="full" />
-          </div>
-        </header>
+        <TerminalHeader title="ghost_gate // SETTLEMENT TERMINAL" />
 
         {!isConnected && (
           <section className="mb-12 border border-neutral-800 bg-neutral-900/50 p-8 text-center">
@@ -852,8 +835,12 @@ def my_agent():
                 <p className="text-sm text-neutral-500">
                   {consumerSdk === "node"
                     ? "The Node SDK signs and routes verification requests to"
-                    : "The Python SDK automatically routes verification requests to"}{" "}
-                  <span className="text-neutral-300 font-mono">{APP_BASE_URL}/api/gate/{consumerServiceSlug}.</span>{" "}
+                    : "The Python SDK automatically routes verification requests to"}
+                </p>
+                <p className="mt-1">
+                  <span className="block break-all text-neutral-300 font-mono">
+                    {APP_BASE_URL}/api/gate/{consumerServiceSlug}
+                  </span>
                   <span className="text-neutral-300 font-mono">1 Request = 1 Credit.</span>
                 </p>
               </div>
