@@ -22,8 +22,6 @@ type AgentSummary = {
   txCount: number;
   reputation: number;
   rankScore: number;
-  yield: number;
-  uptime: number;
   description: string | null;
 };
 
@@ -105,8 +103,6 @@ export default async function AgentProfilePage({ params, searchParams }: AgentPa
       txCount: true,
       reputation: true,
       rankScore: true,
-      yield: true,
-      uptime: true,
       description: true,
     },
   });

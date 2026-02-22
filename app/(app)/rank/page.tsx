@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -980,7 +980,7 @@ export default function Home() {
               <br />
               All systems nominal. No warranties implied.
               <br />
-              © 2026 Ghost Protocol.
+              &copy; 2026 Ghost Protocol.
             </div>
           </div>
 
@@ -1001,3 +1001,4 @@ export default function Home() {
     </>
   );
 }
+

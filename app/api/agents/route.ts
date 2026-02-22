@@ -13,6 +13,14 @@ const MAX_QUERY_LENGTH = 120;
 const ONE_HOUR_SECONDS = 60 * 60;
 const ONE_DAY_SECONDS = 24 * ONE_HOUR_SECONDS;
 const STALE_SYNC_THRESHOLD_SECONDS = 3 * ONE_HOUR_SECONDS;
+const DEFAULT_ACTIVATED_AGENTS_CACHE_TTL_MS = 30_000;
+const ACTIVATED_AGENTS_CACHE_TTL_MS = (() => {
+  const raw = process.env.GHOST_ACTIVATED_AGENTS_CACHE_TTL_MS?.trim();
+  if (!raw) return DEFAULT_ACTIVATED_AGENTS_CACHE_TTL_MS;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_ACTIVATED_AGENTS_CACHE_TTL_MS;
+  return parsed;
+})();
 const AGENT_INDEX_MODE = process.env.AGENT_INDEX_MODE?.trim().toLowerCase() === "olas" ? "olas" : "erc8004";
 const ACTIVE_CURSOR_KEY = AGENT_INDEX_MODE === "olas" ? "agent_indexer_olas" : "agent_indexer_erc8004";
 const LEGACY_CURSOR_KEY = "agent_indexer";
@@ -30,6 +38,14 @@ type RankedAddressRow = {
   address: string;
   rank: bigint | number;
 };
+
+type ActivatedAgentsCache = {
+  value: number;
+  expiresAtMs: number;
+};
+
+let activatedAgentsCache: ActivatedAgentsCache | null = null;
+let activatedAgentsInFlight: Promise<number> | null = null;
 
 const basePublicClient = createPublicClient({
   chain: base,
@@ -92,7 +108,7 @@ const normalizeActivatedAgentIdFromService = (service: string): string | null =>
   return null;
 };
 
-const resolveActivatedAgentsCount = async (): Promise<number> => {
+const resolveActivatedAgentsCountUncached = async (): Promise<number> => {
   try {
     const authorizedServices = await prisma.gateAccessEvent.findMany({
       where: { outcome: "AUTHORIZED" },
@@ -134,6 +150,31 @@ const resolveActivatedAgentsCount = async (): Promise<number> => {
     console.error("Failed to resolve activated agent count from gate events.", error);
     return 0;
   }
+};
+
+const resolveActivatedAgentsCount = async (): Promise<number> => {
+  const now = Date.now();
+  if (activatedAgentsCache && activatedAgentsCache.expiresAtMs > now) {
+    return activatedAgentsCache.value;
+  }
+
+  if (activatedAgentsInFlight) {
+    return activatedAgentsInFlight;
+  }
+
+  activatedAgentsInFlight = resolveActivatedAgentsCountUncached()
+    .then((value) => {
+      activatedAgentsCache = {
+        value,
+        expiresAtMs: Date.now() + ACTIVATED_AGENTS_CACHE_TTL_MS,
+      };
+      return value;
+    })
+    .finally(() => {
+      activatedAgentsInFlight = null;
+    });
+
+  return activatedAgentsInFlight;
 };
 
 const resolveSyncMetadata = async (lastSyncedBlock: bigint | null | undefined): Promise<SyncMetadata> => {
