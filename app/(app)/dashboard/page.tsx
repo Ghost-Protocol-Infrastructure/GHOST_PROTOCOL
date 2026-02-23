@@ -57,6 +57,51 @@ type OwnedAgent = {
 const isHexAddress = (value: string): boolean => /^0x[a-fA-F0-9]{40}$/.test(value);
 const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/, "");
 const APP_BASE_URL = normalizeBaseUrl(process.env.NEXT_PUBLIC_BASE_URL?.trim() || "https://ghostprotocol.cc");
+const GITHUB_DOCS_BASE_URL = "https://github.com/Ghost-Protocol-Infrastructure/ghost_rank/blob/main/docs/developer-portal";
+const NODE_QUICKSTART_DOC_URL = `${GITHUB_DOCS_BASE_URL}/quickstart-node.md`;
+const SDK_REFERENCE_DOC_URL = `${GITHUB_DOCS_BASE_URL}/sdk-reference.md`;
+const SDK_CONTEXT_KEY_PREVIEW_PLACEHOLDER = "sk_live_your_sdk_context_key";
+const SDK_SECURITY_NOTICE =
+  "Security Notice: Ghost Protocol gate access is authenticated with Web3 wallet signatures (EIP-712). Configure SDKs with a signer private key in a trusted backend/server/CLI environment only. Never expose private keys in frontend code or commit them to version control.";
+
+function SdkSecurityNoticeBanner() {
+  return (
+    <div className="border border-red-900/40 bg-red-950/10 p-4">
+      <p className="flex items-start gap-2 text-xs uppercase tracking-[0.14em] text-red-300 font-bold">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>{SDK_SECURITY_NOTICE}</span>
+      </p>
+    </div>
+  );
+}
+
+function SdkDocsLinks() {
+  return (
+    <div className="mt-5 space-y-3">
+      <p className="text-sm text-neutral-500">
+        Use the docs for installation steps and required environment variables (including signer key setup).
+      </p>
+      <div className="flex flex-wrap gap-3">
+        <a
+          href={NODE_QUICKSTART_DOC_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
+        >
+          OPEN NODE QUICKSTART
+        </a>
+        <a
+          href={SDK_REFERENCE_DOC_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
+        >
+          OPEN SDK REFERENCE
+        </a>
+      </div>
+    </div>
+  );
+}
 
 const deriveAgentId = (agent: Pick<AgentApiRow, "address" | "name">): string => {
   const fromAddress = agent.address.match(/(?:service|agent)[:_-](\d+)/i)?.[1];
@@ -299,17 +344,65 @@ console.log(result);`,
 
   const pythonConsumerUsageExample = useMemo(
     () =>
-      `from ghostgate import GhostGate
+      `import json
+import os
+import time
+import uuid
 
-gate = GhostGate(
-    api_key="sk_live_your_api_key",
-    private_key="0xyour_private_key",
-    base_url="${APP_BASE_URL}",
-)
+import requests
+from eth_account import Account
+from eth_account.messages import encode_typed_data
 
-@gate.guard(cost=1, service="${consumerServiceSlug}", method="POST")
-def run_agent():
-    return {"ok": True}`,
+# Trusted CLI/server environment only.
+# Never expose this private key in frontend code.
+private_key = os.environ["GHOST_SIGNER_PRIVATE_KEY"]
+base_url = os.getenv("GHOST_GATE_BASE_URL", "${APP_BASE_URL}").rstrip("/")
+service = "${consumerServiceSlug}"  # replace dynamically
+credit_cost = 1
+chain_id = 8453  # Base
+
+payload = {
+    "service": service,
+    "timestamp": int(time.time()),
+    "nonce": uuid.uuid4().hex,
+}
+
+typed_data = {
+    "types": {
+        "EIP712Domain": [
+            {"name": "name", "type": "string"},
+            {"name": "version", "type": "string"},
+            {"name": "chainId", "type": "uint256"},
+        ],
+        "Access": [
+            {"name": "service", "type": "string"},
+            {"name": "timestamp", "type": "uint256"},
+            {"name": "nonce", "type": "string"},
+        ],
+    },
+    "domain": {
+        "name": "GhostGate",
+        "version": "1",
+        "chainId": chain_id,
+    },
+    "primaryType": "Access",
+    "message": payload,
+}
+
+signable = encode_typed_data(full_message=typed_data)
+signed = Account.sign_message(signable, private_key=private_key)
+
+url = f"{base_url}/api/gate/{service}"
+headers = {
+    "x-ghost-sig": signed.signature.hex(),
+    "x-ghost-payload": json.dumps(payload),
+    "x-ghost-credit-cost": str(credit_cost),
+    "accept": "application/json, text/plain;q=0.9, */*;q=0.8",
+}
+
+response = requests.post(url, headers=headers, timeout=10)
+print("status:", response.status_code)
+print("body:", response.text)`,
     [consumerServiceSlug],
   );
 
@@ -455,10 +548,7 @@ def run_agent():
     },
   });
 
-  const merchantApiKey = useMemo(() => {
-    if (!address || !selectedOwnedAgent) return "sk_live_[WALLET]...";
-    return `sk_live_${selectedOwnedAgent.agentId}_${address.slice(2, 10)}...`;
-  }, [address, selectedOwnedAgent]);
+  const merchantApiKey = SDK_CONTEXT_KEY_PREVIEW_PLACEHOLDER;
 
   const selectedAgentProfileHref = selectedOwnedAgent
     ? `/agent/${encodeURIComponent(selectedOwnedAgent.agentId)}`
@@ -470,13 +560,21 @@ def run_agent():
 
   const merchantSdkExample = useMemo(
     () =>
-      `from ghostgate import GhostGate
-gate = GhostGate(api_key="${merchantApiKey}")
+      `import os
+from ghostgate import GhostGate
+
+gate = GhostGate(
+    # SDK context/telemetry key placeholder (not the EIP-712 signer secret)
+    api_key="${merchantApiKey}",
+    # Gate authorization is signature-based and requires a signer private key
+    private_key=os.environ.get("GHOST_SIGNER_PRIVATE_KEY"),
+    base_url="https://ghostprotocol.cc",  # For local testing: http://localhost:3000
+)
 
 # Agent ID: ${selectedOwnedAgent?.agentId ?? "YOUR_AGENT_ID"}
 
 @app.route('/ask', methods=['POST'])
-@gate.guard(cost=1, service="${merchantServiceSlug}")
+@gate.guard(cost=1, service="${merchantServiceSlug}", method="POST")
 def my_agent():
     return "AI Response"`,
     [merchantApiKey, selectedOwnedAgent, merchantServiceSlug],
@@ -641,6 +739,8 @@ def my_agent():
               </div>
             </div>
 
+            <SdkSecurityNoticeBanner />
+
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
               <article className="bg-neutral-950 border border-neutral-900 rounded-none p-5">
                 <div className="mb-5 flex items-center gap-3">
@@ -649,8 +749,13 @@ def my_agent():
                 </div>
 
                 <div className="border border-neutral-900 bg-neutral-900 p-4">
-                  <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">API Key</p>
+                  <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
+                    SDK CONTEXT KEY (PREVIEW PLACEHOLDER)
+                  </p>
                   <code className="block break-all text-sm text-neutral-300 font-mono">{merchantApiKey}</code>
+                  <p className="mt-2 text-xs text-neutral-600">
+                    Preview only. Ghost Protocol dashboard does not issue SDK keys yet. See SDK docs for setup.
+                  </p>
                 </div>
 
                 <button
@@ -659,7 +764,7 @@ def my_agent():
                   className="mt-4 inline-flex items-center gap-2 border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-wider text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
                 >
                   <Copy className="h-4 w-4" />
-                  {apiKeyCopyState === "copied" ? "Copied" : "Copy"}
+                  {apiKeyCopyState === "copied" ? "Preview Copied" : "COPY PREVIEW"}
                 </button>
 
                 {apiKeyCopyState === "error" && (
@@ -673,9 +778,7 @@ def my_agent():
                   </pre>
                 </div>
 
-                <p className="mt-5 text-sm text-neutral-500">
-                  Install the GhostGate SDK to monetize your agent.
-                </p>
+                <SdkDocsLinks />
               </article>
 
               <article className="bg-neutral-950 border border-neutral-900 rounded-none p-5">
@@ -798,8 +901,10 @@ def my_agent():
             </p>
           </section>
         ) : (
-          <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <article className="bg-neutral-950 border border-neutral-900 rounded-none p-5">
+          <section className="space-y-6">
+            <SdkSecurityNoticeBanner />
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <article className="bg-neutral-950 border border-neutral-900 rounded-none p-5">
               <div className="mb-5 flex items-center gap-3">
                 <Wallet className="h-5 w-5 text-neutral-500" />
                 <h2 className="text-sm uppercase tracking-[0.18em] text-neutral-300 font-bold">Agent Vault</h2>
@@ -932,9 +1037,9 @@ def my_agent():
                 )}
                 {switchError && <p className="text-xs text-red-500">{switchError}</p>}
               </div>
-            </article>
+              </article>
 
-            <article className="bg-neutral-950 border border-neutral-900 rounded-none p-5">
+              <article className="bg-neutral-950 border border-neutral-900 rounded-none p-5">
               <div className="mb-5 flex items-center gap-3">
                 <Code className="h-5 w-5 text-neutral-500" />
                 <h2 className="text-sm uppercase tracking-[0.18em] text-neutral-300 font-bold">API ACCESS // CONSUMER CONSOLE</h2>
@@ -959,16 +1064,27 @@ def my_agent():
                     : "border-neutral-800 bg-neutral-950 text-neutral-500 hover:border-neutral-600 hover:text-neutral-300"
                     }`}
                 >
-                  Python SDK
+                  Python CLI
                 </button>
               </div>
 
               <div className="border border-neutral-900 bg-neutral-900 p-4">
-                <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Usage Example</p>
+                <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
+                  {consumerSdk === "python"
+                    ? "Trusted CLI Usage Example (Raw EIP-712 Request)"
+                    : "Usage Example"}
+                </p>
                 <pre className="overflow-x-auto whitespace-pre-wrap text-sm text-neutral-300 font-mono">
                   <code>{consumerUsageExample}</code>
                 </pre>
               </div>
+
+              {consumerSdk === "python" && (
+                <p className="mt-3 text-xs text-neutral-600">
+                  This example runs in a trusted CLI/server environment and signs the gate request directly. Do
+                  not run this with a raw private key in frontend code.
+                </p>
+              )}
 
               <button
                 type="button"
@@ -989,7 +1105,7 @@ def my_agent():
                 <p className="text-sm text-neutral-500">
                   {consumerSdk === "node"
                     ? "The Node SDK signs and routes verification requests to"
-                    : "The Python SDK automatically routes verification requests to"}
+                    : "This Python CLI example signs and sends a raw EIP-712 verification request to"}
                 </p>
                 <p className="mt-1">
                   <span className="block break-all text-neutral-300 font-mono">
@@ -998,7 +1114,10 @@ def my_agent():
                   <span className="text-neutral-300 font-mono">1 Request = 1 Credit.</span>
                 </p>
               </div>
-            </article>
+
+              <SdkDocsLinks />
+              </article>
+            </div>
           </section>
         )}
       </div>
