@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, Code, Copy, Info, Wallet } from "lucide-react";
+import { AlertTriangle, Code, Copy, Wallet } from "lucide-react";
 import {
   useAccount,
   useReadContract,
@@ -112,9 +112,23 @@ function DashboardPageContent() {
   const searchParams = useSearchParams();
   const { address, chainId, isConnected } = useAccount();
   const { switchChainAsync, isPending: isSwitchingChain } = useSwitchChain();
-  const { data: txHash, error: writeError, isPending: isWriting, writeContract } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
-    hash: txHash,
+  const {
+    data: depositTxHash,
+    error: depositWriteError,
+    isPending: isDepositWriting,
+    writeContract: writeDepositContract,
+  } = useWriteContract();
+  const { isLoading: isDepositConfirming, isSuccess: isDepositConfirmed } = useWaitForTransactionReceipt({
+    hash: depositTxHash,
+  });
+  const {
+    data: withdrawTxHash,
+    error: withdrawWriteError,
+    isPending: isWithdrawWriting,
+    writeContract: writeWithdrawContract,
+  } = useWriteContract();
+  const { isLoading: isWithdrawConfirming, isSuccess: isWithdrawConfirmed } = useWaitForTransactionReceipt({
+    hash: withdrawTxHash,
   });
 
   const [ethAmount, setEthAmount] = useState("0.0001");
@@ -129,6 +143,7 @@ function DashboardPageContent() {
   const [ownedAgents, setOwnedAgents] = useState<OwnedAgent[]>([]);
   const [isLoadingOwnedAgents, setIsLoadingOwnedAgents] = useState(false);
   const [ownedAgentsError, setOwnedAgentsError] = useState<string | null>(null);
+  const [lastWithdrawAgentId, setLastWithdrawAgentId] = useState<string | null>(null);
   const syncedHashesRef = useRef<Set<string>>(new Set());
 
   const amountWei = useMemo(() => parseInputWei(ethAmount), [ethAmount]);
@@ -211,12 +226,12 @@ function DashboardPageContent() {
   }, [readCreditsFromLedger]);
 
   const handleRetryCreditSync = async () => {
-    if (!address || !txHash || !isConfirmed) return;
-    await syncCreditsFromChain(address, txHash);
+    if (!address || !depositTxHash || !isDepositConfirmed) return;
+    await syncCreditsFromChain(address, depositTxHash);
   };
 
   useEffect(() => {
-    if (!txHash) {
+    if (!depositTxHash) {
       setCreditSyncState("idle");
       setCreditSyncError(null);
       setSyncedCredits(null);
@@ -225,7 +240,7 @@ function DashboardPageContent() {
 
     setCreditSyncState("idle");
     setCreditSyncError(null);
-  }, [txHash]);
+  }, [depositTxHash]);
 
   useEffect(() => {
     if (!address) {
@@ -246,13 +261,13 @@ function DashboardPageContent() {
   }, [address, readCreditsFromLedger]);
 
   useEffect(() => {
-    if (!isConfirmed || !address || !txHash) return;
-    if (syncedHashesRef.current.has(txHash)) return;
-    syncedHashesRef.current.add(txHash);
+    if (!isDepositConfirmed || !address || !depositTxHash) return;
+    if (syncedHashesRef.current.has(depositTxHash)) return;
+    syncedHashesRef.current.add(depositTxHash);
 
     void refetchBalance();
-    void syncCreditsFromChain(address, txHash);
-  }, [address, isConfirmed, refetchBalance, syncCreditsFromChain, txHash]);
+    void syncCreditsFromChain(address, depositTxHash);
+  }, [address, isDepositConfirmed, refetchBalance, syncCreditsFromChain, depositTxHash]);
 
   useEffect(() => {
     if (copyState !== "copied") return;
@@ -419,6 +434,27 @@ def run_agent():
     }
   }, [ownedAgents, normalizedRequestedAgentId, requestedAgentIsOwned, selectedAgentId]);
 
+  const selectedOwnedAgentAddress = useMemo(
+    () => normalizeAddress(selectedOwnedAgent?.owner ?? null),
+    [selectedOwnedAgent],
+  );
+
+  const {
+    data: merchantVaultBalance,
+    error: merchantReadError,
+    isPending: isMerchantBalancePending,
+    refetch: refetchMerchantVaultBalance,
+  } = useReadContract({
+    address: GHOST_VAULT_ADDRESS,
+    chainId: readChainId,
+    abi: GHOST_VAULT_ABI,
+    functionName: "balances",
+    args: [selectedOwnedAgentAddress ?? PROTOCOL_TREASURY_FALLBACK_ADDRESS],
+    query: {
+      enabled: isOnSupportedChain && Boolean(selectedOwnedAgentAddress),
+    },
+  });
+
   const merchantApiKey = useMemo(() => {
     if (!address || !selectedOwnedAgent) return "sk_live_[WALLET]...";
     return `sk_live_${selectedOwnedAgent.agentId}_${address.slice(2, 10)}...`;
@@ -453,14 +489,44 @@ def my_agent():
     amountWei > 0n &&
     estimatedCredits != null &&
     estimatedCredits > 0n &&
-    !isWriting &&
-    !isConfirming &&
+    !isDepositWriting &&
+    !isDepositConfirming &&
     !isSwitchingChain;
 
   const vaultBalanceWei = typeof agentVaultBalance === "bigint" ? agentVaultBalance : 0n;
   const formattedVaultBalance = useMemo(() => {
     return `${Number.parseFloat(formatEther(vaultBalanceWei)).toFixed(4)} ETH`;
   }, [vaultBalanceWei]);
+
+  const merchantVaultBalanceWei = typeof merchantVaultBalance === "bigint" ? merchantVaultBalance : 0n;
+  const formattedMerchantVaultBalance = useMemo(() => {
+    return `${Number.parseFloat(formatEther(merchantVaultBalanceWei)).toFixed(4)} ETH`;
+  }, [merchantVaultBalanceWei]);
+
+  const merchantOwnsSelectedAgent = Boolean(
+    address &&
+    selectedOwnedAgentAddress &&
+    address.toLowerCase() === selectedOwnedAgentAddress.toLowerCase(),
+  );
+
+  const canWithdrawMerchantFunds =
+    Boolean(isConnected) &&
+    Boolean(selectedOwnedAgent) &&
+    Boolean(selectedOwnedAgentAddress) &&
+    merchantOwnsSelectedAgent &&
+    isOnSupportedChain &&
+    merchantVaultBalanceWei > 0n &&
+    !isWithdrawWriting &&
+    !isWithdrawConfirming &&
+    !isSwitchingChain;
+
+  const isWithdrawConfirmedForSelectedAgent =
+    isWithdrawConfirmed && selectedOwnedAgent?.agentId === lastWithdrawAgentId;
+
+  useEffect(() => {
+    if (!isWithdrawConfirmed) return;
+    void refetchMerchantVaultBalance();
+  }, [isWithdrawConfirmed, refetchMerchantVaultBalance]);
 
   const handleSwitchToPreferredChain = async () => {
     setSwitchError(null);
@@ -484,12 +550,33 @@ def my_agent():
       }
     }
 
-    writeContract({
+    writeDepositContract({
       address: GHOST_VAULT_ADDRESS,
       abi: GHOST_VAULT_ABI,
       functionName: "depositCredit",
       args: [targetAgentAddress],
       value: amountWei,
+    });
+  };
+
+  const handleWithdrawMerchantFunds = async () => {
+    if (!selectedOwnedAgent || !selectedOwnedAgentAddress || !merchantOwnsSelectedAgent) return;
+    setSwitchError(null);
+
+    if (!isOnSupportedChain) {
+      try {
+        await switchChainAsync({ chainId: PREFERRED_CHAIN_ID });
+      } catch (error) {
+        setSwitchError(getErrorMessage(error, "Network switch was rejected."));
+        return;
+      }
+    }
+
+    setLastWithdrawAgentId(selectedOwnedAgent.agentId);
+    writeWithdrawContract({
+      address: GHOST_VAULT_ADDRESS,
+      abi: GHOST_VAULT_ABI,
+      functionName: "withdraw",
     });
   };
 
@@ -594,18 +681,63 @@ def my_agent():
               <article className="bg-neutral-950 border border-neutral-900 rounded-none p-5">
                 <div className="mb-5 flex items-center gap-3">
                   <Wallet className="h-5 w-5 text-neutral-500" />
-                  <h2 className="text-sm uppercase tracking-[0.18em] text-neutral-300 font-bold">PROJECTED REVENUE</h2>
+                  <h2 className="text-sm uppercase tracking-[0.18em] text-neutral-300 font-bold">AGENT VAULT REVENUE</h2>
                 </div>
 
                 <div className="border border-neutral-900 bg-neutral-900 p-4">
-                  <p className="mb-1 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Estimated Balance</p>
-                  <p className="text-3xl text-neutral-500 font-mono">0.0000 ETH</p>
+                  <p className="mb-1 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Withdrawable Balance</p>
+                  <p className={`text-3xl font-mono ${merchantVaultBalanceWei > 0n ? "text-neutral-200" : "text-neutral-500"}`}>
+                    {isConnected
+                      ? isMerchantBalancePending
+                        ? "..."
+                        : formattedMerchantVaultBalance
+                      : "0.0000 ETH"}
+                  </p>
+                </div>
+
+                <div className="mt-4 border border-neutral-900 bg-neutral-900 p-3">
+                  <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Vault Owner (Selected Agent)</p>
+                  <p className="mt-1 break-all text-sm text-neutral-400 font-mono">
+                    {selectedOwnedAgentAddress ?? "--"}
+                  </p>
                 </div>
 
                 <div className="mt-4 inline-flex items-center gap-2 border border-neutral-800 bg-neutral-900 px-3 py-1.5">
-                  <span className="h-2 w-2 bg-neutral-600 rounded-none" />
-                  <span className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">PENDING INSTALL</span>
+                  <span
+                    className={`h-2 w-2 rounded-none ${
+                      isWithdrawConfirming
+                        ? "bg-red-500 animate-pulse"
+                        : isWithdrawConfirmedForSelectedAgent
+                          ? "bg-neutral-400"
+                          : merchantVaultBalanceWei > 0n
+                            ? "bg-neutral-400"
+                            : "bg-neutral-600"
+                    }`}
+                  />
+                  <span className={`text-xs uppercase tracking-[0.16em] font-bold ${
+                    isWithdrawConfirming
+                      ? "text-red-400"
+                      : isWithdrawConfirmedForSelectedAgent
+                        ? "text-neutral-300"
+                        : merchantVaultBalanceWei > 0n
+                          ? "text-neutral-300"
+                          : "text-neutral-500"
+                  }`}>
+                    {isWithdrawConfirming
+                      ? "WITHDRAWAL PENDING"
+                      : isWithdrawConfirmedForSelectedAgent
+                        ? "WITHDRAWAL CONFIRMED"
+                        : merchantVaultBalanceWei > 0n
+                          ? "WITHDRAW READY"
+                          : "NO WITHDRAWABLE BALANCE"}
+                  </span>
                 </div>
+
+                {merchantReadError && (
+                  <p className="mt-3 text-xs text-red-500">
+                    {getErrorMessage(merchantReadError, "Failed to read merchant vault balance.")}
+                  </p>
+                )}
               </article>
             </div>
 
@@ -625,15 +757,37 @@ def my_agent():
               <div className="inline-flex flex-col items-start">
                 <button
                   type="button"
-                  disabled
-                  className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-900 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-600 cursor-not-allowed disabled:cursor-not-allowed"
+                  onClick={handleWithdrawMerchantFunds}
+                  disabled={!canWithdrawMerchantFunds}
+                  className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-red-600 hover:bg-red-600 hover:text-neutral-100 disabled:cursor-not-allowed disabled:bg-neutral-900 disabled:text-neutral-600 disabled:hover:border-neutral-800 disabled:hover:bg-neutral-900 disabled:hover:text-neutral-600"
                 >
-                  WITHDRAW FUNDS
+                  {isWithdrawWriting
+                    ? "SUBMITTING_WITHDRAWAL"
+                    : isWithdrawConfirming
+                      ? "CONFIRMING_WITHDRAWAL"
+                      : "WITHDRAW_FUNDS"}
                 </button>
-                <p className="mt-1 inline-flex items-center gap-1 text-[10px] text-neutral-600">
-                  <Info className="h-3 w-3" />
-                  Minimum 0.01 ETH required for withdrawal.
+                <p className="mt-1 text-[10px] text-neutral-600">
+                  {!isConnected
+                    ? "Connect wallet to withdraw merchant funds."
+                    : !selectedOwnedAgent
+                      ? "Select an owned agent to load balance."
+                      : !merchantOwnsSelectedAgent
+                        ? "Connected wallet does not match selected agent owner."
+                        : !isOnSupportedChain
+                          ? "Switch to Base Mainnet to withdraw."
+                          : merchantVaultBalanceWei <= 0n
+                            ? "No withdrawable GhostVault balance for the selected agent owner."
+                            : "Withdraws the selected owner balance from GhostVault to the connected owner wallet."}
                 </p>
+                {withdrawWriteError && (
+                  <p className="mt-1 text-xs text-red-500">
+                    {getErrorMessage(withdrawWriteError, "Withdrawal transaction failed.")}
+                  </p>
+                )}
+                {switchError && (
+                  <p className="mt-1 text-xs text-red-500">{switchError}</p>
+                )}
               </div>
             </div>
           </section>
@@ -651,7 +805,7 @@ def my_agent():
                 <h2 className="text-sm uppercase tracking-[0.18em] text-neutral-300 font-bold">Agent Vault</h2>
               </div>
 
-              {isConfirmed && (
+              {isDepositConfirmed && (
                 <div className="mb-5 flex items-center gap-2 border border-red-900/40 bg-red-950/10 px-3 py-2">
                   <span className="h-2 w-2 bg-red-600 rounded-none shadow-none" />
                   <p className="text-xs uppercase tracking-[0.16em] text-red-500 font-bold">
@@ -660,7 +814,7 @@ def my_agent():
                 </div>
               )}
 
-              {isConfirmed && creditSyncState === "syncing" && (
+              {isDepositConfirmed && creditSyncState === "syncing" && (
                 <div className="mb-5 flex items-center gap-2 border border-neutral-800 bg-neutral-900 px-3 py-2">
                   <span className="h-2 w-2 bg-neutral-500 rounded-none animate-pulse" />
                   <p className="text-xs uppercase tracking-[0.16em] text-neutral-400 font-bold">
@@ -669,7 +823,7 @@ def my_agent():
                 </div>
               )}
 
-              {isConfirmed && creditSyncState === "synced" && (
+              {isDepositConfirmed && creditSyncState === "synced" && (
                 <div className="mb-5 flex items-center gap-2 border border-neutral-800 bg-neutral-900 px-3 py-2">
                   <span className="h-2 w-2 bg-neutral-500 rounded-none" />
                   <p className="text-xs uppercase tracking-[0.16em] text-neutral-400 font-bold">
@@ -678,7 +832,7 @@ def my_agent():
                 </div>
               )}
 
-              {isConfirmed && creditSyncState === "error" && (
+              {isDepositConfirmed && creditSyncState === "error" && (
                 <div className="mb-5 flex flex-col gap-2 border border-red-900/40 bg-red-950/10 px-3 py-2">
                   <p className="text-xs uppercase tracking-[0.16em] text-red-500 font-bold">
                     Credit Sync Failed // {creditSyncError ?? "Unable to refresh access credits."}
@@ -763,15 +917,15 @@ def my_agent():
                 >
                   {isSwitchingChain
                     ? "Switching network..."
-                    : isWriting
+                    : isDepositWriting
                       ? "Submitting..."
-                      : isConfirming
+                      : isDepositConfirming
                         ? "Confirming..."
                         : "Deposit ETH"}
                 </button>
 
-                {writeError && (
-                  <p className="text-xs text-red-500">{getErrorMessage(writeError, "Transaction failed.")}</p>
+                {depositWriteError && (
+                  <p className="text-xs text-red-500">{getErrorMessage(depositWriteError, "Transaction failed.")}</p>
                 )}
                 {readError && (
                   <p className="text-xs text-red-500">{getErrorMessage(readError, "Failed to read vault balance.")}</p>
