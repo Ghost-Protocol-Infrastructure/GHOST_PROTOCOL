@@ -20,7 +20,7 @@ const REGISTRY_ADDRESS = getAddress(
 const CURSOR_KEY = AGENT_INDEX_MODE === "olas" ? "agent_indexer_olas" : "agent_indexer_erc8004";
 const LEGACY_CURSOR_KEY = "agent_indexer";
 const DEFAULT_START_BLOCK = 10_827_380n;
-const MIN_CHUNK_SIZE = 2_000n;
+const MIN_CHUNK_SIZE = 1_000n;
 const MAX_CHUNK_SIZE = 10_000n;
 const CHUNK_SIZE = (() => {
   const raw = process.env.AGENT_INDEX_CHUNK_SIZE?.trim();
@@ -80,6 +80,29 @@ const INDEXER_RPC_ENV = process.env.BASE_RPC_URL_INDEXER?.trim()
 const AGENT_FORCE_EXIT_ON_FINISH =
   process.env.AGENT_FORCE_EXIT_ON_FINISH?.trim().toLowerCase() === "true" ||
   process.env.CI?.trim().toLowerCase() === "true";
+const GET_LOGS_TIMEOUT_MS = (() => {
+  const raw = process.env.AGENT_GET_LOGS_TIMEOUT_MS?.trim();
+  const parsed = raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 120_000;
+  return Math.max(5_000, Math.min(parsed, 900_000));
+})();
+const GET_LOGS_RETRY_COUNT = (() => {
+  const raw = process.env.AGENT_GET_LOGS_RETRY_COUNT?.trim();
+  const parsed = raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 2;
+  return Math.max(1, Math.min(parsed, 5));
+})();
+const GET_LOGS_MIN_SPLIT_RANGE_BLOCKS = (() => {
+  const raw = process.env.AGENT_GET_LOGS_MIN_SPLIT_RANGE_BLOCKS?.trim();
+  const parsed = raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 250;
+  return BigInt(Math.max(1, Math.min(parsed, 50_000)));
+})();
+const PROGRESS_WATCHDOG_TIMEOUT_MS = (() => {
+  const raw = process.env.AGENT_PROGRESS_WATCHDOG_TIMEOUT_MS?.trim();
+  if (!raw) return 300_000;
+  if (!/^\d+$/.test(raw)) return 300_000;
+  const parsed = Number.parseInt(raw, 10);
+  if (parsed === 0) return 0;
+  return Math.max(30_000, Math.min(parsed, 86_400_000));
+})();
 
 const AGENT_REGISTERED_EVENT = parseAbiItem(
   "event AgentRegistered(address indexed agent, string name, address indexed creator, string image, string description, string telegram, string twitter, string website)",
@@ -98,6 +121,10 @@ const FORCE_RESET_INDEXER =
 const METADATA_FETCH_TIMEOUT_MS = 8_000;
 const METADATA_FETCH_RETRY_COUNT = 2;
 const DEFAULT_IPFS_GATEWAY = "https://ipfs.io/ipfs/";
+const DEFAULT_INDEXER_RPC_FALLBACKS = [
+  { label: "llamarpc", url: "https://base.llamarpc.com" },
+  { label: "1rpc", url: "https://1rpc.io/base" },
+] as const;
 
 type IndexedAgentRecord = {
   address: string;
@@ -138,6 +165,44 @@ const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+
+let progressWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+let progressWatchdogLastTickMs = Date.now();
+let progressWatchdogLastLabel = "startup";
+
+const armProgressWatchdog = (): void => {
+  if (PROGRESS_WATCHDOG_TIMEOUT_MS <= 0) return;
+
+  if (progressWatchdogTimer) {
+    clearTimeout(progressWatchdogTimer);
+  }
+
+  progressWatchdogTimer = setTimeout(() => {
+    const idleMs = Date.now() - progressWatchdogLastTickMs;
+    console.error(
+      `Indexer progress watchdog tripped after ${idleMs}ms idle (timeout=${PROGRESS_WATCHDOG_TIMEOUT_MS}ms, last_step="${progressWatchdogLastLabel}"). Exiting so the run can be resumed safely from the last persisted cursor.`,
+    );
+    process.exit(1);
+  }, PROGRESS_WATCHDOG_TIMEOUT_MS);
+
+  const maybeTimer = progressWatchdogTimer as unknown as { unref?: () => void };
+  if (typeof maybeTimer.unref === "function") {
+    maybeTimer.unref();
+  }
+};
+
+const markIndexerProgress = (label: string): void => {
+  if (PROGRESS_WATCHDOG_TIMEOUT_MS <= 0) return;
+  progressWatchdogLastTickMs = Date.now();
+  progressWatchdogLastLabel = label.length > 160 ? `${label.slice(0, 157)}...` : label;
+  armProgressWatchdog();
+};
+
+const stopIndexerProgressWatchdog = (): void => {
+  if (!progressWatchdogTimer) return;
+  clearTimeout(progressWatchdogTimer);
+  progressWatchdogTimer = null;
+};
 
 const withTimeout = async <T>(label: string, timeoutMs: number, operation: () => Promise<T>): Promise<T> => {
   let timeout: ReturnType<typeof setTimeout> | null = null;
@@ -189,12 +254,16 @@ const withPrismaRetry = async <T>(label: string, operation: () => Promise<T>): P
 
   for (let attempt = 1; attempt <= PRISMA_RETRY_ATTEMPTS; attempt += 1) {
     try {
+      markIndexerProgress(`prisma:start ${label} (attempt ${attempt}/${PRISMA_RETRY_ATTEMPTS})`);
       // Do not race Prisma queries against a JS timeout.
       // Promise.race timeout does not cancel in-flight Prisma engine work and can leave the engine
       // in a bad state during reconnect/retry ("Engine is not yet connected").
-      return await operation();
+      const result = await operation();
+      markIndexerProgress(`prisma:done ${label}`);
+      return result;
     } catch (error) {
       lastError = error;
+      markIndexerProgress(`prisma:error ${label} (attempt ${attempt}/${PRISMA_RETRY_ATTEMPTS})`);
       if (!isRecoverablePrismaError(error) || attempt >= PRISMA_RETRY_ATTEMPTS) {
         throw error;
       }
@@ -204,6 +273,7 @@ const withPrismaRetry = async <T>(label: string, operation: () => Promise<T>): P
       );
       console.error(error);
 
+      markIndexerProgress(`prisma:reset ${label} (attempt ${attempt}/${PRISMA_RETRY_ATTEMPTS})`);
       await resetPrismaConnection(attempt);
     }
   }
@@ -256,6 +326,41 @@ const sanitizeImageField = (raw: unknown): string | null => {
   return resolveUriForFetch(image);
 };
 
+const parseHttpStatusFromError = (error: unknown): number | null => {
+  const message = error instanceof Error ? error.message : String(error);
+  const match = message.match(/^HTTP\s+(\d{3})$/i);
+  if (!match) return null;
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const getErrorCode = (error: unknown): string | null => {
+  if (!error || typeof error !== "object") return null;
+  const direct = (error as { code?: unknown }).code;
+  if (typeof direct === "string" && direct.trim()) return direct.trim();
+  const cause = (error as { cause?: unknown }).cause;
+  if (!cause || typeof cause !== "object") return null;
+  const causeCode = (cause as { code?: unknown }).code;
+  return typeof causeCode === "string" && causeCode.trim() ? causeCode.trim() : null;
+};
+
+const isPermanentMetadataFetchError = (error: unknown): boolean => {
+  const httpStatus = parseHttpStatusFromError(error);
+  if (httpStatus !== null) {
+    if (httpStatus === 429) return false;
+    if (httpStatus >= 400 && httpStatus < 500) return true;
+  }
+
+  const code = getErrorCode(error);
+  if (!code) return false;
+
+  if (code === "ERR_INVALID_URL" || code === "ENOTFOUND" || code === "ECONNREFUSED") {
+    return true;
+  }
+
+  return false;
+};
+
 const fetchJsonWithRetry = async (url: string): Promise<Record<string, unknown>> => {
   let lastError: unknown = null;
 
@@ -284,9 +389,13 @@ const fetchJsonWithRetry = async (url: string): Promise<Record<string, unknown>>
       return parsed as Record<string, unknown>;
     } catch (error) {
       lastError = error;
-      if (attempt < METADATA_FETCH_RETRY_COUNT) {
+      const shouldRetry = attempt < METADATA_FETCH_RETRY_COUNT && !isPermanentMetadataFetchError(error);
+      if (shouldRetry) {
         await sleep(250);
+        continue;
       }
+
+      break;
     } finally {
       clearTimeout(timeout);
     }
@@ -578,18 +687,58 @@ const resetIndexerState = async (): Promise<{ deletedAgents: number }> => {
   return { deletedAgents: deletedAgents.count };
 };
 
+type IndexerRpcEndpoint = {
+  label: string;
+  url: string;
+};
+
+const formatRpcEndpointLabel = (label: string, url: string): string => {
+  try {
+    const host = new URL(url).host;
+    return `${label}:${host}`;
+  } catch {
+    return `${label}:${url}`;
+  }
+};
+
+const getIndexerRpcEndpoints = (): IndexerRpcEndpoint[] => {
+  const primaryLabel = process.env.BASE_RPC_URL_INDEXER?.trim()
+    ? "BASE_RPC_URL_INDEXER"
+    : process.env.BASE_RPC_URL?.trim()
+      ? "BASE_RPC_URL"
+      : "default";
+  const candidates: IndexerRpcEndpoint[] = [
+    { label: primaryLabel, url: INDEXER_RPC_URL },
+    ...DEFAULT_INDEXER_RPC_FALLBACKS,
+  ];
+  const seen = new Set<string>();
+  const deduped: IndexerRpcEndpoint[] = [];
+  for (const candidate of candidates) {
+    const normalized = candidate.url.trim().toLowerCase();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    deduped.push({ label: formatRpcEndpointLabel(candidate.label, candidate.url), url: candidate.url });
+  }
+  return deduped;
+};
+
+const buildIndexerHttpTransport = (url: string) =>
+  http(url, {
+    retryCount: 2,
+    retryDelay: 250,
+    timeout: 15_000,
+  });
+
+const buildHttpClient = (url: string) =>
+  createPublicClient({
+    chain: base,
+    transport: buildIndexerHttpTransport(url),
+  });
+
 const buildClient = () =>
   createPublicClient({
     chain: base,
-    transport: fallback([
-      http(INDEXER_RPC_URL, {
-        retryCount: 2,
-        retryDelay: 250,
-        timeout: 15_000,
-      }),
-      http("https://base.llamarpc.com", { retryCount: 2, retryDelay: 250, timeout: 15_000 }),
-      http("https://1rpc.io/base", { retryCount: 2, retryDelay: 250, timeout: 15_000 }),
-    ]),
+    transport: fallback(getIndexerRpcEndpoints().map((endpoint) => buildIndexerHttpTransport(endpoint.url))),
   });
 
 const fetchAgentRegistered = async (
@@ -776,7 +925,88 @@ const indexErc8004Incremental = async (
   fallbackMetadataCount: number;
   tokenResolveTimeoutCount: number;
 }> => {
+  markIndexerProgress(`erc8004:index:start ${fromBlock.toString()}-${toBlock.toString()}`);
   const client = buildClient();
+  const getLogsProviders = getIndexerRpcEndpoints().map((endpoint) => ({
+    label: endpoint.label,
+    url: endpoint.url,
+    client: buildHttpClient(endpoint.url),
+  }));
+  type TransferLogs = Awaited<ReturnType<typeof client.getLogs<typeof TRANSFER_EVENT>>>;
+  const fetchTransferLogsForRange = async (
+    rangeFrom: bigint,
+    rangeTo: bigint,
+    splitDepth = 0,
+  ): Promise<TransferLogs> => {
+    let lastError: unknown = null;
+    let lastProviderLabel: string | null = null;
+
+    for (let attempt = 1; attempt <= GET_LOGS_RETRY_COUNT; attempt += 1) {
+      for (const provider of getLogsProviders) {
+        try {
+          lastProviderLabel = provider.label;
+          markIndexerProgress(
+            `erc8004:chunk:getlogs ${rangeFrom.toString()}-${rangeTo.toString()} via ${provider.label} (attempt ${attempt}/${GET_LOGS_RETRY_COUNT})`,
+          );
+          const logs = await withTimeout(
+            `ERC-8004 getLogs ${rangeFrom.toString()}-${rangeTo.toString()} via ${provider.label}`,
+            GET_LOGS_TIMEOUT_MS,
+            () =>
+              provider.client.getLogs({
+                address: REGISTRY_ADDRESS,
+                event: TRANSFER_EVENT,
+                fromBlock: rangeFrom,
+                toBlock: rangeTo,
+                strict: true,
+              }),
+          );
+          markIndexerProgress(
+            `erc8004:chunk:getlogs:done ${rangeFrom.toString()}-${rangeTo.toString()} via ${provider.label}`,
+          );
+          if (provider !== getLogsProviders[0] || attempt > 1 || splitDepth > 0) {
+            console.log(
+              `Transfer chunk fetch succeeded via ${provider.label} for ${rangeFrom.toString()}-${rangeTo.toString()} (attempt ${attempt}/${GET_LOGS_RETRY_COUNT}, depth ${splitDepth}).`,
+            );
+          }
+          return logs;
+        } catch (error) {
+          lastError = error;
+          lastProviderLabel = provider.label;
+          console.warn(
+            `Transfer chunk fetch failed via ${provider.label} for ${rangeFrom.toString()}-${rangeTo.toString()} (attempt ${attempt}/${GET_LOGS_RETRY_COUNT}, depth ${splitDepth}).`,
+          );
+          console.error(error);
+        }
+      }
+
+      if (attempt < GET_LOGS_RETRY_COUNT) {
+        await sleep(CHUNK_DELAY_MS);
+      }
+    }
+
+    const rangeSpan = rangeTo >= rangeFrom ? rangeTo - rangeFrom + 1n : 0n;
+    const canSplit = rangeFrom < rangeTo && rangeSpan > GET_LOGS_MIN_SPLIT_RANGE_BLOCKS;
+
+    if (!canSplit) {
+      const providerSuffix = lastProviderLabel ? ` (last_provider=${lastProviderLabel})` : "";
+      const message = `Failed to fetch Transfer logs for chunk ${rangeFrom.toString()}-${rangeTo.toString()} after retries${providerSuffix}.`;
+      console.error(message);
+      console.error(lastError);
+      throw new Error(message);
+    }
+
+    const mid = rangeFrom + (rangeTo - rangeFrom) / 2n;
+    console.warn(
+      `Splitting stalled Transfer chunk ${rangeFrom.toString()}-${rangeTo.toString()} at ${mid.toString()} (depth ${splitDepth + 1}).`,
+    );
+    markIndexerProgress(
+      `erc8004:chunk:getlogs:split ${rangeFrom.toString()}-${rangeTo.toString()} -> ${rangeFrom.toString()}-${mid.toString()} + ${(mid + 1n).toString()}-${rangeTo.toString()}`,
+    );
+
+    const left = await fetchTransferLogsForRange(rangeFrom, mid, splitDepth + 1);
+    const right = await fetchTransferLogsForRange(mid + 1n, rangeTo, splitDepth + 1);
+    return [...left, ...right];
+  };
   const usedAgentIds = await withPrismaRetry("load used agent IDs", collectUsedAgentIds);
   let chunkIndex = 0;
   let newCount = 0;
@@ -788,39 +1018,12 @@ const indexErc8004Incremental = async (
   while (currentBlock <= toBlock) {
     const chunkToBlock = currentBlock + CHUNK_SIZE <= toBlock ? currentBlock + CHUNK_SIZE : toBlock;
     chunkIndex += 1;
+    markIndexerProgress(`erc8004:chunk:start ${currentBlock.toString()}-${chunkToBlock.toString()}`);
     if (chunkIndex % 20 === 1) {
       console.log(`ERC-8004 scan Transfer logs from ${currentBlock.toString()} to ${chunkToBlock.toString()}`);
     }
 
-    let logs:
-      | Awaited<ReturnType<typeof client.getLogs<typeof TRANSFER_EVENT>>>
-      | null = null;
-    let lastError: unknown = null;
-    for (let attempt = 1; attempt <= 2; attempt += 1) {
-      try {
-        logs = await client.getLogs({
-          address: REGISTRY_ADDRESS,
-          event: TRANSFER_EVENT,
-          fromBlock: currentBlock,
-          toBlock: chunkToBlock,
-          strict: true,
-        });
-        break;
-      } catch (error) {
-        lastError = error;
-        console.warn(
-          `Transfer chunk fetch failed for ${currentBlock.toString()}-${chunkToBlock.toString()} (attempt ${attempt}/2).`,
-        );
-        if (attempt < 2) await sleep(CHUNK_DELAY_MS);
-      }
-    }
-
-    if (!logs) {
-      const message = `Failed to fetch Transfer logs for chunk ${currentBlock.toString()}-${chunkToBlock.toString()} after retries.`;
-      console.error(message);
-      console.error(lastError);
-      throw new Error(message);
-    }
+    const logs = await fetchTransferLogsForRange(currentBlock, chunkToBlock);
 
     const creatorByTokenId = new Map<string, string | null>();
     const tokenIds = new Set<bigint>();
@@ -852,6 +1055,11 @@ const indexErc8004Incremental = async (
     const chunkRecords = new Map<string, IndexedAgentRecord>();
 
     for (const batch of chunkArray(tokenIdList, METADATA_CONCURRENCY)) {
+      const batchFirst = batch[0]?.toString() ?? "none";
+      const batchLast = batch[batch.length - 1]?.toString() ?? "none";
+      markIndexerProgress(
+        `erc8004:chunk:resolve-batch ${currentBlock.toString()}-${chunkToBlock.toString()} tokens ${batchFirst}-${batchLast}`,
+      );
       const results = await Promise.all(
         batch.map((tokenId) =>
           resolveErc8004RecordWithTimeout(
@@ -876,6 +1084,9 @@ const indexErc8004Incremental = async (
           `ERC-8004 metadata progress (chunk ${currentBlock.toString()}-${chunkToBlock.toString()}): ${chunkResolvedTokens}/${tokenIdList.length}`,
         );
       }
+      markIndexerProgress(
+        `erc8004:chunk:resolved ${currentBlock.toString()}-${chunkToBlock.toString()} ${chunkResolvedTokens}/${tokenIdList.length}`,
+      );
 
       if (chunkResolvedTokens < tokenIdList.length && METADATA_BATCH_DELAY_MS > 0) {
         await sleep(METADATA_BATCH_DELAY_MS);
@@ -883,18 +1094,26 @@ const indexErc8004Incremental = async (
     }
 
     if (chunkRecords.size > 0) {
+      markIndexerProgress(
+        `erc8004:chunk:upsert:start ${currentBlock.toString()}-${chunkToBlock.toString()} records=${chunkRecords.size}`,
+      );
       const chunkNewCount = await withPrismaRetry(
         `upsert ERC-8004 agents for chunk ${currentBlock.toString()}-${chunkToBlock.toString()}`,
         () => upsertAgents(chunkRecords, usedAgentIds),
       );
       newCount += chunkNewCount;
+      markIndexerProgress(
+        `erc8004:chunk:upsert:done ${currentBlock.toString()}-${chunkToBlock.toString()} records=${chunkRecords.size}`,
+      );
     }
 
     fallbackMetadataCount += chunkFallbackMetadataCount;
+    markIndexerProgress(`erc8004:chunk:cursor:start ${chunkToBlock.toString()}`);
     await withPrismaRetry(
       `persist ERC-8004 cursor for chunk ending ${chunkToBlock.toString()}`,
       () => persistCursor(chunkToBlock),
     );
+    markIndexerProgress(`erc8004:chunk:cursor:done ${chunkToBlock.toString()}`);
 
     if (chunkIndex % 10 === 0 || chunkToBlock === toBlock) {
       console.log(
@@ -904,6 +1123,7 @@ const indexErc8004Incremental = async (
 
     currentBlock = chunkToBlock + 1n;
     if (currentBlock <= toBlock) {
+      markIndexerProgress(`erc8004:chunk:sleep-before-next ${currentBlock.toString()}`);
       await sleep(CHUNK_DELAY_MS);
     }
   }
@@ -1070,12 +1290,15 @@ const collectUsedAgentIds = async (): Promise<Set<string>> => {
 
 const upsertAgents = async (records: Map<string, IndexedAgentRecord>, usedAgentIds?: Set<string>): Promise<number> => {
   if (records.size === 0) return 0;
+  markIndexerProgress(`upsertAgents:start records=${records.size}`);
 
   const addresses = Array.from(records.keys());
+  markIndexerProgress(`upsertAgents:load-existing:start records=${records.size}`);
   const existing = await prisma.agent.findMany({
     where: { address: { in: addresses } },
     select: { address: true, agentId: true },
   });
+  markIndexerProgress(`upsertAgents:load-existing:done existing=${existing.length}`);
   const existingSet = new Set(existing.map((row) => row.address));
   const existingByAddress = new Map(existing.map((row) => [row.address, row]));
   const resolvedUsedAgentIds = usedAgentIds ?? (await collectUsedAgentIds());
@@ -1083,6 +1306,10 @@ const upsertAgents = async (records: Map<string, IndexedAgentRecord>, usedAgentI
 
   let processed = 0;
   for (const record of records.values()) {
+    const nextProcessed = processed + 1;
+    if (nextProcessed === 1 || nextProcessed % 50 === 0 || nextProcessed === records.size) {
+      markIndexerProgress(`upsertAgents:row:start ${nextProcessed}/${records.size}`);
+    }
     const current = existingByAddress.get(record.address);
     const resolvedAgentId = current?.agentId
       ? current.agentId
@@ -1118,9 +1345,11 @@ const upsertAgents = async (records: Map<string, IndexedAgentRecord>, usedAgentI
     processed += 1;
     if (processed % 250 === 0 || processed === records.size) {
       console.log(`Prisma upsert progress: ${processed}/${records.size}`);
+      markIndexerProgress(`upsertAgents:progress ${processed}/${records.size}`);
     }
   }
 
+  markIndexerProgress(`upsertAgents:done records=${records.size}`);
   return newCount;
 };
 
@@ -1166,8 +1395,9 @@ const backfillAgentIdentityColumns = async (): Promise<number> => {
 };
 
 async function main(): Promise<void> {
+  markIndexerProgress("main:start");
   console.log(
-    `Indexer config: mode=${AGENT_INDEX_MODE}, cursor_key=${CURSOR_KEY}, chunk_size=${CHUNK_SIZE.toString()} blocks, chunk_delay_ms=${CHUNK_DELAY_MS}, metadata_concurrency=${METADATA_CONCURRENCY}, metadata_batch_delay_ms=${METADATA_BATCH_DELAY_MS}, prisma_retry_attempts=${PRISMA_RETRY_ATTEMPTS}, prisma_retry_delay_ms=${PRISMA_RETRY_DELAY_MS}, prisma_op_timeout_ms=${PRISMA_OPERATION_TIMEOUT_MS}, prisma_conn_timeout_ms=${PRISMA_CONNECTION_TIMEOUT_MS}, token_resolve_timeout_ms=${TOKEN_RESOLVE_TIMEOUT_MS}, rpc_env=${INDEXER_RPC_ENV}`,
+    `Indexer config: mode=${AGENT_INDEX_MODE}, cursor_key=${CURSOR_KEY}, chunk_size=${CHUNK_SIZE.toString()} blocks, chunk_delay_ms=${CHUNK_DELAY_MS}, metadata_concurrency=${METADATA_CONCURRENCY}, metadata_batch_delay_ms=${METADATA_BATCH_DELAY_MS}, get_logs_timeout_ms=${GET_LOGS_TIMEOUT_MS}, get_logs_retries=${GET_LOGS_RETRY_COUNT}, get_logs_min_split_range_blocks=${GET_LOGS_MIN_SPLIT_RANGE_BLOCKS.toString()}, prisma_retry_attempts=${PRISMA_RETRY_ATTEMPTS}, prisma_retry_delay_ms=${PRISMA_RETRY_DELAY_MS}, prisma_op_timeout_ms=${PRISMA_OPERATION_TIMEOUT_MS}, prisma_conn_timeout_ms=${PRISMA_CONNECTION_TIMEOUT_MS}, token_resolve_timeout_ms=${TOKEN_RESOLVE_TIMEOUT_MS}, progress_watchdog_timeout_ms=${PROGRESS_WATCHDOG_TIMEOUT_MS}, rpc_env=${INDEXER_RPC_ENV}`,
   );
 
   if (FORCE_RESET_INDEXER) {
@@ -1190,7 +1420,9 @@ async function main(): Promise<void> {
   }
 
   const client = buildClient();
+  markIndexerProgress("main:get-latest-block:start");
   const latestBlock = await client.getBlockNumber();
+  markIndexerProgress(`main:get-latest-block:done ${latestBlock.toString()}`);
   const fromBlock = await withPrismaRetry("read index cursor", () => getFromBlock());
 
   if (fromBlock > latestBlock) {
@@ -1211,6 +1443,7 @@ async function main(): Promise<void> {
       `ERC-8004 indexing summary: resolved_tokens=${stats.totalResolvedTokens}, metadata_fallback=${stats.fallbackMetadataCount}, token_timeouts=${stats.tokenResolveTimeoutCount}, new_agents=${stats.newCount}.`,
     );
   } else {
+    markIndexerProgress(`olas:index:start ${fromBlock.toString()}-${latestBlock.toString()}`);
     let records = await fetchAgentRegistered(fromBlock, latestBlock);
     if (records.size === 0 && process.env.AGENT_INDEXER_FALLBACK_CREATE_SERVICE !== "false") {
       console.warn("AgentRegistered logs not found in range. Falling back to CreateService indexing.");
@@ -1218,6 +1451,7 @@ async function main(): Promise<void> {
     }
     newCount = await withPrismaRetry("upsert Olas agent records", () => upsertAgents(records));
     await withPrismaRetry(`persist cursor ${latestBlock.toString()}`, () => persistCursor(latestBlock));
+    markIndexerProgress(`olas:index:done ${fromBlock.toString()}-${latestBlock.toString()}`);
   }
 
   const backfilledIdentityCount = await withPrismaRetry("backfill identity fields", () => backfillAgentIdentityColumns());
@@ -1236,6 +1470,7 @@ async function main(): Promise<void> {
   if (normalizedLegacyCount > 0) {
     console.log(`Normalized ${normalizedLegacyCount} legacy fallback agent labels.`);
   }
+  markIndexerProgress("main:done");
 }
 
 main()
@@ -1244,6 +1479,7 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
+    stopIndexerProgressWatchdog();
     try {
       await withTimeout("index prisma.$disconnect (final)", PRISMA_CONNECTION_TIMEOUT_MS, () => prisma.$disconnect());
     } catch (disconnectError) {

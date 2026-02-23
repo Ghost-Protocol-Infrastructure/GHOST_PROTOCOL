@@ -211,7 +211,7 @@ Same shape as `GET /api/sync-credits`.
 
 ## `GET /api/agents`
 
-Read ranked agents from Postgres (or active snapshot if enabled).
+Read ranked agents from Postgres (or active snapshot if enabled). Response includes background-indexer freshness metadata (`lastSyncedBlock`, `syncHealth`, `syncAgeSeconds`, `lastSyncedAt`).
 
 ### Query parameters
 
@@ -241,6 +241,11 @@ Read ranked agents from Postgres (or active snapshot if enabled).
   "agents": []
 }
 ```
+
+Notes:
+- `lastSyncedBlock` is the last persisted indexer cursor checkpoint (chunk-level), so it can trail current Base head during active indexing/backfills.
+- `syncHealth` / `syncAgeSeconds` report indexing freshness and may temporarily degrade during RPC incidents or recovery runs.
+- Indexing and scoring are separate background jobs, so rank freshness and chain-index freshness can momentarily diverge.
 
 ### Error response (`400`)
 
