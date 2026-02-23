@@ -57,7 +57,7 @@ type OwnedAgent = {
 const isHexAddress = (value: string): boolean => /^0x[a-fA-F0-9]{40}$/.test(value);
 const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/, "");
 const APP_BASE_URL = normalizeBaseUrl(process.env.NEXT_PUBLIC_BASE_URL?.trim() || "https://ghostprotocol.cc");
-const GITHUB_DOCS_BASE_URL = "https://github.com/Ghost-Protocol-Infrastructure/ghost_rank/blob/main/docs/developer-portal";
+const GITHUB_DOCS_BASE_URL = "https://github.com/Ghost-Protocol-Infrastructure/GHOST_PROTOCOL/blob/main/docs/developer-portal";
 const NODE_QUICKSTART_DOC_URL = `${GITHUB_DOCS_BASE_URL}/quickstart-node.md`;
 const SDK_REFERENCE_DOC_URL = `${GITHUB_DOCS_BASE_URL}/sdk-reference.md`;
 const SDK_CONTEXT_KEY_PREVIEW_PLACEHOLDER = "sk_live_your_sdk_context_key";
