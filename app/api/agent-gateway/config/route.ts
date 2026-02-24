@@ -11,6 +11,7 @@ import {
   normalizeServiceSlug,
 } from "@/lib/agent-gateway";
 import { verifyMerchantGatewaySignedWrite } from "@/lib/agent-gateway-auth-server";
+import { consumeAgentGatewayRateLimit } from "@/lib/agent-gateway-rate-limit";
 
 export const runtime = "nodejs";
 
@@ -187,6 +188,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         error: `serviceSlug must match the derived agent slug "${deriveAgentServiceSlug(agentId)}".`,
       },
       400,
+    );
+  }
+
+  const rateLimit = consumeAgentGatewayRateLimit({
+    request,
+    action: "config",
+    actorAddress,
+    agentId,
+  });
+  if (!rateLimit.ok) {
+    return NextResponse.json(
+      { code: 429, error: rateLimit.error },
+      {
+        status: 429,
+        headers: {
+          "cache-control": "no-store",
+          "retry-after": String(rateLimit.retryAfterSeconds),
+        },
+      },
     );
   }
 

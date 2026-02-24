@@ -9,6 +9,7 @@ import {
 } from "@/lib/agent-gateway";
 import { deriveAgentServiceSlug, normalizeServiceSlug } from "@/lib/agent-gateway";
 import { verifyMerchantGatewaySignedWrite } from "@/lib/agent-gateway-auth-server";
+import { consumeAgentGatewayRateLimit } from "@/lib/agent-gateway-rate-limit";
 
 export const runtime = "nodejs";
 
@@ -56,6 +57,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
   if (!authSignature) return json({ code: 400, error: "authSignature is required." }, 400);
+
+  const rateLimit = consumeAgentGatewayRateLimit({
+    request,
+    action: "verify",
+    actorAddress,
+    agentId,
+  });
+  if (!rateLimit.ok) {
+    return NextResponse.json(
+      { code: 429, error: rateLimit.error },
+      {
+        status: 429,
+        headers: {
+          "cache-control": "no-store",
+          "retry-after": String(rateLimit.retryAfterSeconds),
+        },
+      },
+    );
+  }
 
   try {
     const config = await prisma.agentGatewayConfig.findUnique({
