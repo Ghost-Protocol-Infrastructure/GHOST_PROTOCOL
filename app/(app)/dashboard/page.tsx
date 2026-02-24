@@ -99,6 +99,8 @@ const SDK_SECURITY_NOTICE =
 const DEFAULT_CANARY_PATH = "/ghostgate/canary";
 const MAX_DEPOSIT_CREDIT_SYNC_CATCHUP_ATTEMPTS = 12;
 const DEPOSIT_CREDIT_SYNC_CATCHUP_DELAY_MS = 200;
+const MAX_WITHDRAW_BALANCE_REFETCH_ATTEMPTS = 8;
+const WITHDRAW_BALANCE_REFETCH_DELAY_MS = 250;
 
 const isGatewayReadinessStatus = (value: unknown): value is GatewayReadinessStatus =>
   value === "UNCONFIGURED" || value === "CONFIGURED" || value === "LIVE" || value === "DEGRADED";
@@ -1136,9 +1138,32 @@ def my_agent():
     isWithdrawConfirmed && selectedOwnedAgent?.agentId === lastWithdrawAgentId;
 
   useEffect(() => {
-    if (!isWithdrawConfirmed) return;
-    void refetchMerchantVaultBalance();
-  }, [isWithdrawConfirmed, refetchMerchantVaultBalance]);
+    if (!isWithdrawConfirmedForSelectedAgent) return;
+
+    let cancelled = false;
+    const refreshMerchantBalanceAfterWithdraw = async () => {
+      for (let attempt = 0; attempt < MAX_WITHDRAW_BALANCE_REFETCH_ATTEMPTS; attempt += 1) {
+        const result = await refetchMerchantVaultBalance();
+        const nextBalanceWei = typeof result.data === "bigint" ? result.data : null;
+
+        if (nextBalanceWei === 0n) {
+          break;
+        }
+
+        if (cancelled || attempt >= MAX_WITHDRAW_BALANCE_REFETCH_ATTEMPTS - 1) {
+          break;
+        }
+
+        await waitMs(WITHDRAW_BALANCE_REFETCH_DELAY_MS);
+      }
+    };
+
+    void refreshMerchantBalanceAfterWithdraw();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isWithdrawConfirmedForSelectedAgent, refetchMerchantVaultBalance]);
 
   const handleSwitchToPreferredChain = async () => {
     setSwitchError(null);
@@ -1420,23 +1445,30 @@ def my_agent():
                   </p>
                 </div>
 
-                <div className="mt-4 inline-flex items-center gap-2 border border-neutral-800 bg-neutral-900 px-3 py-1.5">
+                <div
+                  className={`mt-4 inline-flex items-center gap-2 border px-3 py-1.5 ${isWithdrawConfirming
+                    ? "border-red-900/40 bg-red-950/10"
+                    : isWithdrawConfirmedForSelectedAgent || merchantVaultBalanceWei > 0n
+                      ? "border-emerald-900/40 bg-emerald-950/10"
+                      : "border-neutral-800 bg-neutral-900"
+                    }`}
+                >
                   <span
                     className={`h-2 w-2 rounded-none ${isWithdrawConfirming
                       ? "bg-red-500 animate-pulse"
                       : isWithdrawConfirmedForSelectedAgent
-                        ? "bg-neutral-400"
+                        ? "bg-emerald-400"
                         : merchantVaultBalanceWei > 0n
-                          ? "bg-neutral-400"
+                          ? "bg-emerald-400"
                           : "bg-neutral-600"
                       }`}
                   />
                   <span className={`text-xs uppercase tracking-[0.16em] font-bold ${isWithdrawConfirming
                     ? "text-red-400"
                     : isWithdrawConfirmedForSelectedAgent
-                      ? "text-neutral-300"
+                      ? "text-emerald-300"
                       : merchantVaultBalanceWei > 0n
-                        ? "text-neutral-300"
+                        ? "text-emerald-300"
                         : "text-neutral-500"
                     }`}>
                     {isWithdrawConfirming
