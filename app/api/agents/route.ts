@@ -94,56 +94,11 @@ const parseOwner = (rawOwner: string | null): string | null => {
   return normalized;
 };
 
-const normalizeActivatedAgentIdFromService = (service: string): string | null => {
-  const normalized = service.trim();
-  if (!normalized) return null;
-
-  const lower = normalized.toLowerCase();
-  const prefixes = ["agent-", "agent_", "agent:", "agent/"] as const;
-  for (const prefix of prefixes) {
-    if (!lower.startsWith(prefix)) continue;
-
-    const suffix = normalized.slice(prefix.length).trim();
-    if (!suffix) return null;
-
-    const firstSegment = suffix.split("/")[0]?.trim();
-    if (!firstSegment) return null;
-    return firstSegment.toLowerCase();
-  }
-
-  return null;
-};
-
 const resolveActivatedAgentsCountUncached = async (): Promise<number> => {
   try {
-    const authorizedServices = await prisma.gateAccessEvent.findMany({
-      where: { outcome: "AUTHORIZED" },
-      distinct: ["service"],
-      select: { service: true },
+    return prisma.agentGatewayConfig.count({
+      where: { readinessStatus: "LIVE" },
     });
-
-    if (authorizedServices.length === 0) return 0;
-
-    const normalizedAgentIds = Array.from(
-      new Set(
-        authorizedServices
-          .map((row) => normalizeActivatedAgentIdFromService(row.service))
-          .filter((value): value is string => Boolean(value)),
-      ),
-    );
-
-    if (normalizedAgentIds.length === 0) return 0;
-
-    const countRows = await prisma.$queryRaw<Array<{ count: bigint | number }>>(Prisma.sql`
-      SELECT COUNT(*)::bigint AS count
-      FROM "Agent"
-      WHERE LOWER("agentId") IN (${Prisma.join(normalizedAgentIds)})
-    `);
-
-    const rawCount = countRows[0]?.count;
-    if (typeof rawCount === "bigint") return Number(rawCount);
-    if (typeof rawCount === "number") return rawCount;
-    return 0;
   } catch (error) {
     if (
       typeof error === "object" &&
@@ -153,7 +108,7 @@ const resolveActivatedAgentsCountUncached = async (): Promise<number> => {
     ) {
       return 0;
     }
-    console.error("Failed to resolve activated agent count from gate events.", error);
+    console.error("Failed to resolve activated agent count from gateway readiness.", error);
     return 0;
   }
 };
