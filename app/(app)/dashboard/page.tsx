@@ -97,6 +97,8 @@ const SDK_SECURITY_NOTICE =
   "Security Notice: Ghost Protocol gate access is authenticated with Web3 wallet signatures (EIP-712). Configure SDKs with a signer private key in a trusted backend/server/CLI environment only. Never expose private keys in frontend code or commit them to version control.";
 
 const DEFAULT_CANARY_PATH = "/ghostgate/canary";
+const MAX_DEPOSIT_CREDIT_SYNC_CATCHUP_ATTEMPTS = 12;
+const DEPOSIT_CREDIT_SYNC_CATCHUP_DELAY_MS = 200;
 
 const isGatewayReadinessStatus = (value: unknown): value is GatewayReadinessStatus =>
   value === "UNCONFIGURED" || value === "CONFIGURED" || value === "LIVE" || value === "DEGRADED";
@@ -242,7 +244,53 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
 type SyncCreditsResponse = {
   userAddress: string;
   credits: string;
+  partialSync?: boolean;
+  matchedDeposits?: number | string;
+  addedCredits?: string | number;
+  lastSyncedBlock?: string;
+  toBlock?: string;
+  headBlock?: string;
 };
+
+type SyncCreditsSnapshot = {
+  credits: string;
+  partialSync: boolean;
+  matchedDeposits: number | null;
+  addedCredits: bigint | null;
+  lastSyncedBlock: bigint | null;
+  toBlock: bigint | null;
+  headBlock: bigint | null;
+};
+
+const parseNullableDecimalBigInt = (value: unknown): bigint | null => {
+  if (typeof value === "bigint") return value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || !Number.isInteger(value)) return null;
+    return BigInt(value);
+  }
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!/^-?\d+$/.test(trimmed)) return null;
+  try {
+    return BigInt(trimmed);
+  } catch {
+    return null;
+  }
+};
+
+const parseNullableInteger = (value: unknown): number | null => {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return null;
+    return Math.trunc(value);
+  }
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!/^-?\d+$/.test(trimmed)) return null;
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const waitMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 function DashboardPageContent() {
   const searchParams = useSearchParams();
@@ -255,7 +303,7 @@ function DashboardPageContent() {
     isPending: isDepositWriting,
     writeContract: writeDepositContract,
   } = useWriteContract();
-  const { isLoading: isDepositConfirming, isSuccess: isDepositConfirmed } = useWaitForTransactionReceipt({
+  const { data: depositReceipt, isLoading: isDepositConfirming, isSuccess: isDepositConfirmed } = useWaitForTransactionReceipt({
     hash: depositTxHash,
   });
   const {
@@ -335,7 +383,7 @@ function DashboardPageContent() {
     },
   });
 
-  const readCreditsFromLedger = useCallback(async (userAddress: Address): Promise<string> => {
+  const syncCreditsLedgerSnapshot = useCallback(async (userAddress: Address): Promise<SyncCreditsSnapshot> => {
     const params = new URLSearchParams({ userAddress });
     const response = await fetch(`/api/sync-credits?${params.toString()}`, {
       method: "GET",
@@ -355,8 +403,21 @@ function DashboardPageContent() {
       throw new Error(message);
     }
 
-    return typeof payload.credits === "string" ? payload.credits : "0";
+    return {
+      credits: typeof payload.credits === "string" ? payload.credits : "0",
+      partialSync: payload.partialSync === true,
+      matchedDeposits: parseNullableInteger(payload.matchedDeposits),
+      addedCredits: parseNullableDecimalBigInt(payload.addedCredits),
+      lastSyncedBlock: parseNullableDecimalBigInt(payload.lastSyncedBlock),
+      toBlock: parseNullableDecimalBigInt(payload.toBlock),
+      headBlock: parseNullableDecimalBigInt(payload.headBlock),
+    };
   }, []);
+
+  const readCreditsFromLedger = useCallback(async (userAddress: Address): Promise<string> => {
+    const snapshot = await syncCreditsLedgerSnapshot(userAddress);
+    return snapshot.credits;
+  }, [syncCreditsLedgerSnapshot]);
 
   const fetchAgentGatewayConfig = useCallback(async (agentId: string): Promise<AgentGatewayConfigRecord> => {
     const params = new URLSearchParams({ agentId });
@@ -401,24 +462,45 @@ function DashboardPageContent() {
     };
   }, []);
 
-  const syncCreditsFromChain = useCallback(async (userAddress: Address, hash: string): Promise<void> => {
+  const syncCreditsFromChain = useCallback(
+    async (userAddress: Address, hash: string, confirmedDepositBlock?: bigint | null): Promise<void> => {
     setCreditSyncState("syncing");
     setCreditSyncError(null);
 
     try {
-      const credits = await readCreditsFromLedger(userAddress);
-      setSyncedCredits(credits);
+      let latestCredits = syncedCredits ?? "0";
+      for (let attempt = 0; attempt < MAX_DEPOSIT_CREDIT_SYNC_CATCHUP_ATTEMPTS; attempt += 1) {
+        const snapshot = await syncCreditsLedgerSnapshot(userAddress);
+        latestCredits = snapshot.credits;
+        setSyncedCredits(snapshot.credits);
+
+        const syncCursor = snapshot.lastSyncedBlock ?? snapshot.toBlock;
+        const reachedDepositBlock =
+          confirmedDepositBlock != null && syncCursor != null ? syncCursor >= confirmedDepositBlock : false;
+        const foundDepositInWindow =
+          (snapshot.matchedDeposits ?? 0) > 0 || (snapshot.addedCredits != null && snapshot.addedCredits > 0n);
+
+        if (!snapshot.partialSync || reachedDepositBlock || foundDepositInWindow) {
+          break;
+        }
+
+        if (attempt < MAX_DEPOSIT_CREDIT_SYNC_CATCHUP_ATTEMPTS - 1) {
+          await waitMs(DEPOSIT_CREDIT_SYNC_CATCHUP_DELAY_MS);
+        }
+      }
+
+      setSyncedCredits(latestCredits);
       setCreditSyncState("synced");
     } catch (error) {
       syncedHashesRef.current.delete(hash);
       setCreditSyncState("error");
       setCreditSyncError(getErrorMessage(error, "Failed to sync credits."));
     }
-  }, [readCreditsFromLedger]);
+  }, [syncCreditsLedgerSnapshot, syncedCredits]);
 
   const handleRetryCreditSync = async () => {
     if (!address || !depositTxHash || !isDepositConfirmed) return;
-    await syncCreditsFromChain(address, depositTxHash);
+    await syncCreditsFromChain(address, depositTxHash, depositReceipt?.blockNumber ?? null);
   };
 
   useEffect(() => {
@@ -457,8 +539,8 @@ function DashboardPageContent() {
     syncedHashesRef.current.add(depositTxHash);
 
     void refetchBalance();
-    void syncCreditsFromChain(address, depositTxHash);
-  }, [address, isDepositConfirmed, refetchBalance, syncCreditsFromChain, depositTxHash]);
+    void syncCreditsFromChain(address, depositTxHash, depositReceipt?.blockNumber ?? null);
+  }, [address, isDepositConfirmed, refetchBalance, syncCreditsFromChain, depositTxHash, depositReceipt?.blockNumber]);
 
   useEffect(() => {
     if (copyState !== "copied") return;
@@ -1442,9 +1524,9 @@ def my_agent():
                 </div>
 
                 {isDepositConfirmed && (
-                  <div className="mb-5 flex items-center gap-2 border border-red-900/40 bg-red-950/10 px-3 py-2">
-                    <span className="h-2 w-2 bg-red-600 rounded-none shadow-none" />
-                    <p className="text-xs uppercase tracking-[0.16em] text-red-500 font-bold">
+                  <div className="mb-5 flex items-center gap-2 border border-emerald-900/40 bg-emerald-950/10 px-3 py-2">
+                    <span className="h-2 w-2 bg-emerald-500 rounded-none shadow-none" />
+                    <p className="text-xs uppercase tracking-[0.16em] text-emerald-400 font-bold">
                       Deposit Confirmed // Agent Access Unlocked
                     </p>
                   </div>
