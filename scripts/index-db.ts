@@ -123,8 +123,8 @@ const METADATA_FETCH_TIMEOUT_MS = 8_000;
 const METADATA_FETCH_RETRY_COUNT = 2;
 const DEFAULT_IPFS_GATEWAY = "https://ipfs.io/ipfs/";
 const DEFAULT_INDEXER_RPC_FALLBACKS = [
-  { label: "llamarpc", url: "https://base.llamarpc.com" },
   { label: "1rpc", url: "https://1rpc.io/base" },
+  { label: "llamarpc", url: "https://base.llamarpc.com" },
 ] as const;
 
 type IndexedAgentRecord = {
