@@ -66,9 +66,9 @@ const SDK_SECURITY_NOTICE =
 
 function SdkSecurityNoticeBanner() {
   return (
-    <div className="border border-red-900/40 bg-red-950/10 p-4">
-      <p className="flex items-start gap-2 text-xs uppercase tracking-[0.14em] text-red-300 font-bold">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+    <div className="border border-amber-800/40 bg-amber-950/10 p-4">
+      <p className="flex items-center gap-2 text-xs uppercase tracking-[0.14em] text-amber-300 font-bold">
+        <AlertTriangle className="h-4 w-4 shrink-0" />
         <span>{SDK_SECURITY_NOTICE}</span>
       </p>
     </div>
@@ -807,25 +807,23 @@ def my_agent():
 
                 <div className="mt-4 inline-flex items-center gap-2 border border-neutral-800 bg-neutral-900 px-3 py-1.5">
                   <span
-                    className={`h-2 w-2 rounded-none ${
-                      isWithdrawConfirming
-                        ? "bg-red-500 animate-pulse"
-                        : isWithdrawConfirmedForSelectedAgent
-                          ? "bg-neutral-400"
-                          : merchantVaultBalanceWei > 0n
-                            ? "bg-neutral-400"
-                            : "bg-neutral-600"
-                    }`}
-                  />
-                  <span className={`text-xs uppercase tracking-[0.16em] font-bold ${
-                    isWithdrawConfirming
-                      ? "text-red-400"
+                    className={`h-2 w-2 rounded-none ${isWithdrawConfirming
+                      ? "bg-red-500 animate-pulse"
                       : isWithdrawConfirmedForSelectedAgent
-                        ? "text-neutral-300"
+                        ? "bg-neutral-400"
                         : merchantVaultBalanceWei > 0n
-                          ? "text-neutral-300"
-                          : "text-neutral-500"
-                  }`}>
+                          ? "bg-neutral-400"
+                          : "bg-neutral-600"
+                      }`}
+                  />
+                  <span className={`text-xs uppercase tracking-[0.16em] font-bold ${isWithdrawConfirming
+                    ? "text-red-400"
+                    : isWithdrawConfirmedForSelectedAgent
+                      ? "text-neutral-300"
+                      : merchantVaultBalanceWei > 0n
+                        ? "text-neutral-300"
+                        : "text-neutral-500"
+                    }`}>
                     {isWithdrawConfirming
                       ? "WITHDRAWAL PENDING"
                       : isWithdrawConfirmedForSelectedAgent
@@ -905,217 +903,217 @@ def my_agent():
             <SdkSecurityNoticeBanner />
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
               <article className="bg-neutral-950 border border-neutral-900 rounded-none p-5">
-              <div className="mb-5 flex items-center gap-3">
-                <Wallet className="h-5 w-5 text-neutral-500" />
-                <h2 className="text-sm uppercase tracking-[0.18em] text-neutral-300 font-bold">Agent Vault</h2>
-              </div>
-
-              {isDepositConfirmed && (
-                <div className="mb-5 flex items-center gap-2 border border-red-900/40 bg-red-950/10 px-3 py-2">
-                  <span className="h-2 w-2 bg-red-600 rounded-none shadow-none" />
-                  <p className="text-xs uppercase tracking-[0.16em] text-red-500 font-bold">
-                    Deposit Confirmed // Agent Access Unlocked
-                  </p>
+                <div className="mb-5 flex items-center gap-3">
+                  <Wallet className="h-5 w-5 text-neutral-500" />
+                  <h2 className="text-sm uppercase tracking-[0.18em] text-neutral-300 font-bold">Agent Vault</h2>
                 </div>
-              )}
 
-              {isDepositConfirmed && creditSyncState === "syncing" && (
-                <div className="mb-5 flex items-center gap-2 border border-neutral-800 bg-neutral-900 px-3 py-2">
-                  <span className="h-2 w-2 bg-neutral-500 rounded-none animate-pulse" />
-                  <p className="text-xs uppercase tracking-[0.16em] text-neutral-400 font-bold">
-                    Syncing Payment Ledger...
-                  </p>
-                </div>
-              )}
-
-              {isDepositConfirmed && creditSyncState === "synced" && (
-                <div className="mb-5 flex items-center gap-2 border border-neutral-800 bg-neutral-900 px-3 py-2">
-                  <span className="h-2 w-2 bg-neutral-500 rounded-none" />
-                  <p className="text-xs uppercase tracking-[0.16em] text-neutral-400 font-bold">
-                    Credits Synced // Available Credits: {syncedCredits ?? "--"}
-                  </p>
-                </div>
-              )}
-
-              {isDepositConfirmed && creditSyncState === "error" && (
-                <div className="mb-5 flex flex-col gap-2 border border-red-900/40 bg-red-950/10 px-3 py-2">
-                  <p className="text-xs uppercase tracking-[0.16em] text-red-500 font-bold">
-                    Credit Sync Failed // {creditSyncError ?? "Unable to refresh access credits."}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleRetryCreditSync}
-                    className="inline-flex w-fit items-center justify-center border border-red-900/40 bg-red-950/20 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-red-400 transition hover:bg-red-900/30"
-                  >
-                    Retry Sync
-                  </button>
-                </div>
-              )}
-
-              <div className="mb-5 border border-neutral-900 bg-neutral-900 p-4">
-                <p className="mb-1 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Vault Revenue (ETH)</p>
-                <p className="text-3xl text-neutral-200 font-mono">
-                  {isConnected
-                    ? isBalancePending
-                      ? "..."
-                      : formattedVaultBalance
-                    : "0.0000 ETH"}
-                </p>
-              </div>
-
-              <div className="mb-5 border border-neutral-900 bg-neutral-900 p-4">
-                <p className="mb-1 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Your Available Credits</p>
-                <p className="text-2xl text-neutral-200 font-mono">{isConnected ? syncedCredits ?? "0" : "0"}</p>
-              </div>
-
-              <div className="mb-5 border border-neutral-900 bg-neutral-900 p-3">
-                <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Target Agent Wallet</p>
-                <p className="mt-1 break-all text-sm text-neutral-400 font-mono">{targetAgentAddress}</p>
-                {usesFallbackAgentAddress && (
-                  <p className="mt-1 text-xs text-neutral-600">
-                    No agent wallet found in page context. Using protocol treasury fallback for testing.
-                  </p>
+                {isDepositConfirmed && (
+                  <div className="mb-5 flex items-center gap-2 border border-red-900/40 bg-red-950/10 px-3 py-2">
+                    <span className="h-2 w-2 bg-red-600 rounded-none shadow-none" />
+                    <p className="text-xs uppercase tracking-[0.16em] text-red-500 font-bold">
+                      Deposit Confirmed // Agent Access Unlocked
+                    </p>
+                  </div>
                 )}
-              </div>
 
-              <div className="space-y-4">
-                <label className="block text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
-                  Deposit ETH
-                  <input
-                    value={ethAmount}
-                    onChange={(event) => setEthAmount(event.target.value)}
-                    inputMode="decimal"
-                    placeholder="0.01"
-                    className="mt-2 w-full border border-neutral-800 bg-neutral-950 px-3 py-2 text-white outline-none focus:border-red-600 rounded-none font-mono"
-                  />
-                </label>
+                {isDepositConfirmed && creditSyncState === "syncing" && (
+                  <div className="mb-5 flex items-center gap-2 border border-neutral-800 bg-neutral-900 px-3 py-2">
+                    <span className="h-2 w-2 bg-neutral-500 rounded-none animate-pulse" />
+                    <p className="text-xs uppercase tracking-[0.16em] text-neutral-400 font-bold">
+                      Syncing Payment Ledger...
+                    </p>
+                  </div>
+                )}
 
-                <div className="border border-neutral-900 bg-neutral-900 p-3">
-                  <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Estimated Access Credits</p>
-                  <p className="text-lg text-neutral-200 font-mono">{estimatedCredits == null ? "--" : estimatedCredits.toString()}</p>
-                  <p className="mt-1 text-xs text-neutral-600">
-                    Price per credit: {formatEther(CREDIT_PRICE_WEI)} ETH
-                  </p>
-                </div>
+                {isDepositConfirmed && creditSyncState === "synced" && (
+                  <div className="mb-5 flex items-center gap-2 border border-neutral-800 bg-neutral-900 px-3 py-2">
+                    <span className="h-2 w-2 bg-neutral-500 rounded-none" />
+                    <p className="text-xs uppercase tracking-[0.16em] text-neutral-400 font-bold">
+                      Credits Synced // Available Credits: {syncedCredits ?? "--"}
+                    </p>
+                  </div>
+                )}
 
-                {isConnected && !isOnSupportedChain && (
-                  <div className="border border-red-900/50 bg-red-950/20 p-3">
-                    <p className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-red-500 font-bold">
-                      <AlertTriangle className="h-4 w-4" />
-                      NETWORK MISMATCH // INITIALIZING SWITCH PROTOCOL
+                {isDepositConfirmed && creditSyncState === "error" && (
+                  <div className="mb-5 flex flex-col gap-2 border border-red-900/40 bg-red-950/10 px-3 py-2">
+                    <p className="text-xs uppercase tracking-[0.16em] text-red-500 font-bold">
+                      Credit Sync Failed // {creditSyncError ?? "Unable to refresh access credits."}
                     </p>
                     <button
                       type="button"
-                      onClick={handleSwitchToPreferredChain}
-                      disabled={isSwitchingChain}
-                      className="mt-3 inline-flex items-center gap-2 border border-red-900/40 bg-neutral-900 px-4 py-2 text-xs uppercase tracking-wider text-red-400 transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={handleRetryCreditSync}
+                      className="inline-flex w-fit items-center justify-center border border-red-900/40 bg-red-950/20 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-red-400 transition hover:bg-red-900/30"
                     >
-                      {isSwitchingChain ? "Switching..." : "Switch to Base Mainnet"}
+                      Retry Sync
                     </button>
                   </div>
                 )}
-                <button
-                  type="button"
-                  onClick={handlePurchase}
-                  disabled={!canPurchase}
-                  className="w-full border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm uppercase tracking-wider text-neutral-300 font-bold transition hover:bg-red-600 hover:border-red-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isSwitchingChain
-                    ? "Switching network..."
-                    : isDepositWriting
-                      ? "Submitting..."
-                      : isDepositConfirming
-                        ? "Confirming..."
-                        : "Deposit ETH"}
-                </button>
 
-                {depositWriteError && (
-                  <p className="text-xs text-red-500">{getErrorMessage(depositWriteError, "Transaction failed.")}</p>
-                )}
-                {readError && (
-                  <p className="text-xs text-red-500">{getErrorMessage(readError, "Failed to read vault balance.")}</p>
-                )}
-                {switchError && <p className="text-xs text-red-500">{switchError}</p>}
-              </div>
+                <div className="mb-5 border border-neutral-900 bg-neutral-900 p-4">
+                  <p className="mb-1 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Vault Revenue (ETH)</p>
+                  <p className="text-3xl text-neutral-200 font-mono">
+                    {isConnected
+                      ? isBalancePending
+                        ? "..."
+                        : formattedVaultBalance
+                      : "0.0000 ETH"}
+                  </p>
+                </div>
+
+                <div className="mb-5 border border-neutral-900 bg-neutral-900 p-4">
+                  <p className="mb-1 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Your Available Credits</p>
+                  <p className="text-2xl text-neutral-200 font-mono">{isConnected ? syncedCredits ?? "0" : "0"}</p>
+                </div>
+
+                <div className="mb-5 border border-neutral-900 bg-neutral-900 p-3">
+                  <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Target Agent Wallet</p>
+                  <p className="mt-1 break-all text-sm text-neutral-400 font-mono">{targetAgentAddress}</p>
+                  {usesFallbackAgentAddress && (
+                    <p className="mt-1 text-xs text-neutral-600">
+                      No agent wallet found in page context. Using protocol treasury fallback for testing.
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  <label className="block text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
+                    Deposit ETH
+                    <input
+                      value={ethAmount}
+                      onChange={(event) => setEthAmount(event.target.value)}
+                      inputMode="decimal"
+                      placeholder="0.01"
+                      className="mt-2 w-full border border-neutral-800 bg-neutral-950 px-3 py-2 text-white outline-none focus:border-red-600 rounded-none font-mono"
+                    />
+                  </label>
+
+                  <div className="border border-neutral-900 bg-neutral-900 p-3">
+                    <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Estimated Access Credits</p>
+                    <p className="text-lg text-neutral-200 font-mono">{estimatedCredits == null ? "--" : estimatedCredits.toString()}</p>
+                    <p className="mt-1 text-xs text-neutral-600">
+                      Price per credit: {formatEther(CREDIT_PRICE_WEI)} ETH
+                    </p>
+                  </div>
+
+                  {isConnected && !isOnSupportedChain && (
+                    <div className="border border-red-900/50 bg-red-950/20 p-3">
+                      <p className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-red-500 font-bold">
+                        <AlertTriangle className="h-4 w-4" />
+                        NETWORK MISMATCH // INITIALIZING SWITCH PROTOCOL
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleSwitchToPreferredChain}
+                        disabled={isSwitchingChain}
+                        className="mt-3 inline-flex items-center gap-2 border border-red-900/40 bg-neutral-900 px-4 py-2 text-xs uppercase tracking-wider text-red-400 transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isSwitchingChain ? "Switching..." : "Switch to Base Mainnet"}
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handlePurchase}
+                    disabled={!canPurchase}
+                    className="w-full border border-neutral-700 bg-neutral-900 px-4 py-3 text-sm uppercase tracking-wider text-neutral-300 font-bold transition hover:bg-red-600 hover:border-red-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isSwitchingChain
+                      ? "Switching network..."
+                      : isDepositWriting
+                        ? "Submitting..."
+                        : isDepositConfirming
+                          ? "Confirming..."
+                          : "Deposit ETH"}
+                  </button>
+
+                  {depositWriteError && (
+                    <p className="text-xs text-red-500">{getErrorMessage(depositWriteError, "Transaction failed.")}</p>
+                  )}
+                  {readError && (
+                    <p className="text-xs text-red-500">{getErrorMessage(readError, "Failed to read vault balance.")}</p>
+                  )}
+                  {switchError && <p className="text-xs text-red-500">{switchError}</p>}
+                </div>
               </article>
 
               <article className="bg-neutral-950 border border-neutral-900 rounded-none p-5">
-              <div className="mb-5 flex items-center gap-3">
-                <Code className="h-5 w-5 text-neutral-500" />
-                <h2 className="text-sm uppercase tracking-[0.18em] text-neutral-300 font-bold">API ACCESS // CONSUMER CONSOLE</h2>
-              </div>
+                <div className="mb-5 flex items-center gap-3">
+                  <Code className="h-5 w-5 text-neutral-500" />
+                  <h2 className="text-sm uppercase tracking-[0.18em] text-neutral-300 font-bold">API ACCESS // CONSUMER CONSOLE</h2>
+                </div>
 
-              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <div className="mb-4 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConsumerSdk("node")}
+                    className={`border px-3 py-2 text-xs uppercase tracking-[0.14em] transition font-bold ${consumerSdk === "node"
+                      ? "border-neutral-700 bg-neutral-800 text-neutral-200"
+                      : "border-neutral-800 bg-neutral-950 text-neutral-500 hover:border-neutral-600 hover:text-neutral-300"
+                      }`}
+                  >
+                    Node.js SDK
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConsumerSdk("python")}
+                    className={`border px-3 py-2 text-xs uppercase tracking-[0.14em] transition font-bold ${consumerSdk === "python"
+                      ? "border-neutral-700 bg-neutral-800 text-neutral-200"
+                      : "border-neutral-800 bg-neutral-950 text-neutral-500 hover:border-neutral-600 hover:text-neutral-300"
+                      }`}
+                  >
+                    Python CLI
+                  </button>
+                </div>
+
+                <div className="border border-neutral-900 bg-neutral-900 p-4">
+                  <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
+                    {consumerSdk === "python"
+                      ? "Trusted CLI Usage Example (Raw EIP-712 Request)"
+                      : "Usage Example"}
+                  </p>
+                  <pre className="overflow-x-auto whitespace-pre-wrap text-sm text-neutral-300 font-mono">
+                    <code>{consumerUsageExample}</code>
+                  </pre>
+                </div>
+
+                {consumerSdk === "python" && (
+                  <p className="mt-3 text-xs text-neutral-600">
+                    This example runs in a trusted CLI/server environment and signs the gate request directly. Do
+                    not run this with a raw private key in frontend code.
+                  </p>
+                )}
+
                 <button
                   type="button"
-                  onClick={() => setConsumerSdk("node")}
-                  className={`border px-3 py-2 text-xs uppercase tracking-[0.14em] transition font-bold ${consumerSdk === "node"
-                    ? "border-neutral-700 bg-neutral-800 text-neutral-200"
-                    : "border-neutral-800 bg-neutral-950 text-neutral-500 hover:border-neutral-600 hover:text-neutral-300"
-                    }`}
+                  onClick={handleCopy}
+                  className="mt-4 inline-flex items-center gap-2 border border-neutral-800 bg-neutral-900 px-4 py-2 text-xs uppercase tracking-wider text-neutral-400 transition hover:bg-neutral-800 hover:text-neutral-200"
                 >
-                  Node.js SDK
+                  <Copy className="h-4 w-4" />
+                  {copyState === "copied"
+                    ? "Copied"
+                    : `Copy ${consumerSdk === "node" ? "Node.js" : "Python"} Example`}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setConsumerSdk("python")}
-                  className={`border px-3 py-2 text-xs uppercase tracking-[0.14em] transition font-bold ${consumerSdk === "python"
-                    ? "border-neutral-700 bg-neutral-800 text-neutral-200"
-                    : "border-neutral-800 bg-neutral-950 text-neutral-500 hover:border-neutral-600 hover:text-neutral-300"
-                    }`}
-                >
-                  Python CLI
-                </button>
-              </div>
 
-              <div className="border border-neutral-900 bg-neutral-900 p-4">
-                <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
-                  {consumerSdk === "python"
-                    ? "Trusted CLI Usage Example (Raw EIP-712 Request)"
-                    : "Usage Example"}
-                </p>
-                <pre className="overflow-x-auto whitespace-pre-wrap text-sm text-neutral-300 font-mono">
-                  <code>{consumerUsageExample}</code>
-                </pre>
-              </div>
+                {copyState === "error" && (
+                  <p className="mt-2 text-xs text-red-500">Clipboard permission blocked. Copy manually.</p>
+                )}
 
-              {consumerSdk === "python" && (
-                <p className="mt-3 text-xs text-neutral-600">
-                  This example runs in a trusted CLI/server environment and signs the gate request directly. Do
-                  not run this with a raw private key in frontend code.
-                </p>
-              )}
+                <div className="mt-5 border border-neutral-900 bg-neutral-900 p-4">
+                  <p className="text-sm text-neutral-500">
+                    {consumerSdk === "node"
+                      ? "The Node SDK signs and routes verification requests to"
+                      : "This Python CLI example signs and sends a raw EIP-712 verification request to"}
+                  </p>
+                  <p className="mt-1">
+                    <span className="block break-all text-neutral-300 font-mono">
+                      {APP_BASE_URL}/api/gate/{consumerServiceSlug}
+                    </span>
+                    <span className="text-neutral-300 font-mono">1 Request = 1 Credit.</span>
+                  </p>
+                </div>
 
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="mt-4 inline-flex items-center gap-2 border border-neutral-800 bg-neutral-900 px-4 py-2 text-xs uppercase tracking-wider text-neutral-400 transition hover:bg-neutral-800 hover:text-neutral-200"
-              >
-                <Copy className="h-4 w-4" />
-                {copyState === "copied"
-                  ? "Copied"
-                  : `Copy ${consumerSdk === "node" ? "Node.js" : "Python"} Example`}
-              </button>
-
-              {copyState === "error" && (
-                <p className="mt-2 text-xs text-red-500">Clipboard permission blocked. Copy manually.</p>
-              )}
-
-              <div className="mt-5 border border-neutral-900 bg-neutral-900 p-4">
-                <p className="text-sm text-neutral-500">
-                  {consumerSdk === "node"
-                    ? "The Node SDK signs and routes verification requests to"
-                    : "This Python CLI example signs and sends a raw EIP-712 verification request to"}
-                </p>
-                <p className="mt-1">
-                  <span className="block break-all text-neutral-300 font-mono">
-                    {APP_BASE_URL}/api/gate/{consumerServiceSlug}
-                  </span>
-                  <span className="text-neutral-300 font-mono">1 Request = 1 Credit.</span>
-                </p>
-              </div>
-
-              <SdkDocsLinks />
+                <SdkDocsLinks />
               </article>
             </div>
           </section>
