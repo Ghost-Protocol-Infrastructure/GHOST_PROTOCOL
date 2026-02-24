@@ -44,6 +44,12 @@ type ActivatedAgentsCache = {
   expiresAtMs: number;
 };
 
+type GatewayReadinessInfo = {
+  readinessStatus: "UNCONFIGURED" | "CONFIGURED" | "LIVE" | "DEGRADED";
+  lastCanaryCheckedAt: string | null;
+  lastCanaryPassedAt: string | null;
+};
+
 let activatedAgentsCache: ActivatedAgentsCache | null = null;
 let activatedAgentsInFlight: Promise<number> | null = null;
 
@@ -221,6 +227,55 @@ const resolveSyncMetadata = async (lastSyncedBlock: bigint | null | undefined): 
   }
 };
 
+const resolveGatewayReadinessByAgentIds = async (agentIds: string[]): Promise<Map<string, GatewayReadinessInfo>> => {
+  const normalizedAgentIds = Array.from(
+    new Set(
+      agentIds
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0),
+    ),
+  );
+
+  if (normalizedAgentIds.length === 0) return new Map();
+
+  try {
+    const rows = await prisma.agentGatewayConfig.findMany({
+      where: {
+        agentId: {
+          in: normalizedAgentIds,
+        },
+      },
+      select: {
+        agentId: true,
+        readinessStatus: true,
+        lastCanaryCheckedAt: true,
+        lastCanaryPassedAt: true,
+      },
+    });
+
+    const readinessByAgentId = new Map<string, GatewayReadinessInfo>();
+    for (const row of rows) {
+      readinessByAgentId.set(row.agentId.toLowerCase(), {
+        readinessStatus: row.readinessStatus,
+        lastCanaryCheckedAt: row.lastCanaryCheckedAt?.toISOString() ?? null,
+        lastCanaryPassedAt: row.lastCanaryPassedAt?.toISOString() ?? null,
+      });
+    }
+    return readinessByAgentId;
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "P2021"
+    ) {
+      return new Map();
+    }
+    console.error("Failed to resolve agent gateway readiness statuses.", error);
+    return new Map();
+  }
+};
+
 const resolveGlobalRankByAddress = async (sort: string | null, addresses: string[]): Promise<Map<string, number>> => {
   if (addresses.length === 0) return new Map();
 
@@ -341,6 +396,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         null;
       const syncMetadata = await resolveSyncMetadata(indexerState?.lastSyncedBlock);
       const activatedAgents = await activatedAgentsPromise;
+      const gatewayReadinessByAgentId = await resolveGatewayReadinessByAgentIds(rows.map((row) => row.agentId));
 
       return NextResponse.json(
         {
@@ -376,6 +432,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             uptime: row.uptime,
             volume: row.volume.toString(),
             score: row.score,
+            gatewayReadinessStatus:
+              gatewayReadinessByAgentId.get(row.agentId.toLowerCase())?.readinessStatus ?? "UNCONFIGURED",
+            gatewayLastCanaryCheckedAt:
+              gatewayReadinessByAgentId.get(row.agentId.toLowerCase())?.lastCanaryCheckedAt ?? null,
+            gatewayLastCanaryPassedAt:
+              gatewayReadinessByAgentId.get(row.agentId.toLowerCase())?.lastCanaryPassedAt ?? null,
             createdAt: row.agentCreatedAt.toISOString(),
             updatedAt: row.agentUpdatedAt.toISOString(),
           })),
@@ -458,6 +520,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         agents.map((agent) => agent.address),
       )
     : new Map<string, number>();
+  const gatewayReadinessByAgentId = await resolveGatewayReadinessByAgentIds(
+    agents
+      .map((agent) => agent.agentId ?? "")
+      .filter((value): value is string => value.trim().length > 0),
+  );
 
   return NextResponse.json(
     {
@@ -493,6 +560,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         uptime: agent.uptime,
         volume: agent.volume.toString(),
         score: agent.score,
+        gatewayReadinessStatus:
+          gatewayReadinessByAgentId.get((agent.agentId ?? "").toLowerCase())?.readinessStatus ?? "UNCONFIGURED",
+        gatewayLastCanaryCheckedAt:
+          gatewayReadinessByAgentId.get((agent.agentId ?? "").toLowerCase())?.lastCanaryCheckedAt ?? null,
+        gatewayLastCanaryPassedAt:
+          gatewayReadinessByAgentId.get((agent.agentId ?? "").toLowerCase())?.lastCanaryPassedAt ?? null,
         createdAt: agent.createdAt.toISOString(),
         updatedAt: agent.updatedAt.toISOString(),
       })),

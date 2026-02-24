@@ -6,6 +6,7 @@ import { AlertTriangle, Code, Copy, Wallet } from "lucide-react";
 import {
   useAccount,
   useReadContract,
+  useSignMessage,
   useSwitchChain,
   useWaitForTransactionReceipt,
   useWriteContract,
@@ -18,6 +19,10 @@ import {
   PROTOCOL_TREASURY_FALLBACK_ADDRESS,
 } from "@/lib/constants";
 import { isClaimedAgent } from "@/lib/agent-claim";
+import {
+  buildMerchantGatewayAuthMessage,
+  createMerchantGatewayAuthPayload,
+} from "@/lib/agent-gateway-auth";
 import TerminalHeader from "@/components/TerminalHeader";
 
 const CREDIT_PRICE_WEI = parseEther("0.00001");
@@ -27,6 +32,7 @@ const PREFERRED_CHAIN_ID = base.id;
 type CopyState = "idle" | "copied" | "error";
 type CreditSyncState = "idle" | "syncing" | "synced" | "error";
 type ConsumerSdk = "node" | "python";
+type GatewayReadinessStatus = "UNCONFIGURED" | "CONFIGURED" | "LIVE" | "DEGRADED";
 
 type AgentApiRow = {
   address: string;
@@ -38,6 +44,9 @@ type AgentApiRow = {
   tier?: string;
   yield?: number;
   uptime?: number;
+  gatewayReadinessStatus?: GatewayReadinessStatus;
+  gatewayLastCanaryCheckedAt?: string | null;
+  gatewayLastCanaryPassedAt?: string | null;
 };
 
 type AgentApiResponse = {
@@ -52,6 +61,29 @@ type OwnedAgent = {
   status: string;
   tier?: string;
   isClaimed: boolean;
+  gatewayReadinessStatus: GatewayReadinessStatus;
+  gatewayLastCanaryCheckedAt?: string | null;
+  gatewayLastCanaryPassedAt?: string | null;
+};
+
+type AgentGatewayConfigRecord = {
+  agentId: string;
+  ownerAddress: string;
+  serviceSlug: string;
+  endpointUrl: string | null;
+  canaryPath: string | null;
+  canaryMethod: "GET" | null;
+  readinessStatus: GatewayReadinessStatus;
+  lastCanaryCheckedAt: string | null;
+  lastCanaryPassedAt: string | null;
+  lastCanaryStatusCode: number | null;
+  lastCanaryLatencyMs: number | null;
+  lastCanaryError: string | null;
+};
+
+type AgentGatewayConfigResponse = {
+  configured: boolean;
+  config: AgentGatewayConfigRecord;
 };
 
 const isHexAddress = (value: string): boolean => /^0x[a-fA-F0-9]{40}$/.test(value);
@@ -63,6 +95,65 @@ const SDK_REFERENCE_DOC_URL = `${GITHUB_DOCS_BASE_URL}/sdk-reference.md`;
 const SDK_CONTEXT_KEY_PREVIEW_PLACEHOLDER = "sk_live_your_sdk_context_key";
 const SDK_SECURITY_NOTICE =
   "Security Notice: Ghost Protocol gate access is authenticated with Web3 wallet signatures (EIP-712). Configure SDKs with a signer private key in a trusted backend/server/CLI environment only. Never expose private keys in frontend code or commit them to version control.";
+
+const DEFAULT_CANARY_PATH = "/ghostgate/canary";
+
+const isGatewayReadinessStatus = (value: unknown): value is GatewayReadinessStatus =>
+  value === "UNCONFIGURED" || value === "CONFIGURED" || value === "LIVE" || value === "DEGRADED";
+
+const normalizeGatewayReadinessStatus = (value: unknown): GatewayReadinessStatus =>
+  isGatewayReadinessStatus(value) ? value : "UNCONFIGURED";
+
+const isGatewayLive = (status: GatewayReadinessStatus | null | undefined): boolean => status === "LIVE";
+
+const formatGatewayReadinessLabel = (status: GatewayReadinessStatus): string => {
+  switch (status) {
+    case "UNCONFIGURED":
+      return "UNCONFIGURED";
+    case "CONFIGURED":
+      return "CONFIGURED // VERIFY REQUIRED";
+    case "LIVE":
+      return "SERVICE LIVE";
+    case "DEGRADED":
+      return "DEGRADED";
+    default:
+      return "UNCONFIGURED";
+  }
+};
+
+const getGatewayReadinessTone = (status: GatewayReadinessStatus): { dot: string; text: string; border: string; bg: string } => {
+  switch (status) {
+    case "LIVE":
+      return {
+        dot: "bg-emerald-400",
+        text: "text-emerald-300",
+        border: "border-emerald-900/40",
+        bg: "bg-emerald-950/10",
+      };
+    case "CONFIGURED":
+      return {
+        dot: "bg-amber-400",
+        text: "text-amber-300",
+        border: "border-amber-900/40",
+        bg: "bg-amber-950/10",
+      };
+    case "DEGRADED":
+      return {
+        dot: "bg-rose-400",
+        text: "text-rose-300",
+        border: "border-rose-900/40",
+        bg: "bg-rose-950/10",
+      };
+    case "UNCONFIGURED":
+    default:
+      return {
+        dot: "bg-neutral-500",
+        text: "text-neutral-400",
+        border: "border-neutral-800",
+        bg: "bg-neutral-900",
+      };
+  }
+};
 
 function SdkSecurityNoticeBanner() {
   return (
@@ -156,6 +247,7 @@ type SyncCreditsResponse = {
 function DashboardPageContent() {
   const searchParams = useSearchParams();
   const { address, chainId, isConnected } = useAccount();
+  const { signMessageAsync } = useSignMessage();
   const { switchChainAsync, isPending: isSwitchingChain } = useSwitchChain();
   const {
     data: depositTxHash,
@@ -189,6 +281,17 @@ function DashboardPageContent() {
   const [isLoadingOwnedAgents, setIsLoadingOwnedAgents] = useState(false);
   const [ownedAgentsError, setOwnedAgentsError] = useState<string | null>(null);
   const [lastWithdrawAgentId, setLastWithdrawAgentId] = useState<string | null>(null);
+  const [merchantGatewayConfig, setMerchantGatewayConfig] = useState<AgentGatewayConfigRecord | null>(null);
+  const [merchantGatewayEndpointUrl, setMerchantGatewayEndpointUrl] = useState("");
+  const [merchantGatewayCanaryPath, setMerchantGatewayCanaryPath] = useState(DEFAULT_CANARY_PATH);
+  const [isLoadingMerchantGatewayConfig, setIsLoadingMerchantGatewayConfig] = useState(false);
+  const [isSavingMerchantGatewayConfig, setIsSavingMerchantGatewayConfig] = useState(false);
+  const [isVerifyingMerchantGateway, setIsVerifyingMerchantGateway] = useState(false);
+  const [merchantGatewayError, setMerchantGatewayError] = useState<string | null>(null);
+  const [merchantGatewayNotice, setMerchantGatewayNotice] = useState<string | null>(null);
+  const [consumerGatewayReadinessStatus, setConsumerGatewayReadinessStatus] = useState<GatewayReadinessStatus | null>(null);
+  const [consumerGatewayReadinessError, setConsumerGatewayReadinessError] = useState<string | null>(null);
+  const [isLoadingConsumerGatewayReadiness, setIsLoadingConsumerGatewayReadiness] = useState(false);
   const syncedHashesRef = useRef<Set<string>>(new Set());
 
   const amountWei = useMemo(() => parseInputWei(ethAmount), [ethAmount]);
@@ -253,6 +356,49 @@ function DashboardPageContent() {
     }
 
     return typeof payload.credits === "string" ? payload.credits : "0";
+  }, []);
+
+  const fetchAgentGatewayConfig = useCallback(async (agentId: string): Promise<AgentGatewayConfigRecord> => {
+    const params = new URLSearchParams({ agentId });
+    const response = await fetch(`/api/agent-gateway/config?${params.toString()}`, {
+      cache: "no-store",
+      headers: {
+        "cache-control": "no-cache",
+      },
+    });
+
+    const payload = (await response.json()) as Partial<AgentGatewayConfigResponse> & { error?: string };
+    if (!response.ok) {
+      throw new Error(typeof payload.error === "string" ? payload.error : "Failed to load gateway config.");
+    }
+
+    const config = payload.config;
+    if (!config || typeof config !== "object") {
+      throw new Error("Gateway config response was missing config payload.");
+    }
+
+    return {
+      agentId: String(config.agentId ?? agentId),
+      ownerAddress: String(config.ownerAddress ?? ""),
+      serviceSlug: String(config.serviceSlug ?? `agent-${agentId}`),
+      endpointUrl: typeof config.endpointUrl === "string" ? config.endpointUrl : null,
+      canaryPath: typeof config.canaryPath === "string" ? config.canaryPath : DEFAULT_CANARY_PATH,
+      canaryMethod: config.canaryMethod === "GET" ? "GET" : "GET",
+      readinessStatus: normalizeGatewayReadinessStatus(config.readinessStatus),
+      lastCanaryCheckedAt:
+        typeof config.lastCanaryCheckedAt === "string" || config.lastCanaryCheckedAt === null
+          ? (config.lastCanaryCheckedAt ?? null)
+          : null,
+      lastCanaryPassedAt:
+        typeof config.lastCanaryPassedAt === "string" || config.lastCanaryPassedAt === null
+          ? (config.lastCanaryPassedAt ?? null)
+          : null,
+      lastCanaryStatusCode:
+        typeof config.lastCanaryStatusCode === "number" ? config.lastCanaryStatusCode : null,
+      lastCanaryLatencyMs:
+        typeof config.lastCanaryLatencyMs === "number" ? config.lastCanaryLatencyMs : null,
+      lastCanaryError: typeof config.lastCanaryError === "string" ? config.lastCanaryError : null,
+    };
   }, []);
 
   const syncCreditsFromChain = useCallback(async (userAddress: Address, hash: string): Promise<void> => {
@@ -451,6 +597,11 @@ print("body:", response.text)`,
             name: agent.name,
             status: agent.status,
             tier: agent.tier,
+            gatewayReadinessStatus: normalizeGatewayReadinessStatus(agent.gatewayReadinessStatus),
+            gatewayLastCanaryCheckedAt:
+              typeof agent.gatewayLastCanaryCheckedAt === "string" ? agent.gatewayLastCanaryCheckedAt : null,
+            gatewayLastCanaryPassedAt:
+              typeof agent.gatewayLastCanaryPassedAt === "string" ? agent.gatewayLastCanaryPassedAt : null,
             isClaimed: isClaimedAgent({
               status: agent.status,
               tier: agent.tier,
@@ -557,6 +708,270 @@ print("body:", response.text)`,
     ? `/dashboard?mode=consumer&agentId=${encodeURIComponent(selectedOwnedAgent.agentId)}&owner=${encodeURIComponent(selectedOwnedAgent.owner)}`
     : "/dashboard?mode=consumer";
   const merchantServiceSlug = selectedOwnedAgent ? `agent-${selectedOwnedAgent.agentId}` : "agent-your-agent-id";
+  const patchOwnedAgentGatewayReadiness = useCallback(
+    (
+      agentId: string,
+      readinessStatus: GatewayReadinessStatus,
+      lastCanaryCheckedAt: string | null,
+      lastCanaryPassedAt: string | null,
+    ) => {
+      setOwnedAgents((current) =>
+        current.map((agent) =>
+          agent.agentId === agentId
+            ? {
+                ...agent,
+                gatewayReadinessStatus: readinessStatus,
+                gatewayLastCanaryCheckedAt: lastCanaryCheckedAt ?? null,
+                gatewayLastCanaryPassedAt: lastCanaryPassedAt ?? null,
+              }
+            : agent,
+        ),
+      );
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!showMerchantView || !selectedOwnedAgent) {
+      setMerchantGatewayConfig(null);
+      setMerchantGatewayEndpointUrl("");
+      setMerchantGatewayCanaryPath(DEFAULT_CANARY_PATH);
+      setMerchantGatewayError(null);
+      setMerchantGatewayNotice(null);
+      setIsLoadingMerchantGatewayConfig(false);
+      return;
+    }
+
+    let active = true;
+
+    const loadMerchantGatewayConfig = async () => {
+      setIsLoadingMerchantGatewayConfig(true);
+      setMerchantGatewayError(null);
+      try {
+        const config = await fetchAgentGatewayConfig(selectedOwnedAgent.agentId);
+        if (!active) return;
+        setMerchantGatewayConfig(config);
+        setMerchantGatewayEndpointUrl(config.endpointUrl ?? "");
+        setMerchantGatewayCanaryPath(config.canaryPath ?? DEFAULT_CANARY_PATH);
+        patchOwnedAgentGatewayReadiness(
+          selectedOwnedAgent.agentId,
+          config.readinessStatus,
+          config.lastCanaryCheckedAt,
+          config.lastCanaryPassedAt,
+        );
+      } catch (error) {
+        if (!active) return;
+        setMerchantGatewayConfig(null);
+        setMerchantGatewayError(getErrorMessage(error, "Failed to load gateway readiness state."));
+      } finally {
+        if (active) setIsLoadingMerchantGatewayConfig(false);
+      }
+    };
+
+    void loadMerchantGatewayConfig();
+
+    return () => {
+      active = false;
+    };
+  }, [fetchAgentGatewayConfig, patchOwnedAgentGatewayReadiness, selectedOwnedAgent, showMerchantView]);
+
+  useEffect(() => {
+    if (!normalizedRequestedAgentId) {
+      setConsumerGatewayReadinessStatus(null);
+      setConsumerGatewayReadinessError(null);
+      setIsLoadingConsumerGatewayReadiness(false);
+      return;
+    }
+
+    let active = true;
+
+    const loadConsumerGatewayReadiness = async () => {
+      setIsLoadingConsumerGatewayReadiness(true);
+      setConsumerGatewayReadinessError(null);
+      try {
+        const config = await fetchAgentGatewayConfig(normalizedRequestedAgentId);
+        if (!active) return;
+        setConsumerGatewayReadinessStatus(config.readinessStatus);
+      } catch (error) {
+        if (!active) return;
+        setConsumerGatewayReadinessStatus(null);
+        setConsumerGatewayReadinessError(getErrorMessage(error, "Failed to load agent gateway readiness."));
+      } finally {
+        if (active) setIsLoadingConsumerGatewayReadiness(false);
+      }
+    };
+
+    void loadConsumerGatewayReadiness();
+
+    return () => {
+      active = false;
+    };
+  }, [fetchAgentGatewayConfig, normalizedRequestedAgentId]);
+
+  const merchantGatewayReadinessStatus =
+    merchantGatewayConfig?.readinessStatus ?? selectedOwnedAgent?.gatewayReadinessStatus ?? "UNCONFIGURED";
+  const merchantGatewayReadinessTone = getGatewayReadinessTone(merchantGatewayReadinessStatus);
+  const merchantGatewayLastCheckedAt =
+    merchantGatewayConfig?.lastCanaryCheckedAt ?? selectedOwnedAgent?.gatewayLastCanaryCheckedAt ?? null;
+  const merchantGatewayLastPassedAt =
+    merchantGatewayConfig?.lastCanaryPassedAt ?? selectedOwnedAgent?.gatewayLastCanaryPassedAt ?? null;
+
+  const consumerHasExplicitAgentTarget = Boolean(normalizedRequestedAgentId && !usesFallbackAgentAddress);
+  const consumerEffectiveGatewayReadinessStatus = consumerHasExplicitAgentTarget
+    ? normalizeGatewayReadinessStatus(consumerGatewayReadinessStatus)
+    : null;
+  const consumerGatewayReadinessTone = getGatewayReadinessTone(
+    consumerEffectiveGatewayReadinessStatus ?? "UNCONFIGURED",
+  );
+  const consumerGatewayActivationBlocked = consumerHasExplicitAgentTarget
+    ? isLoadingConsumerGatewayReadiness || !isGatewayLive(consumerEffectiveGatewayReadinessStatus)
+    : false;
+
+  const handleSaveMerchantGatewayConfig = async () => {
+    if (!selectedOwnedAgent || !address) return;
+
+    setMerchantGatewayError(null);
+    setMerchantGatewayNotice(null);
+    setIsSavingMerchantGatewayConfig(true);
+
+    try {
+      const authPayload = createMerchantGatewayAuthPayload({
+        action: "config",
+        agentId: selectedOwnedAgent.agentId,
+        ownerAddress: selectedOwnedAgent.owner,
+        actorAddress: address.toLowerCase(),
+        serviceSlug: `agent-${selectedOwnedAgent.agentId}`,
+        nonce: crypto.randomUUID().replace(/-/g, ""),
+      });
+      const authSignature = await signMessageAsync({
+        message: buildMerchantGatewayAuthMessage(authPayload),
+      });
+
+      const response = await fetch("/api/agent-gateway/config", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "cache-control": "no-store",
+        },
+        body: JSON.stringify({
+          agentId: selectedOwnedAgent.agentId,
+          ownerAddress: selectedOwnedAgent.owner,
+          actorAddress: address.toLowerCase(),
+          serviceSlug: `agent-${selectedOwnedAgent.agentId}`,
+          endpointUrl: merchantGatewayEndpointUrl.trim(),
+          canaryPath: merchantGatewayCanaryPath.trim() || DEFAULT_CANARY_PATH,
+          canaryMethod: "GET",
+          authPayload,
+          authSignature,
+        }),
+      });
+
+      const payload = (await response.json()) as { error?: string; config?: AgentGatewayConfigRecord };
+      if (!response.ok) {
+        throw new Error(typeof payload.error === "string" ? payload.error : "Failed to save gateway config.");
+      }
+
+      const config =
+        payload.config && typeof payload.config === "object"
+          ? {
+              ...payload.config,
+              readinessStatus: normalizeGatewayReadinessStatus(payload.config.readinessStatus),
+            }
+          : await fetchAgentGatewayConfig(selectedOwnedAgent.agentId);
+
+      setMerchantGatewayConfig(config as AgentGatewayConfigRecord);
+      setMerchantGatewayEndpointUrl((config as AgentGatewayConfigRecord).endpointUrl ?? "");
+      setMerchantGatewayCanaryPath((config as AgentGatewayConfigRecord).canaryPath ?? DEFAULT_CANARY_PATH);
+      patchOwnedAgentGatewayReadiness(
+        selectedOwnedAgent.agentId,
+        (config as AgentGatewayConfigRecord).readinessStatus,
+        (config as AgentGatewayConfigRecord).lastCanaryCheckedAt,
+        (config as AgentGatewayConfigRecord).lastCanaryPassedAt,
+      );
+      setMerchantGatewayNotice("Gateway config saved. Run verification to mark this agent as live.");
+    } catch (error) {
+      setMerchantGatewayError(getErrorMessage(error, "Failed to save gateway config."));
+    } finally {
+      setIsSavingMerchantGatewayConfig(false);
+    }
+  };
+
+  const handleVerifyMerchantGateway = async () => {
+    if (!selectedOwnedAgent || !address) return;
+
+    setMerchantGatewayError(null);
+    setMerchantGatewayNotice(null);
+    setIsVerifyingMerchantGateway(true);
+
+    try {
+      const authPayload = createMerchantGatewayAuthPayload({
+        action: "verify",
+        agentId: selectedOwnedAgent.agentId,
+        ownerAddress: selectedOwnedAgent.owner,
+        actorAddress: address.toLowerCase(),
+        serviceSlug: `agent-${selectedOwnedAgent.agentId}`,
+        nonce: crypto.randomUUID().replace(/-/g, ""),
+      });
+      const authSignature = await signMessageAsync({
+        message: buildMerchantGatewayAuthMessage(authPayload),
+      });
+
+      const response = await fetch("/api/agent-gateway/verify", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "cache-control": "no-store",
+        },
+        body: JSON.stringify({
+          agentId: selectedOwnedAgent.agentId,
+          ownerAddress: selectedOwnedAgent.owner,
+          actorAddress: address.toLowerCase(),
+          serviceSlug: `agent-${selectedOwnedAgent.agentId}`,
+          authPayload,
+          authSignature,
+        }),
+      });
+
+      const payload = (await response.json()) as {
+        error?: string;
+        verified?: boolean;
+        latencyMs?: number | null;
+        readinessStatus?: GatewayReadinessStatus;
+      };
+
+      const refreshed = await fetchAgentGatewayConfig(selectedOwnedAgent.agentId);
+      setMerchantGatewayConfig(refreshed);
+      setMerchantGatewayEndpointUrl(refreshed.endpointUrl ?? "");
+      setMerchantGatewayCanaryPath(refreshed.canaryPath ?? DEFAULT_CANARY_PATH);
+      patchOwnedAgentGatewayReadiness(
+        selectedOwnedAgent.agentId,
+        refreshed.readinessStatus,
+        refreshed.lastCanaryCheckedAt,
+        refreshed.lastCanaryPassedAt,
+      );
+
+      if (!response.ok) {
+        throw new Error(typeof payload.error === "string" ? payload.error : "Gateway canary verification failed.");
+      }
+
+      const latencyText =
+        typeof payload.latencyMs === "number" && Number.isFinite(payload.latencyMs)
+          ? ` (${Math.trunc(payload.latencyMs)} ms)`
+          : "";
+      setMerchantGatewayNotice(`Gateway verified // Service live${latencyText}`);
+      if (normalizedRequestedAgentId === selectedOwnedAgent.agentId) {
+        setConsumerGatewayReadinessStatus(refreshed.readinessStatus);
+        setConsumerGatewayReadinessError(null);
+      }
+    } catch (error) {
+      setMerchantGatewayError(getErrorMessage(error, "Gateway canary verification failed."));
+      if (normalizedRequestedAgentId === selectedOwnedAgent.agentId) {
+        setConsumerGatewayReadinessStatus(null);
+      }
+    } finally {
+      setIsVerifyingMerchantGateway(false);
+    }
+  };
 
   const merchantSdkExample = useMemo(
     () =>
@@ -568,7 +983,8 @@ gate = GhostGate(
     api_key="${merchantApiKey}",
     # Gate authorization is signature-based and requires a signer private key
     private_key=os.environ.get("GHOST_SIGNER_PRIVATE_KEY"),
-    base_url="https://ghostprotocol.cc",  # For local testing: http://localhost:3000
+    # For local testing: use http://localhost:3000
+    base_url="https://ghostprotocol.cc",
 )
 
 # Agent ID: ${selectedOwnedAgent?.agentId ?? "YOUR_AGENT_ID"}
@@ -587,6 +1003,7 @@ def my_agent():
     amountWei > 0n &&
     estimatedCredits != null &&
     estimatedCredits > 0n &&
+    !consumerGatewayActivationBlocked &&
     !isDepositWriting &&
     !isDepositConfirming &&
     !isSwitchingChain;
@@ -636,6 +1053,7 @@ def my_agent():
   };
 
   const handlePurchase = async () => {
+    if (consumerGatewayActivationBlocked) return;
     if (!canPurchase || amountWei == null) return;
     setSwitchError(null);
 
@@ -679,6 +1097,7 @@ def my_agent():
   };
 
   const handleCopy = async () => {
+    if (consumerGatewayActivationBlocked) return;
     try {
       await navigator.clipboard.writeText(consumerUsageExample);
       setCopyState("copied");
@@ -770,6 +1189,105 @@ def my_agent():
                 {apiKeyCopyState === "error" && (
                   <p className="mt-2 text-xs text-red-500">Clipboard permission blocked. Copy manually.</p>
                 )}
+
+                <div className={`mt-5 border p-4 ${merchantGatewayReadinessTone.border} ${merchantGatewayReadinessTone.bg}`}>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Gateway Readiness</p>
+                      <div className="inline-flex items-center gap-2 border border-neutral-800 bg-neutral-950 px-3 py-1.5">
+                        <span className={`h-2 w-2 rounded-none ${merchantGatewayReadinessTone.dot}`} />
+                        <span className={`text-xs uppercase tracking-[0.16em] font-bold ${merchantGatewayReadinessTone.text}`}>
+                          {formatGatewayReadinessLabel(merchantGatewayReadinessStatus)}
+                        </span>
+                      </div>
+                      {isLoadingMerchantGatewayConfig && (
+                        <span className="text-[10px] uppercase tracking-[0.16em] text-neutral-500 font-bold animate-pulse">
+                          Loading...
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3">
+                      <label className="block text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
+                        Merchant Endpoint URL
+                        <input
+                          value={merchantGatewayEndpointUrl}
+                          onChange={(event) => setMerchantGatewayEndpointUrl(event.target.value)}
+                          placeholder="https://merchant.example.com"
+                          className="mt-2 w-full border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-red-600 rounded-none font-mono"
+                        />
+                      </label>
+
+                      <label className="block text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
+                        Canary Path (GET)
+                        <input
+                          value={merchantGatewayCanaryPath}
+                          onChange={(event) => setMerchantGatewayCanaryPath(event.target.value)}
+                          placeholder={DEFAULT_CANARY_PATH}
+                          className="mt-2 w-full border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-red-600 rounded-none font-mono"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={handleSaveMerchantGatewayConfig}
+                        disabled={
+                          !selectedOwnedAgent ||
+                          !isConnected ||
+                          !merchantOwnsSelectedAgent ||
+                          isSavingMerchantGatewayConfig ||
+                          isVerifyingMerchantGateway
+                        }
+                        className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isSavingMerchantGatewayConfig ? "SAVING..." : "SAVE GATEWAY CONFIG"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleVerifyMerchantGateway}
+                        disabled={
+                          !selectedOwnedAgent ||
+                          !isConnected ||
+                          !merchantOwnsSelectedAgent ||
+                          !merchantGatewayEndpointUrl.trim() ||
+                          isSavingMerchantGatewayConfig ||
+                          isVerifyingMerchantGateway
+                        }
+                        className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-red-600 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isVerifyingMerchantGateway ? "VERIFYING..." : "VERIFY GATEWAY"}
+                      </button>
+                    </div>
+
+                    <p className="text-xs text-neutral-600">
+                      Canary contract (Phase A): GET <span className="font-mono">{merchantGatewayCanaryPath || DEFAULT_CANARY_PATH}</span> must
+                      return HTTP 200 with exact JSON:{" "}
+                      <span className="font-mono">{`{"ghostgate":"ready","service":"${merchantServiceSlug}"}`}</span>
+                    </p>
+
+                    {(merchantGatewayLastCheckedAt || merchantGatewayLastPassedAt) && (
+                      <div className="text-xs text-neutral-600">
+                        {merchantGatewayLastCheckedAt && (
+                          <p>Last checked: {new Date(merchantGatewayLastCheckedAt).toLocaleString()}</p>
+                        )}
+                        {merchantGatewayLastPassedAt && (
+                          <p>Last passed: {new Date(merchantGatewayLastPassedAt).toLocaleString()}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {merchantGatewayConfig?.lastCanaryError && merchantGatewayReadinessStatus !== "LIVE" && (
+                      <p className="text-xs text-rose-400">
+                        Last canary error: {merchantGatewayConfig.lastCanaryError}
+                      </p>
+                    )}
+
+                    {merchantGatewayError && <p className="text-xs text-red-500">{merchantGatewayError}</p>}
+                    {merchantGatewayNotice && <p className="text-xs text-neutral-400">{merchantGatewayNotice}</p>}
+                  </div>
+                </div>
 
                 <div className="mt-5 border border-neutral-900 bg-neutral-900 p-4">
                   <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">SDK Usage Preview</p>
@@ -976,12 +1494,37 @@ def my_agent():
                   )}
                 </div>
 
+                {consumerHasExplicitAgentTarget && (
+                  <div className={`mb-5 border px-3 py-3 ${consumerGatewayReadinessTone.border} ${consumerGatewayReadinessTone.bg}`}>
+                    <div className="flex items-center gap-2">
+                      <span className={`h-2 w-2 rounded-none ${consumerGatewayReadinessTone.dot}`} />
+                      <p className={`text-xs uppercase tracking-[0.16em] font-bold ${consumerGatewayReadinessTone.text}`}>
+                        {isLoadingConsumerGatewayReadiness
+                          ? "Checking Gateway Activation..."
+                          : `Gateway Status // ${formatGatewayReadinessLabel(
+                              consumerEffectiveGatewayReadinessStatus ?? "UNCONFIGURED",
+                            )}`}
+                      </p>
+                    </div>
+                    {consumerGatewayActivationBlocked && !isLoadingConsumerGatewayReadiness && (
+                      <p className="mt-2 text-xs text-neutral-400">
+                        This agent has not activated GhostGate yet. Merchant must register and verify a gateway canary
+                        before consumers can deposit or use this agent.
+                      </p>
+                    )}
+                    {consumerGatewayReadinessError && (
+                      <p className="mt-2 text-xs text-red-500">{consumerGatewayReadinessError}</p>
+                    )}
+                  </div>
+                )}
+
                 <div className="space-y-4">
                   <label className="block text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
                     Deposit ETH
                     <input
                       value={ethAmount}
                       onChange={(event) => setEthAmount(event.target.value)}
+                      disabled={consumerGatewayActivationBlocked}
                       inputMode="decimal"
                       placeholder="0.01"
                       className="mt-2 w-full border border-neutral-800 bg-neutral-950 px-3 py-2 text-white outline-none focus:border-red-600 rounded-none font-mono"
@@ -1043,6 +1586,18 @@ def my_agent():
                   <h2 className="text-sm uppercase tracking-[0.18em] text-neutral-300 font-bold">API ACCESS // CONSUMER CONSOLE</h2>
                 </div>
 
+                {consumerHasExplicitAgentTarget && (
+                  <div className={`mb-4 border px-3 py-2 ${consumerGatewayReadinessTone.border} ${consumerGatewayReadinessTone.bg}`}>
+                    <p className={`text-xs uppercase tracking-[0.16em] font-bold ${consumerGatewayReadinessTone.text}`}>
+                      {isLoadingConsumerGatewayReadiness
+                        ? "Gateway Activation Check Pending"
+                        : isGatewayLive(consumerEffectiveGatewayReadinessStatus)
+                          ? "Agent Gateway Live // Consumer Access Enabled"
+                          : "Agent Gateway Not Live // Consumer Access Disabled"}
+                    </p>
+                  </div>
+                )}
+
                 <div className="mb-4 flex flex-wrap items-center gap-2">
                   <button
                     type="button"
@@ -1087,7 +1642,8 @@ def my_agent():
                 <button
                   type="button"
                   onClick={handleCopy}
-                  className="mt-4 inline-flex items-center gap-2 border border-neutral-800 bg-neutral-900 px-4 py-2 text-xs uppercase tracking-wider text-neutral-400 transition hover:bg-neutral-800 hover:text-neutral-200"
+                  disabled={consumerGatewayActivationBlocked}
+                  className="mt-4 inline-flex items-center gap-2 border border-neutral-800 bg-neutral-900 px-4 py-2 text-xs uppercase tracking-wider text-neutral-400 transition hover:bg-neutral-800 hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Copy className="h-4 w-4" />
                   {copyState === "copied"

@@ -12,6 +12,7 @@ import { isClaimedAgent } from "@/lib/agent-claim";
 type Network = "MEGAETH" | "BASE";
 type LeadTier = "WHALE" | "ACTIVE" | "NEW" | "GHOST";
 type SyncHealth = "live" | "stale" | "offline" | "unknown";
+type GatewayReadinessStatus = "UNCONFIGURED" | "CONFIGURED" | "LIVE" | "DEGRADED";
 const STALE_SYNC_THRESHOLD_SECONDS = 3 * 60 * 60;
 
 type ApiAgent = {
@@ -31,6 +32,7 @@ type ApiAgent = {
   uptime?: number;
   volume: string;
   score: number;
+  gatewayReadinessStatus?: GatewayReadinessStatus | string | null;
 };
 
 type ProcessedLead = {
@@ -47,6 +49,7 @@ type ProcessedLead = {
   rankScore: number;
   yieldEth: number | null;
   uptimePct: number | null;
+  gatewayReadinessStatus: GatewayReadinessStatus;
 };
 
 type AgentApiResponse = {
@@ -226,6 +229,13 @@ const parseTier = (tier: string | undefined, txCount: number, isClaimed: boolean
   return getLeadTier(txCount, isClaimed);
 };
 
+const normalizeGatewayReadinessStatus = (value: string | null | undefined): GatewayReadinessStatus => {
+  if (value === "UNCONFIGURED" || value === "CONFIGURED" || value === "LIVE" || value === "DEGRADED") {
+    return value;
+  }
+  return "UNCONFIGURED";
+};
+
 const buildLeadsFromApi = (agents: ApiAgent[]): ProcessedLead[] => {
   const maxTxCount = Math.max(
     0,
@@ -278,6 +288,7 @@ const buildLeadsFromApi = (agents: ApiAgent[]): ProcessedLead[] => {
       rankScore,
       yieldEth: isClaimed ? rawYield : null,
       uptimePct: isClaimed ? rawUptime : null,
+      gatewayReadinessStatus: normalizeGatewayReadinessStatus(agent.gatewayReadinessStatus ?? null),
     };
   });
 
@@ -654,6 +665,7 @@ export default function Home() {
                       ? "text-neutral-500"
                       : "text-neutral-300";
                   const hasTopRankBadge = agent.rank <= 3;
+                  const consumerAccessBlocked = !isOwner && agent.gatewayReadinessStatus !== "LIVE";
                   const rankBadgeClassName =
                     agent.rank === 1
                       ? "border border-red-500/70 bg-red-600 text-neutral-100"
@@ -685,13 +697,24 @@ export default function Home() {
                         ) : (
                           <button
                             type="button"
-                            onClick={() => handleOpenDashboard(isOwner ? "merchant" : "consumer", agent.agentId, agent.owner)}
-                            className={`inline-flex items-center justify-center px-3 py-2 text-[10px] uppercase tracking-widest font-bold border transition-colors duration-200 hover:bg-red-600 hover:text-neutral-100 hover:border-red-600 ${isOwner
-                              ? "bg-neutral-100 text-neutral-950 border-neutral-100"
-                              : "text-neutral-400 border-neutral-800"
+                            onClick={
+                              consumerAccessBlocked
+                                ? undefined
+                                : () => handleOpenDashboard(isOwner ? "merchant" : "consumer", agent.agentId, agent.owner)
+                            }
+                            disabled={consumerAccessBlocked}
+                            title={consumerAccessBlocked ? "This agent has not activated GhostGate yet." : undefined}
+                            className={`inline-flex items-center justify-center px-3 py-2 text-[10px] uppercase tracking-widest font-bold border transition-colors duration-200 ${consumerAccessBlocked
+                              ? "cursor-not-allowed border-neutral-900 text-neutral-700"
+                              : "hover:bg-red-600 hover:text-neutral-100 hover:border-red-600"
+                              } ${isOwner
+                                ? "bg-neutral-100 text-neutral-950 border-neutral-100"
+                                : consumerAccessBlocked
+                                  ? "bg-neutral-950"
+                                  : "text-neutral-400 border-neutral-800"
                               }`}
                           >
-                            {isOwner ? "MANAGE_AGENT" : "ACCESS_TERMINAL"}
+                            {isOwner ? "MANAGE_AGENT" : consumerAccessBlocked ? "NOT_ACTIVE" : "ACCESS_TERMINAL"}
                           </button>
                         )}
                       </div>
@@ -837,6 +860,7 @@ export default function Home() {
                       ? "text-neutral-500"
                       : "text-neutral-300";
                   const hasTopRankBadge = agent.rank <= 3;
+                  const consumerAccessBlocked = !isOwner && agent.gatewayReadinessStatus !== "LIVE";
                   const rankBadgeClassName =
                     agent.rank === 1
                       ? "border border-red-500/70 bg-red-600 text-neutral-100"
@@ -944,13 +968,24 @@ export default function Home() {
                         ) : (
                           <button
                             type="button"
-                            onClick={() => handleOpenDashboard(isOwner ? "merchant" : "consumer", agent.agentId, agent.owner)}
-                            className={`inline-flex min-w-[120px] items-center justify-center px-4 py-3 text-[10px] uppercase tracking-widest font-bold border transition-colors duration-200 hover:bg-red-600 hover:text-neutral-100 hover:border-red-600 ${isOwner
-                              ? "bg-neutral-100 text-neutral-950 border-neutral-100"
-                              : "text-neutral-400 border-neutral-800"
+                            onClick={
+                              consumerAccessBlocked
+                                ? undefined
+                                : () => handleOpenDashboard(isOwner ? "merchant" : "consumer", agent.agentId, agent.owner)
+                            }
+                            disabled={consumerAccessBlocked}
+                            title={consumerAccessBlocked ? "This agent has not activated GhostGate yet." : undefined}
+                            className={`inline-flex min-w-[120px] items-center justify-center px-4 py-3 text-[10px] uppercase tracking-widest font-bold border transition-colors duration-200 ${consumerAccessBlocked
+                              ? "cursor-not-allowed border-neutral-900 text-neutral-700 bg-neutral-950"
+                              : "hover:bg-red-600 hover:text-neutral-100 hover:border-red-600"
+                              } ${isOwner
+                                ? "bg-neutral-100 text-neutral-950 border-neutral-100"
+                                : consumerAccessBlocked
+                                  ? ""
+                                  : "text-neutral-400 border-neutral-800"
                               }`}
                           >
-                            {isOwner ? "MANAGE_AGENT" : "ACCESS_TERMINAL"}
+                            {isOwner ? "MANAGE_AGENT" : consumerAccessBlocked ? "NOT_ACTIVE" : "ACCESS_TERMINAL"}
                           </button>
                         )}
                       </div>

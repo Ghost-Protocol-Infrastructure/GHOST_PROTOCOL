@@ -10,6 +10,8 @@ type AgentPageProps = {
   searchParams?: Promise<{ sdk?: string }>;
 };
 
+type GatewayReadinessStatus = "UNCONFIGURED" | "CONFIGURED" | "LIVE" | "DEGRADED";
+
 type AgentSummary = {
   agentId: string;
   address: string;
@@ -23,6 +25,11 @@ type AgentSummary = {
   reputation: number;
   rankScore: number;
   description: string | null;
+  gatewayConfig?: {
+    readinessStatus: GatewayReadinessStatus;
+    lastCanaryCheckedAt: Date | null;
+    lastCanaryPassedAt: Date | null;
+  } | null;
 };
 
 const tierClassName: Record<AgentSummary["tier"], string> = {
@@ -40,6 +47,21 @@ const toTitleCase = (value: string): string =>
     .join(" ");
 
 const truncateAddress = (address: string): string => `${address.slice(0, 6)}...${address.slice(-4)}`;
+
+const gatewayReadinessLabel: Record<GatewayReadinessStatus, string> = {
+  UNCONFIGURED: "UNCONFIGURED",
+  CONFIGURED: "CONFIGURED",
+  LIVE: "LIVE",
+  DEGRADED: "DEGRADED",
+};
+
+const isMissingAgentGatewayConfigTableError = (error: unknown): boolean => {
+  if (typeof error !== "object" || error === null) return false;
+  const code = "code" in error ? (error as { code?: unknown }).code : null;
+  if (code !== "P2021") return false;
+  const message = "message" in error ? String((error as { message?: unknown }).message ?? "") : "";
+  return message.includes("AgentGatewayConfig");
+};
 
 const resolveAgentImageUrl = (raw: string | null | undefined): string | null => {
   const image = raw?.trim();
@@ -89,23 +111,55 @@ export default async function AgentProfilePage({ params, searchParams }: AgentPa
     notFound();
   }
 
-  const agent = await prisma.agent.findUnique({
-    where: { agentId },
-    select: {
-      agentId: true,
-      address: true,
-      name: true,
-      image: true,
-      creator: true,
-      owner: true,
-      status: true,
-      tier: true,
-      txCount: true,
-      reputation: true,
-      rankScore: true,
-      description: true,
-    },
-  });
+  let agent: AgentSummary | null = null;
+  try {
+    agent = (await prisma.agent.findUnique({
+      where: { agentId },
+      select: {
+        agentId: true,
+        address: true,
+        name: true,
+        image: true,
+        creator: true,
+        owner: true,
+        status: true,
+        tier: true,
+        txCount: true,
+        reputation: true,
+        rankScore: true,
+        description: true,
+        gatewayConfig: {
+          select: {
+            readinessStatus: true,
+            lastCanaryCheckedAt: true,
+            lastCanaryPassedAt: true,
+          },
+        },
+      },
+    })) as AgentSummary | null;
+  } catch (error) {
+    if (!isMissingAgentGatewayConfigTableError(error)) {
+      throw error;
+    }
+
+    agent = (await prisma.agent.findUnique({
+      where: { agentId },
+      select: {
+        agentId: true,
+        address: true,
+        name: true,
+        image: true,
+        creator: true,
+        owner: true,
+        status: true,
+        tier: true,
+        txCount: true,
+        reputation: true,
+        rankScore: true,
+        description: true,
+      },
+    })) as AgentSummary | null;
+  }
 
   if (!agent) {
     notFound();
@@ -117,6 +171,8 @@ export default async function AgentProfilePage({ params, searchParams }: AgentPa
   const ownerAddress = agent.owner ?? agent.creator;
   const agentDescription = normalizeAgentDescription(agent.description);
   const agentImageUrl = resolveAgentImageUrl(agent.image);
+  const gatewayReadinessStatus: GatewayReadinessStatus = agent.gatewayConfig?.readinessStatus ?? "UNCONFIGURED";
+  const isGatewayLive = gatewayReadinessStatus === "LIVE";
   const merchantSetupHref = `/dashboard?mode=merchant&agentId=${encodeURIComponent(agent.agentId)}&owner=${encodeURIComponent(ownerAddress)}`;
   const consumerTerminalHref = `/dashboard?mode=consumer&agentId=${encodeURIComponent(agent.agentId)}&owner=${encodeURIComponent(ownerAddress)}`;
   const agentConsoleHref = `/dashboard?agentId=${encodeURIComponent(agent.agentId)}&owner=${encodeURIComponent(ownerAddress)}`;
@@ -234,17 +290,54 @@ export default async function AgentProfilePage({ params, searchParams }: AgentPa
           <p className="mb-3 text-sm text-neutral-400">
             Use this profile to inspect metadata and confirm agent identity.
           </p>
+          <div className="mb-3 border border-neutral-800 bg-neutral-900 p-4">
+            <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Gateway Readiness</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-flex border px-2 py-1 text-[10px] uppercase tracking-[0.16em] font-bold ${
+                  gatewayReadinessStatus === "LIVE"
+                    ? "border-emerald-700/60 bg-emerald-950/20 text-emerald-300"
+                    : gatewayReadinessStatus === "DEGRADED"
+                      ? "border-amber-700/60 bg-amber-950/20 text-amber-300"
+                      : "border-neutral-700 bg-neutral-950 text-neutral-400"
+                }`}
+              >
+                {gatewayReadinessLabel[gatewayReadinessStatus]}
+              </span>
+              {!isGatewayLive ? (
+                <span className="text-xs text-amber-200/90">
+                  This agent has not activated GhostGate yet.
+                </span>
+              ) : (
+                <span className="text-xs text-neutral-500">Gateway canary verified.</span>
+              )}
+            </div>
+          </div>
           <div className="border border-neutral-800 bg-neutral-900 p-4">
             <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Agent ID</p>
             <code className="block break-all text-lg text-neutral-200 font-mono">{agent.agentId}</code>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Link
-              href={agentConsoleHref}
-              className="border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs uppercase tracking-[0.12em] text-neutral-400 transition hover:border-red-600 hover:text-red-500 font-bold"
-            >
-              {"//ACCESS_AGENT_TERMINAL"}
-            </Link>
+            {isGatewayLive ? (
+              <Link
+                href={agentConsoleHref}
+                className="border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs uppercase tracking-[0.12em] text-neutral-400 transition hover:border-red-600 hover:text-red-500 font-bold"
+              >
+                {"//ACCESS_AGENT_TERMINAL"}
+              </Link>
+            ) : (
+              <span className="border border-neutral-900 bg-neutral-950 px-3 py-2 text-xs uppercase tracking-[0.12em] text-neutral-700 font-bold cursor-not-allowed">
+                {"//ACCESS_AGENT_TERMINAL"}
+              </span>
+            )}
+            {!isGatewayLive ? (
+              <Link
+                href={merchantSetupHref}
+                className="border border-amber-700/40 bg-amber-950/10 px-3 py-2 text-xs uppercase tracking-[0.12em] text-amber-300 transition hover:border-amber-500/70 hover:text-amber-200 font-bold"
+              >
+                {"//OPEN_MERCHANT_CONSOLE"}
+              </Link>
+            ) : null}
           </div>
         </section>
       </div>

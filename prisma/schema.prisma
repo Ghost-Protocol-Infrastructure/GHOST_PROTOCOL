@@ -37,6 +37,17 @@ enum GateAccessOutcome {
   INVALID_SIGNATURE
 }
 
+enum AgentGatewayReadinessStatus {
+  UNCONFIGURED
+  CONFIGURED
+  LIVE
+  DEGRADED
+}
+
+enum AgentGatewayCanaryMethod {
+  GET
+}
+
 model CreditBalance {
   walletAddress   String   @id
   credits         Int      @default(0)
@@ -133,6 +144,31 @@ model Agent {
 
   scoreInput AgentScoreInput?
   snapshots  LeaderboardSnapshotRow[]
+  gatewayConfig AgentGatewayConfig?
+}
+
+model AgentGatewayConfig {
+  id                   String                     @id @default(cuid())
+  agentId              String                     @unique
+  ownerAddress         String
+  serviceSlug          String
+  endpointUrl          String
+  canaryPath           String                     @default("/ghostgate/canary")
+  canaryMethod         AgentGatewayCanaryMethod   @default(GET)
+  readinessStatus      AgentGatewayReadinessStatus @default(CONFIGURED)
+  lastCanaryCheckedAt  DateTime?
+  lastCanaryPassedAt   DateTime?
+  lastCanaryStatusCode Int?
+  lastCanaryLatencyMs  Int?
+  lastCanaryError      String?
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+
+  agent Agent @relation(fields: [agentId], references: [agentId], onDelete: Cascade)
+
+  @@index([ownerAddress])
+  @@index([readinessStatus])
+  @@index([serviceSlug])
 }
 
 model SystemState {
