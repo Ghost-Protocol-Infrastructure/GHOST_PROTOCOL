@@ -70,12 +70,13 @@ const TOKEN_RESOLVE_TIMEOUT_MS = (() => {
   const parsed = raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 25_000;
   return Math.max(5_000, Math.min(parsed, 120_000));
 })();
+// Prefer BASE_RPC_URL (paid primary) for indexer traffic. BASE_RPC_URL_INDEXER remains a secondary override path.
 const INDEXER_RPC_URL =
-  process.env.BASE_RPC_URL_INDEXER?.trim() || process.env.BASE_RPC_URL?.trim() || "https://mainnet.base.org";
-const INDEXER_RPC_ENV = process.env.BASE_RPC_URL_INDEXER?.trim()
-  ? "BASE_RPC_URL_INDEXER"
-  : process.env.BASE_RPC_URL?.trim()
-    ? "BASE_RPC_URL"
+  process.env.BASE_RPC_URL?.trim() || process.env.BASE_RPC_URL_INDEXER?.trim() || "https://mainnet.base.org";
+const INDEXER_RPC_ENV = process.env.BASE_RPC_URL?.trim()
+  ? "BASE_RPC_URL"
+  : process.env.BASE_RPC_URL_INDEXER?.trim()
+    ? "BASE_RPC_URL_INDEXER"
     : "default";
 const AGENT_FORCE_EXIT_ON_FINISH =
   process.env.AGENT_FORCE_EXIT_ON_FINISH?.trim().toLowerCase() === "true" ||
@@ -702,10 +703,10 @@ const formatRpcEndpointLabel = (label: string, url: string): string => {
 };
 
 const getIndexerRpcEndpoints = (): IndexerRpcEndpoint[] => {
-  const primaryLabel = process.env.BASE_RPC_URL_INDEXER?.trim()
-    ? "BASE_RPC_URL_INDEXER"
-    : process.env.BASE_RPC_URL?.trim()
-      ? "BASE_RPC_URL"
+  const primaryLabel = process.env.BASE_RPC_URL?.trim()
+    ? "BASE_RPC_URL"
+    : process.env.BASE_RPC_URL_INDEXER?.trim()
+      ? "BASE_RPC_URL_INDEXER"
       : "default";
   const candidates: IndexerRpcEndpoint[] = [
     { label: primaryLabel, url: INDEXER_RPC_URL },
