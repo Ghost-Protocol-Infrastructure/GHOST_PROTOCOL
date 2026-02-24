@@ -18,7 +18,6 @@ import {
   GHOST_VAULT_ADDRESS,
   PROTOCOL_TREASURY_FALLBACK_ADDRESS,
 } from "@/lib/constants";
-import { isClaimedAgent } from "@/lib/agent-claim";
 import {
   buildMerchantGatewayAuthMessage,
   createMerchantGatewayAuthPayload,
@@ -60,7 +59,6 @@ type OwnedAgent = {
   name: string;
   status: string;
   tier?: string;
-  isClaimed: boolean;
   gatewayReadinessStatus: GatewayReadinessStatus;
   gatewayLastCanaryCheckedAt?: string | null;
   gatewayLastCanaryPassedAt?: string | null;
@@ -120,6 +118,20 @@ const formatGatewayReadinessLabel = (status: GatewayReadinessStatus): string => 
       return "SERVICE LIVE";
     case "DEGRADED":
       return "DEGRADED";
+    default:
+      return "UNCONFIGURED";
+  }
+};
+
+const formatGatewayReadinessTag = (status: GatewayReadinessStatus): string => {
+  switch (status) {
+    case "LIVE":
+      return "LIVE";
+    case "CONFIGURED":
+      return "CONFIGURED";
+    case "DEGRADED":
+      return "DEGRADED";
+    case "UNCONFIGURED":
     default:
       return "UNCONFIGURED";
   }
@@ -686,12 +698,6 @@ print("body:", response.text)`,
               typeof agent.gatewayLastCanaryCheckedAt === "string" ? agent.gatewayLastCanaryCheckedAt : null,
             gatewayLastCanaryPassedAt:
               typeof agent.gatewayLastCanaryPassedAt === "string" ? agent.gatewayLastCanaryPassedAt : null,
-            isClaimed: isClaimedAgent({
-              status: agent.status,
-              tier: agent.tier,
-              yieldValue: agent.yield,
-              uptimeValue: agent.uptime,
-            }),
           };
         });
 
@@ -1272,7 +1278,7 @@ def my_agent():
                   >
                     {ownedAgents.map((agent) => (
                       <option key={`${agent.agentId}-${agent.owner}`} value={agent.agentId}>
-                        AGENT #{agent.agentId} {agent.isClaimed ? "[RESERVED]" : "[UNCLAIMED]"}
+                        AGENT #{agent.agentId} [{formatGatewayReadinessTag(agent.gatewayReadinessStatus)}]
                       </option>
                     ))}
                   </select>
