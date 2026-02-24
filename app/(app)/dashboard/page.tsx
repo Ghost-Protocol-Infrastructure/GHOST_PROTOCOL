@@ -708,6 +708,7 @@ print("body:", response.text)`,
     ? `/dashboard?mode=consumer&agentId=${encodeURIComponent(selectedOwnedAgent.agentId)}&owner=${encodeURIComponent(selectedOwnedAgent.owner)}`
     : "/dashboard?mode=consumer";
   const merchantServiceSlug = selectedOwnedAgent ? `agent-${selectedOwnedAgent.agentId}` : "agent-your-agent-id";
+  const selectedOwnedAgentId = selectedOwnedAgent?.agentId ?? null;
   const patchOwnedAgentGatewayReadiness = useCallback(
     (
       agentId: string,
@@ -715,24 +716,38 @@ print("body:", response.text)`,
       lastCanaryCheckedAt: string | null,
       lastCanaryPassedAt: string | null,
     ) => {
-      setOwnedAgents((current) =>
-        current.map((agent) =>
-          agent.agentId === agentId
-            ? {
-                ...agent,
-                gatewayReadinessStatus: readinessStatus,
-                gatewayLastCanaryCheckedAt: lastCanaryCheckedAt ?? null,
-                gatewayLastCanaryPassedAt: lastCanaryPassedAt ?? null,
-              }
-            : agent,
-        ),
-      );
+      setOwnedAgents((current) => {
+        let changed = false;
+        const next = current.map((agent) => {
+          if (agent.agentId !== agentId) return agent;
+
+          const nextCheckedAt = lastCanaryCheckedAt ?? null;
+          const nextPassedAt = lastCanaryPassedAt ?? null;
+          if (
+            agent.gatewayReadinessStatus === readinessStatus &&
+            (agent.gatewayLastCanaryCheckedAt ?? null) === nextCheckedAt &&
+            (agent.gatewayLastCanaryPassedAt ?? null) === nextPassedAt
+          ) {
+            return agent;
+          }
+
+          changed = true;
+          return {
+            ...agent,
+            gatewayReadinessStatus: readinessStatus,
+            gatewayLastCanaryCheckedAt: nextCheckedAt,
+            gatewayLastCanaryPassedAt: nextPassedAt,
+          };
+        });
+
+        return changed ? next : current;
+      });
     },
     [],
   );
 
   useEffect(() => {
-    if (!showMerchantView || !selectedOwnedAgent) {
+    if (!showMerchantView || !selectedOwnedAgentId) {
       setMerchantGatewayConfig(null);
       setMerchantGatewayEndpointUrl("");
       setMerchantGatewayCanaryPath(DEFAULT_CANARY_PATH);
@@ -748,13 +763,13 @@ print("body:", response.text)`,
       setIsLoadingMerchantGatewayConfig(true);
       setMerchantGatewayError(null);
       try {
-        const config = await fetchAgentGatewayConfig(selectedOwnedAgent.agentId);
+        const config = await fetchAgentGatewayConfig(selectedOwnedAgentId);
         if (!active) return;
         setMerchantGatewayConfig(config);
         setMerchantGatewayEndpointUrl(config.endpointUrl ?? "");
         setMerchantGatewayCanaryPath(config.canaryPath ?? DEFAULT_CANARY_PATH);
         patchOwnedAgentGatewayReadiness(
-          selectedOwnedAgent.agentId,
+          selectedOwnedAgentId,
           config.readinessStatus,
           config.lastCanaryCheckedAt,
           config.lastCanaryPassedAt,
@@ -773,7 +788,7 @@ print("body:", response.text)`,
     return () => {
       active = false;
     };
-  }, [fetchAgentGatewayConfig, patchOwnedAgentGatewayReadiness, selectedOwnedAgent, showMerchantView]);
+  }, [fetchAgentGatewayConfig, patchOwnedAgentGatewayReadiness, selectedOwnedAgentId, showMerchantView]);
 
   useEffect(() => {
     if (!normalizedRequestedAgentId) {
