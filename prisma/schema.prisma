@@ -48,13 +48,33 @@ enum AgentGatewayCanaryMethod {
   GET
 }
 
+enum FulfillmentHoldState {
+  HELD
+  CAPTURED
+  RELEASED
+  EXPIRED
+}
+
+enum FulfillmentReleaseReason {
+  TTL_EXPIRED
+  MANUAL
+  CAPTURE_FAILED_POLICY
+}
+
+enum AgentGatewayDelegatedSignerStatus {
+  ACTIVE
+  REVOKED
+}
+
 model CreditBalance {
   walletAddress   String   @id
   credits         Int      @default(0)
+  heldCredits     Int      @default(0)
   lastSyncedBlock BigInt   @default(0)
   updatedAt       DateTime @updatedAt
 
-  ledgerEntries CreditLedger[]
+  ledgerEntries    CreditLedger[]
+  fulfillmentHolds FulfillmentHold[]
 }
 
 model AccessNonce {
@@ -80,18 +100,20 @@ model ServicePricing {
 }
 
 model CreditLedger {
-  id            String                @id @default(cuid())
-  walletAddress String
-  direction     CreditLedgerDirection
-  amount        Int
-  balanceBefore Int
-  balanceAfter  Int
-  reason        String
-  service       String?
-  nonce         String?
-  requestId     String?
-  metadata      Json?
-  createdAt     DateTime              @default(now())
+  id                    String                @id @default(cuid())
+  walletAddress         String
+  direction             CreditLedgerDirection
+  amount                Int
+  availableCreditsDelta Int?
+  heldCreditsDelta      Int?
+  balanceBefore         Int
+  balanceAfter          Int
+  reason                String
+  service               String?
+  nonce                 String?
+  requestId             String?
+  metadata              Json?
+  createdAt             DateTime              @default(now())
 
   wallet CreditBalance @relation(fields: [walletAddress], references: [walletAddress], onDelete: Cascade)
 
@@ -142,30 +164,32 @@ model Agent {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  scoreInput AgentScoreInput?
-  snapshots  LeaderboardSnapshotRow[]
+  scoreInput    AgentScoreInput?
+  snapshots     LeaderboardSnapshotRow[]
   gatewayConfig AgentGatewayConfig?
 }
 
 model AgentGatewayConfig {
-  id                   String                     @id @default(cuid())
-  agentId              String                     @unique
+  id                   String                      @id @default(cuid())
+  agentId              String                      @unique
   ownerAddress         String
   serviceSlug          String
   endpointUrl          String
-  canaryPath           String                     @default("/ghostgate/canary")
-  canaryMethod         AgentGatewayCanaryMethod   @default(GET)
+  canaryPath           String                      @default("/ghostgate/canary")
+  canaryMethod         AgentGatewayCanaryMethod    @default(GET)
   readinessStatus      AgentGatewayReadinessStatus @default(CONFIGURED)
   lastCanaryCheckedAt  DateTime?
   lastCanaryPassedAt   DateTime?
   lastCanaryStatusCode Int?
   lastCanaryLatencyMs  Int?
   lastCanaryError      String?
-  createdAt            DateTime                   @default(now())
-  updatedAt            DateTime                   @updatedAt
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
 
-  agent        Agent                    @relation(fields: [agentId], references: [agentId], onDelete: Cascade)
-  canaryChecks AgentGatewayCanaryCheck[]
+  agent            Agent                         @relation(fields: [agentId], references: [agentId], onDelete: Cascade)
+  canaryChecks     AgentGatewayCanaryCheck[]
+  delegatedSigners AgentGatewayDelegatedSigner[]
+  fulfillmentHolds FulfillmentHold[]
 
   @@index([ownerAddress])
   @@index([readinessStatus])
@@ -173,7 +197,7 @@ model AgentGatewayConfig {
 }
 
 model AgentGatewayCanaryCheck {
-  id             String   @id @default(cuid())
+  id              String   @id @default(cuid())
   gatewayConfigId String
   checkedAt       DateTime @default(now())
   success         Boolean
@@ -189,6 +213,87 @@ model AgentGatewayCanaryCheck {
   @@index([gatewayConfigId, checkedAt])
   @@index([success, checkedAt])
   @@index([checkedAt])
+}
+
+model FulfillmentHold {
+  id                     String                    @id @default(cuid())
+  ticketId               String                    @unique
+  walletAddress          String
+  serviceSlug            String
+  agentId                String?
+  gatewayConfigId        String?
+  merchantOwnerAddress   String
+  requestMethod          String
+  requestPath            String
+  queryHash              String
+  bodyHash               String
+  cost                   Int
+  state                  FulfillmentHoldState
+  issuedAt               DateTime
+  expiresAt              DateTime
+  capturedAt             DateTime?
+  releasedAt             DateTime?
+  releaseReason          FulfillmentReleaseReason?
+  captureDeliveryProofId String?
+  captureStatusCode      Int?
+  captureLatencyMs       Int?
+  lastError              String?
+  createdAt              DateTime                  @default(now())
+  updatedAt              DateTime                  @updatedAt
+
+  wallet          CreditBalance               @relation(fields: [walletAddress], references: [walletAddress], onDelete: Cascade)
+  gatewayConfig   AgentGatewayConfig?         @relation(fields: [gatewayConfigId], references: [id], onDelete: SetNull)
+  captureAttempts FulfillmentCaptureAttempt[]
+  // Partial unique index required via SQL migration:
+  // (walletAddress, serviceSlug) WHERE state = 'HELD'
+
+  @@index([walletAddress, state])
+  @@index([walletAddress, serviceSlug, state])
+  @@index([state, expiresAt])
+  @@index([agentId, createdAt])
+  @@index([gatewayConfigId, createdAt])
+  @@index([captureDeliveryProofId])
+}
+
+model FulfillmentCaptureAttempt {
+  id                 String   @id @default(cuid())
+  holdId             String
+  ticketId           String
+  deliveryProofId    String
+  merchantSigner     String
+  receivedAt         DateTime @default(now())
+  success            Boolean
+  httpStatus         Int
+  captureDisposition String?
+  errorCode          String?
+  errorMessage       String?
+  rawMeta            Json?
+
+  hold FulfillmentHold @relation(fields: [holdId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, receivedAt])
+  @@index([holdId, receivedAt])
+  @@index([deliveryProofId])
+  @@index([merchantSigner, receivedAt])
+}
+
+model AgentGatewayDelegatedSigner {
+  id              String                            @id @default(cuid())
+  gatewayConfigId String
+  ownerAddress    String
+  signerAddress   String
+  status          AgentGatewayDelegatedSignerStatus @default(ACTIVE)
+  label           String?
+  createdAt       DateTime                          @default(now())
+  revokedAt       DateTime?
+  updatedAt       DateTime                          @updatedAt
+
+  gatewayConfig AgentGatewayConfig @relation(fields: [gatewayConfigId], references: [id], onDelete: Cascade)
+
+  @@index([gatewayConfigId, status])
+  @@index([ownerAddress, status])
+  @@index([gatewayConfigId, signerAddress])
+  @@index([signerAddress, status])
 }
 
 model SystemState {

@@ -11,7 +11,27 @@ type LatestLedgerRow = {
   createdAt: Date;
 };
 
+type CreditBalanceRow = {
+  walletAddress: string;
+  credits: number;
+  heldCredits?: number;
+  lastSyncedBlock: bigint;
+  updatedAt: Date;
+};
+
+type HeldAggregateRow = {
+  walletAddress: string;
+  heldCostSum: bigint | number | string | null;
+};
+
 const failOnMismatch = process.env.CREDIT_RECONCILE_FAIL_ON_MISMATCH === "true";
+
+const toBigIntValue = (value: bigint | number | string | null | undefined): bigint => {
+  if (value == null) return 0n;
+  if (typeof value === "bigint") return value;
+  if (typeof value === "number") return BigInt(value);
+  return BigInt(value);
+};
 
 const run = async (): Promise<void> => {
   const tableCheck = await prisma.$queryRaw<Array<{ relation: string | null }>>(Prisma.sql`
@@ -22,14 +42,40 @@ const run = async (): Promise<void> => {
     return;
   }
 
-  const balances = await prisma.creditBalance.findMany({
-    select: {
-      walletAddress: true,
-      credits: true,
-      lastSyncedBlock: true,
-      updatedAt: true,
-    },
-  });
+  const heldCreditsColumnCheck = await prisma.$queryRaw<Array<{ present: boolean }>>(Prisma.sql`
+    SELECT EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'CreditBalance'
+        AND column_name = 'heldCredits'
+    ) AS present
+  `);
+  const hasHeldCreditsColumn = Boolean(heldCreditsColumnCheck[0]?.present);
+
+  const fulfillmentHoldTableCheck = await prisma.$queryRaw<Array<{ relation: string | null }>>(Prisma.sql`
+    SELECT to_regclass('public."FulfillmentHold"')::text AS relation
+  `);
+  const hasFulfillmentHoldTable = Boolean(fulfillmentHoldTableCheck[0]?.relation);
+
+  const balances: CreditBalanceRow[] = hasHeldCreditsColumn
+    ? await prisma.creditBalance.findMany({
+        select: {
+          walletAddress: true,
+          credits: true,
+          heldCredits: true,
+          lastSyncedBlock: true,
+          updatedAt: true,
+        },
+      })
+    : await prisma.creditBalance.findMany({
+        select: {
+          walletAddress: true,
+          credits: true,
+          lastSyncedBlock: true,
+          updatedAt: true,
+        },
+      });
 
   const latestLedgerRows = await prisma.$queryRaw<LatestLedgerRow[]>(Prisma.sql`
     SELECT DISTINCT ON ("walletAddress")
@@ -47,6 +93,7 @@ const run = async (): Promise<void> => {
 
   const missingLedger: string[] = [];
   const drift: Array<{ walletAddress: string; balance: number; ledgerBalanceAfter: number }> = [];
+  const heldDrift: Array<{ walletAddress: string; heldCredits: bigint; heldFromActiveHolds: bigint }> = [];
 
   for (const balance of balances) {
     const latest = latestByWallet.get(balance.walletAddress);
@@ -61,6 +108,34 @@ const run = async (): Promise<void> => {
         balance: balance.credits,
         ledgerBalanceAfter: latest.balanceAfter,
       });
+    }
+  }
+
+  if (hasHeldCreditsColumn && hasFulfillmentHoldTable) {
+    const heldAggregates = await prisma.$queryRaw<HeldAggregateRow[]>(Prisma.sql`
+      SELECT
+        "walletAddress",
+        COALESCE(SUM("cost"), 0)::bigint AS "heldCostSum"
+      FROM "FulfillmentHold"
+      WHERE "state" = 'HELD'
+      GROUP BY "walletAddress"
+    `);
+
+    const heldByWallet = new Map<string, bigint>();
+    for (const row of heldAggregates) {
+      heldByWallet.set(row.walletAddress, toBigIntValue(row.heldCostSum));
+    }
+
+    for (const balance of balances) {
+      const heldCredits = BigInt(balance.heldCredits ?? 0);
+      const heldFromActiveHolds = heldByWallet.get(balance.walletAddress) ?? 0n;
+      if (heldCredits !== heldFromActiveHolds) {
+        heldDrift.push({
+          walletAddress: balance.walletAddress,
+          heldCredits,
+          heldFromActiveHolds,
+        });
+      }
     }
   }
 
@@ -89,6 +164,7 @@ const run = async (): Promise<void> => {
       `debit_entries=${debitAggregate._count._all}`,
       `missing_ledger=${missingLedger.length}`,
       `drift=${drift.length}`,
+      `held_drift=${heldDrift.length}`,
       `total_balance_credits=${totalBalanceCredits.toString()}`,
       `net_ledger_flow=${netLedgerFlow.toString()}`,
     ].join(" "),
@@ -113,8 +189,27 @@ const run = async (): Promise<void> => {
     );
   }
 
-  if (failOnMismatch && drift.length > 0) {
-    throw new Error(`Credit reconciliation failed with ${drift.length} drift rows.`);
+  if (!hasHeldCreditsColumn) {
+    console.warn('Held-credit reconcile skipped: column "CreditBalance.heldCredits" does not exist yet. Run Phase C schema migration first.');
+  } else if (!hasFulfillmentHoldTable) {
+    console.warn('Held-credit reconcile skipped: table "FulfillmentHold" does not exist yet. Run Phase C schema migration first.');
+  } else if (heldDrift.length > 0) {
+    const sample = heldDrift.slice(0, 10);
+    console.warn(`Held-credit reconcile warning: found ${heldDrift.length} heldCredits drift rows.`);
+    console.warn(
+      "Held drift sample:",
+      sample.map((row) => ({
+        walletAddress: row.walletAddress,
+        heldCredits: row.heldCredits.toString(),
+        heldFromActiveHolds: row.heldFromActiveHolds.toString(),
+      })),
+    );
+  }
+
+  if (failOnMismatch && (drift.length > 0 || heldDrift.length > 0)) {
+    throw new Error(
+      `Credit reconciliation failed with ${drift.length} balance drift rows and ${heldDrift.length} held drift rows.`,
+    );
   }
 };
 
