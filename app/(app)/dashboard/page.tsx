@@ -106,6 +106,7 @@ const SDK_SECURITY_NOTICE =
 
 const DEFAULT_CANARY_PATH = "/ghostgate/canary";
 const DEFAULT_MERCHANT_CANARY_HISTORY_LIMIT = 8;
+const GATEWAY_READINESS_POLL_INTERVAL_MS = 10_000;
 const MAX_DEPOSIT_CREDIT_SYNC_CATCHUP_ATTEMPTS = 12;
 const DEPOSIT_CREDIT_SYNC_CATCHUP_DELAY_MS = 200;
 const MAX_WITHDRAW_BALANCE_REFETCH_ATTEMPTS = 8;
@@ -912,6 +913,27 @@ print("body:", response.text)`,
     [],
   );
 
+  const refreshMerchantGatewayReadinessSnapshot = useCallback(
+    async (agentId: string) => {
+      const config = await fetchAgentGatewayConfig(agentId, { includeHistory: true });
+      setMerchantGatewayConfig(config);
+      patchOwnedAgentGatewayReadiness(
+        agentId,
+        config.readinessStatus,
+        config.lastCanaryCheckedAt,
+        config.lastCanaryPassedAt,
+      );
+      if (normalizedRequestedAgentId === agentId) {
+        setConsumerGatewayReadinessStatus(config.readinessStatus);
+        setConsumerGatewayLastCheckedAt(config.lastCanaryCheckedAt);
+        setConsumerGatewayLastPassedAt(config.lastCanaryPassedAt);
+        setConsumerGatewayReadinessError(null);
+      }
+      return config;
+    },
+    [fetchAgentGatewayConfig, normalizedRequestedAgentId, patchOwnedAgentGatewayReadiness],
+  );
+
   useEffect(() => {
     if (!showMerchantView || !selectedOwnedAgentId) {
       setMerchantGatewayConfig(null);
@@ -957,6 +979,45 @@ print("body:", response.text)`,
   }, [fetchAgentGatewayConfig, patchOwnedAgentGatewayReadiness, selectedOwnedAgentId, showMerchantView]);
 
   useEffect(() => {
+    if (!showMerchantView || !selectedOwnedAgentId) return;
+
+    let active = true;
+    let inFlight = false;
+
+    const refreshInBackground = async () => {
+      if (!active || inFlight) return;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+
+      inFlight = true;
+      try {
+        await refreshMerchantGatewayReadinessSnapshot(selectedOwnedAgentId);
+      } catch {
+        // Keep existing readiness/history snapshot if background polling fails.
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const intervalHandle = window.setInterval(() => {
+      void refreshInBackground();
+    }, GATEWAY_READINESS_POLL_INTERVAL_MS);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshInBackground();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalHandle);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refreshMerchantGatewayReadinessSnapshot, selectedOwnedAgentId, showMerchantView]);
+
+  useEffect(() => {
     if (!normalizedRequestedAgentId) {
       setConsumerGatewayReadinessStatus(null);
       setConsumerGatewayLastCheckedAt(null);
@@ -994,6 +1055,60 @@ print("body:", response.text)`,
       active = false;
     };
   }, [fetchAgentGatewayConfig, normalizedRequestedAgentId]);
+
+  useEffect(() => {
+    if (!normalizedRequestedAgentId) return;
+
+    let active = true;
+    let inFlight = false;
+
+    const refreshInBackground = async () => {
+      if (!active || inFlight) return;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+
+      inFlight = true;
+      try {
+        const config =
+          showMerchantView && selectedOwnedAgentId === normalizedRequestedAgentId
+            ? await refreshMerchantGatewayReadinessSnapshot(normalizedRequestedAgentId)
+            : await fetchAgentGatewayConfig(normalizedRequestedAgentId);
+        if (!active) return;
+
+        setConsumerGatewayReadinessStatus(config.readinessStatus);
+        setConsumerGatewayLastCheckedAt(config.lastCanaryCheckedAt);
+        setConsumerGatewayLastPassedAt(config.lastCanaryPassedAt);
+        setConsumerGatewayReadinessError(null);
+      } catch {
+        // Preserve the last known readiness snapshot during background polling errors.
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const intervalHandle = window.setInterval(() => {
+      void refreshInBackground();
+    }, GATEWAY_READINESS_POLL_INTERVAL_MS);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshInBackground();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalHandle);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [
+    fetchAgentGatewayConfig,
+    normalizedRequestedAgentId,
+    refreshMerchantGatewayReadinessSnapshot,
+    selectedOwnedAgentId,
+    showMerchantView,
+  ]);
 
   const merchantGatewayReadinessStatus =
     merchantGatewayConfig?.readinessStatus ?? selectedOwnedAgent?.gatewayReadinessStatus ?? "UNCONFIGURED";
@@ -1135,16 +1250,9 @@ print("body:", response.text)`,
         readinessStatus?: GatewayReadinessStatus;
       };
 
-      const refreshed = await fetchAgentGatewayConfig(selectedOwnedAgent.agentId, { includeHistory: true });
-      setMerchantGatewayConfig(refreshed);
+      const refreshed = await refreshMerchantGatewayReadinessSnapshot(selectedOwnedAgent.agentId);
       setMerchantGatewayEndpointUrl(refreshed.endpointUrl ?? "");
       setMerchantGatewayCanaryPath(refreshed.canaryPath ?? DEFAULT_CANARY_PATH);
-      patchOwnedAgentGatewayReadiness(
-        selectedOwnedAgent.agentId,
-        refreshed.readinessStatus,
-        refreshed.lastCanaryCheckedAt,
-        refreshed.lastCanaryPassedAt,
-      );
 
       if (!response.ok) {
         throw new Error(typeof payload.error === "string" ? payload.error : "Gateway canary verification failed.");
@@ -1155,12 +1263,6 @@ print("body:", response.text)`,
           ? ` (${Math.trunc(payload.latencyMs)} ms)`
           : "";
       setMerchantGatewayNotice(`Gateway verified // Service live${latencyText}`);
-      if (normalizedRequestedAgentId === selectedOwnedAgent.agentId) {
-        setConsumerGatewayReadinessStatus(refreshed.readinessStatus);
-        setConsumerGatewayLastCheckedAt(refreshed.lastCanaryCheckedAt);
-        setConsumerGatewayLastPassedAt(refreshed.lastCanaryPassedAt);
-        setConsumerGatewayReadinessError(null);
-      }
     } catch (error) {
       setMerchantGatewayError(getErrorMessage(error, "Gateway canary verification failed."));
     } finally {

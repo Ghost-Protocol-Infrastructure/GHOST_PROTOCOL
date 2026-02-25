@@ -14,6 +14,7 @@ type LeadTier = "WHALE" | "ACTIVE" | "NEW" | "GHOST";
 type SyncHealth = "live" | "stale" | "offline" | "unknown";
 type GatewayReadinessStatus = "UNCONFIGURED" | "CONFIGURED" | "LIVE" | "DEGRADED";
 const STALE_SYNC_THRESHOLD_SECONDS = 3 * 60 * 60;
+const LEADERBOARD_REFRESH_INTERVAL_MS = 15_000;
 
 type ApiAgent = {
   rank?: number;
@@ -413,8 +414,10 @@ export default function Home() {
   useEffect(() => {
     let isActive = true;
 
-    const loadLeads = async () => {
-      setIsLoadingLeads(true);
+    const loadLeads = async (options?: { background?: boolean }) => {
+      if (!options?.background) {
+        setIsLoadingLeads(true);
+      }
       try {
         const params = new URLSearchParams({
           limit: PAGE_SIZE.toString(),
@@ -484,18 +487,27 @@ export default function Home() {
         setLastSyncedBlock(null);
         setSyncHealth("unknown");
       } finally {
-        if (isActive) setIsLoadingLeads(false);
+        if (isActive && !options?.background) setIsLoadingLeads(false);
       }
     };
 
     void loadLeads();
     const refreshHandle = window.setInterval(() => {
-      void loadLeads();
-    }, 60_000);
+      if (document.visibilityState !== "visible") return;
+      void loadLeads({ background: true });
+    }, LEADERBOARD_REFRESH_INTERVAL_MS);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void loadLeads({ background: true });
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       isActive = false;
       window.clearInterval(refreshHandle);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [currentPage, searchQuery]);
 

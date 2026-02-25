@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import Image from "next/image";
 import { prisma } from "@/lib/db";
+import AgentProfileAutoRefresh from "@/components/AgentProfileAutoRefresh";
 
 export const dynamic = "force-dynamic";
 
@@ -190,6 +191,7 @@ export default async function AgentProfilePage({ params, searchParams }: AgentPa
 
   return (
     <main className="min-h-screen font-mono text-neutral-400 bg-neutral-950 [background-image:none] max-w-7xl mx-auto border-l border-r border-neutral-900">
+      <AgentProfileAutoRefresh agentId={agent.agentId} />
       <div className="mx-auto max-w-5xl px-4 py-10 md:px-8">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-sm uppercase tracking-[0.18em] text-neutral-500 font-bold">{"// AGENT PROFILE"}</h1>
