@@ -1,0 +1,76 @@
+name: Gateway Canary Recheck
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Base URL to call (defaults to production)"
+        required: false
+        default: "https://ghostprotocol.cc"
+        type: string
+      limit:
+        description: "Max gateway configs to process"
+        required: false
+        default: "50"
+        type: string
+      dry_run:
+        description: "Run selection/stale sweep without canary fetches"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+  schedule:
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gateway-canary-recheck
+  cancel-in-progress: false
+
+jobs:
+  recheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Invoke gateway recheck endpoint
+        env:
+          RECHECK_SECRET: ${{ secrets.GHOST_AGENT_GATEWAY_RECHECK_SECRET }}
+          BASE_URL_INPUT: ${{ github.event.inputs.base_url }}
+          LIMIT_INPUT: ${{ github.event.inputs.limit }}
+          DRY_RUN_INPUT: ${{ github.event.inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${RECHECK_SECRET:-}" ]; then
+            echo "Missing repo secret GHOST_AGENT_GATEWAY_RECHECK_SECRET" >&2
+            exit 1
+          fi
+
+          base_url="${BASE_URL_INPUT:-https://ghostprotocol.cc}"
+          base_url="${base_url%/}"
+          limit="${LIMIT_INPUT:-50}"
+          dry_run="${DRY_RUN_INPUT:-false}"
+
+          url="${base_url}/api/agent-gateway/recheck?limit=${limit}"
+          if [ "${dry_run}" = "true" ]; then
+            url="${url}&dryRun=1"
+          fi
+
+          echo "Calling ${url}"
+          http_code="$(curl -sS -o response.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${RECHECK_SECRET}" \
+            -H "Accept: application/json" \
+            "${url}")"
+
+          cat response.json
+          echo
+
+          if [ "${http_code}" != "200" ]; then
+            echo "Gateway recheck endpoint failed with HTTP ${http_code}" >&2
+            exit 1
+          fi
+

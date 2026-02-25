@@ -27,9 +27,26 @@ export type AgentGatewayCanaryRunResult = {
   responseDigest: string | null;
 };
 
+const DEFAULT_GATEWAY_LIVE_STALE_AFTER_MS = 60 * 60 * 1000;
+const MIN_GATEWAY_LIVE_STALE_AFTER_MS = 5 * 60 * 1000;
+const MAX_GATEWAY_LIVE_STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
+
 const getErrorMessage = (error: unknown): string => {
   if (error instanceof Error) return error.message;
   return String(error);
+};
+
+const parsePositiveMsEnv = (
+  rawValue: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+): number => {
+  const trimmed = rawValue?.trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) return fallback;
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
 };
 
 const digestResponsePayload = (payload: unknown): string | null => {
@@ -41,6 +58,70 @@ const digestResponsePayload = (payload: unknown): string | null => {
   } catch {
     return null;
   }
+};
+
+export const getAgentGatewayLiveStaleAfterMs = (): number =>
+  parsePositiveMsEnv(
+    process.env.GHOST_AGENT_GATEWAY_LIVE_STALE_AFTER_MS,
+    DEFAULT_GATEWAY_LIVE_STALE_AFTER_MS,
+    MIN_GATEWAY_LIVE_STALE_AFTER_MS,
+    MAX_GATEWAY_LIVE_STALE_AFTER_MS,
+  );
+
+export const buildGatewayReadinessStaleReason = (staleAfterMs: number): string => {
+  const staleMinutes = Math.round(staleAfterMs / 60000);
+  return `Gateway readiness is stale. No successful canary verification within ${staleMinutes} minute(s).`;
+};
+
+export const getGatewayReadinessStaleCutoff = (
+  now: Date = new Date(),
+  staleAfterMs: number = getAgentGatewayLiveStaleAfterMs(),
+): Date => new Date(now.getTime() - staleAfterMs);
+
+export const degradeStaleAgentGatewayConfigs = async (options?: {
+  now?: Date;
+  staleAfterMs?: number;
+  onlyAgentId?: string | null;
+  dryRun?: boolean;
+}): Promise<{
+  staleAfterMs: number;
+  staleCutoffAt: Date;
+  matched: number;
+  degraded: number;
+}> => {
+  const staleAfterMs = options?.staleAfterMs ?? getAgentGatewayLiveStaleAfterMs();
+  const staleCutoffAt = getGatewayReadinessStaleCutoff(options?.now ?? new Date(), staleAfterMs);
+
+  const where: Prisma.AgentGatewayConfigWhereInput = {
+    readinessStatus: "LIVE",
+    ...(options?.onlyAgentId ? { agentId: options.onlyAgentId } : {}),
+    OR: [{ lastCanaryPassedAt: null }, { lastCanaryPassedAt: { lt: staleCutoffAt } }],
+  };
+
+  const matched = await prisma.agentGatewayConfig.count({ where });
+  if (options?.dryRun || matched === 0) {
+    return {
+      staleAfterMs,
+      staleCutoffAt,
+      matched,
+      degraded: 0,
+    };
+  }
+
+  const updated = await prisma.agentGatewayConfig.updateMany({
+    where,
+    data: {
+      readinessStatus: "DEGRADED",
+      lastCanaryError: buildGatewayReadinessStaleReason(staleAfterMs),
+    },
+  });
+
+  return {
+    staleAfterMs,
+    staleCutoffAt,
+    matched,
+    degraded: updated.count,
+  };
 };
 
 export const runAgentGatewayCanaryCheck = async (

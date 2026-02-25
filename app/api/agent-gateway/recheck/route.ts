@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import {
+  degradeStaleAgentGatewayConfigs,
   isMissingAgentGatewayPhaseBTableError,
   persistAgentGatewayCanaryOutcome,
   runAgentGatewayCanaryCheck,
@@ -67,6 +68,11 @@ async function handle(request: NextRequest): Promise<NextResponse> {
   const onlyAgentId = params.get("agentId")?.trim() || null;
 
   try {
+    const staleSweep = await degradeStaleAgentGatewayConfigs({
+      onlyAgentId,
+      dryRun,
+    });
+
     const configs = await prisma.agentGatewayConfig.findMany({
       where: onlyAgentId
         ? { agentId: onlyAgentId }
@@ -88,6 +94,12 @@ async function handle(request: NextRequest): Promise<NextResponse> {
         {
           ok: true,
           dryRun: true,
+          staleSweep: {
+            staleAfterMs: staleSweep.staleAfterMs,
+            staleCutoffAt: staleSweep.staleCutoffAt.toISOString(),
+            matched: staleSweep.matched,
+            degraded: staleSweep.degraded,
+          },
           selected: configs.length,
           limit,
           agentIds: configs.map((config) => config.agentId),
@@ -148,6 +160,12 @@ async function handle(request: NextRequest): Promise<NextResponse> {
       {
         ok: true,
         dryRun: false,
+        staleSweep: {
+          staleAfterMs: staleSweep.staleAfterMs,
+          staleCutoffAt: staleSweep.staleCutoffAt.toISOString(),
+          matched: staleSweep.matched,
+          degraded: staleSweep.degraded,
+        },
         limit,
         selected: configs.length,
         processed,
