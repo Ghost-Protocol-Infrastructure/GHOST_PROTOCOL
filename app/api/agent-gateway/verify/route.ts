@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import {
-  AGENT_GATEWAY_VERIFY_TIMEOUT_MS,
-  buildCanaryUrl,
-  matchesCanaryContract,
   normalizeAgentId,
   normalizeOwnerAddress,
 } from "@/lib/agent-gateway";
 import { deriveAgentServiceSlug, normalizeServiceSlug } from "@/lib/agent-gateway";
+import {
+  isMissingAgentGatewayPhaseBTableError,
+  persistAgentGatewayCanaryOutcome,
+  runAgentGatewayCanaryCheck,
+} from "@/lib/agent-gateway-canary";
 import { verifyMerchantGatewaySignedWrite } from "@/lib/agent-gateway-auth-server";
 import { consumeAgentGatewayRateLimit } from "@/lib/agent-gateway-rate-limit";
 
@@ -18,11 +20,6 @@ const json = (body: unknown, status = 200): NextResponse =>
     status,
     headers: { "cache-control": "no-store" },
   });
-
-const getErrorMessage = (error: unknown): string => {
-  if (error instanceof Error) return error.message;
-  return String(error);
-};
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   let body: unknown;
@@ -133,81 +130,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const startedAtMs = Date.now();
-    const canaryUrl = buildCanaryUrl(config.endpointUrl, config.canaryPath);
-    let statusCode: number | null = null;
-    let latencyMs: number | null = null;
-    let responsePayload: unknown = null;
-    let verificationError: string | null = null;
-
-    try {
-      const response = await fetch(canaryUrl, {
-        method: "GET",
-        headers: {
-          accept: "application/json",
-          "user-agent": "ghostprotocol-canary/phase-a",
-        },
-        cache: "no-store",
-        redirect: "manual",
-        signal: AbortSignal.timeout(AGENT_GATEWAY_VERIFY_TIMEOUT_MS),
-      });
-
-      latencyMs = Math.max(0, Date.now() - startedAtMs);
-      statusCode = response.status;
-
-      if (response.status !== 200) {
-        verificationError = `Canary endpoint must return HTTP 200. Received ${response.status}.`;
-      } else {
-        try {
-          responsePayload = await response.json();
-        } catch {
-          verificationError = "Canary endpoint must return valid JSON.";
-        }
-      }
-    } catch (error) {
-      latencyMs = Math.max(0, Date.now() - startedAtMs);
-      verificationError = getErrorMessage(error);
-    }
-
-    if (!verificationError && statusCode === 200) {
-      const contractResult = matchesCanaryContract(responsePayload, config.serviceSlug);
-      if (!contractResult.ok) {
-        verificationError = contractResult.reason;
-      }
-    }
-
-    const now = new Date();
-    const updated = await prisma.agentGatewayConfig.update({
-      where: { agentId },
-      data: verificationError
-        ? {
-            readinessStatus: "CONFIGURED",
-            lastCanaryCheckedAt: now,
-            lastCanaryStatusCode: statusCode,
-            lastCanaryLatencyMs: latencyMs,
-            lastCanaryError: verificationError,
-          }
-        : {
-            readinessStatus: "LIVE",
-            lastCanaryCheckedAt: now,
-            lastCanaryPassedAt: now,
-            lastCanaryStatusCode: statusCode,
-            lastCanaryLatencyMs: latencyMs,
-            lastCanaryError: null,
-          },
+    const canaryResult = await runAgentGatewayCanaryCheck(config, {
+      userAgent: "ghostprotocol-canary/manual-verify",
     });
 
-    if (verificationError) {
+    const persisted = await persistAgentGatewayCanaryOutcome({
+      config,
+      result: canaryResult,
+    });
+
+    if (!canaryResult.success) {
       return json(
         {
           ok: false,
           verified: false,
-          canaryUrl,
+          canaryUrl: canaryResult.canaryUrl,
           serviceSlug: config.serviceSlug,
-          readinessStatus: updated.readinessStatus,
-          statusCode,
-          latencyMs,
-          error: verificationError,
+          readinessStatus: persisted.readinessStatus,
+          statusCode: canaryResult.statusCode,
+          latencyMs: canaryResult.latencyMs,
+          error: canaryResult.error,
+          historyRecorded: persisted.historyRecorded,
           authMode: "wallet-signature",
         },
         422,
@@ -218,26 +161,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       {
         ok: true,
         verified: true,
-        canaryUrl,
+        canaryUrl: canaryResult.canaryUrl,
         serviceSlug: config.serviceSlug,
-        readinessStatus: updated.readinessStatus,
-        statusCode,
-        latencyMs,
+        readinessStatus: persisted.readinessStatus,
+        statusCode: canaryResult.statusCode,
+        latencyMs: canaryResult.latencyMs,
+        historyRecorded: persisted.historyRecorded,
         authMode: "wallet-signature",
       },
       200,
     );
   } catch (error) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      (error as { code?: string }).code === "P2021"
-    ) {
+    if (isMissingAgentGatewayPhaseBTableError(error)) {
       return json(
         {
           code: 503,
-          error: "AgentGatewayConfig table is not available. Apply the Prisma schema update before using this endpoint.",
+          error:
+            "Agent gateway readiness tables are not fully available. Apply the Prisma schema update before using this endpoint.",
         },
         503,
       );

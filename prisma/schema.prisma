@@ -164,11 +164,31 @@ model AgentGatewayConfig {
   createdAt            DateTime                   @default(now())
   updatedAt            DateTime                   @updatedAt
 
-  agent Agent @relation(fields: [agentId], references: [agentId], onDelete: Cascade)
+  agent        Agent                    @relation(fields: [agentId], references: [agentId], onDelete: Cascade)
+  canaryChecks AgentGatewayCanaryCheck[]
 
   @@index([ownerAddress])
   @@index([readinessStatus])
   @@index([serviceSlug])
+}
+
+model AgentGatewayCanaryCheck {
+  id             String   @id @default(cuid())
+  gatewayConfigId String
+  checkedAt       DateTime @default(now())
+  success         Boolean
+  statusCode      Int?
+  latencyMs       Int?
+  error           String?
+  responseDigest  String?
+  requestId       String?
+  createdAt       DateTime @default(now())
+
+  gatewayConfig AgentGatewayConfig @relation(fields: [gatewayConfigId], references: [id], onDelete: Cascade)
+
+  @@index([gatewayConfigId, checkedAt])
+  @@index([success, checkedAt])
+  @@index([checkedAt])
 }
 
 model SystemState {
