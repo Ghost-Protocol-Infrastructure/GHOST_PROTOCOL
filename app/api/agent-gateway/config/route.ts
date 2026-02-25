@@ -14,6 +14,8 @@ import { verifyMerchantGatewaySignedWrite } from "@/lib/agent-gateway-auth-serve
 import { consumeAgentGatewayRateLimit } from "@/lib/agent-gateway-rate-limit";
 
 export const runtime = "nodejs";
+const DEFAULT_HISTORY_LIMIT = 8;
+const MAX_HISTORY_LIMIT = 50;
 
 const json = (body: unknown, status = 200): NextResponse =>
   NextResponse.json(body, {
@@ -34,6 +36,25 @@ type GatewayConfigResponse = {
   lastCanaryStatusCode: number | null;
   lastCanaryLatencyMs: number | null;
   lastCanaryError: string | null;
+  canaryHistory?: GatewayCanaryHistoryEntryResponse[];
+};
+
+type GatewayCanaryHistoryEntryResponse = {
+  id: string;
+  checkedAt: string;
+  success: boolean;
+  statusCode: number | null;
+  latencyMs: number | null;
+  error: string | null;
+};
+
+type GatewayCanaryHistoryRow = {
+  id: string;
+  checkedAt: Date;
+  success: boolean;
+  statusCode: number | null;
+  latencyMs: number | null;
+  error: string | null;
 };
 
 const toGatewayConfigResponse = (config: {
@@ -69,8 +90,21 @@ const parseActorAddress = (value: unknown): string | null => {
   return normalizeOwnerAddress(value);
 };
 
+const parseBoolean = (value: string | null): boolean =>
+  value != null && ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+
+const parseHistoryLimit = (value: string | null): number => {
+  if (!value) return DEFAULT_HISTORY_LIMIT;
+  if (!/^\d+$/.test(value.trim())) return DEFAULT_HISTORY_LIMIT;
+  const parsed = Number.parseInt(value.trim(), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_HISTORY_LIMIT;
+  return Math.min(parsed, MAX_HISTORY_LIMIT);
+};
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const agentId = normalizeAgentId(request.nextUrl.searchParams.get("agentId"));
+  const includeHistory = parseBoolean(request.nextUrl.searchParams.get("includeHistory"));
+  const historyLimit = parseHistoryLimit(request.nextUrl.searchParams.get("historyLimit"));
   if (!agentId) {
     return json({ code: 400, error: "agentId is required." }, 400);
   }
@@ -85,9 +119,27 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return json({ code: 404, error: "Agent not found." }, 404);
     }
 
-    const config = await prisma.agentGatewayConfig.findUnique({
-      where: { agentId },
-    });
+    const config = includeHistory
+      ? await prisma.agentGatewayConfig.findUnique({
+          where: { agentId },
+          include: {
+            canaryChecks: {
+              orderBy: { checkedAt: "desc" },
+              take: historyLimit,
+              select: {
+                id: true,
+                checkedAt: true,
+                success: true,
+                statusCode: true,
+                latencyMs: true,
+                error: true,
+              },
+            },
+          },
+        })
+      : await prisma.agentGatewayConfig.findUnique({
+          where: { agentId },
+        });
 
     if (!config) {
       return json(
@@ -112,7 +164,27 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    return json({ configured: true, config: toGatewayConfigResponse(config) }, 200);
+    return json(
+      {
+        configured: true,
+        config: ({
+          ...toGatewayConfigResponse(config),
+          ...(includeHistory && "canaryChecks" in config
+            ? {
+                canaryHistory: (config.canaryChecks as GatewayCanaryHistoryRow[]).map((row) => ({
+                  id: row.id,
+                  checkedAt: row.checkedAt.toISOString(),
+                  success: row.success,
+                  statusCode: row.statusCode,
+                  latencyMs: row.latencyMs,
+                  error: row.error,
+                })),
+              }
+            : {}),
+        }) satisfies GatewayConfigResponse,
+      },
+      200,
+    );
   } catch (error) {
     if (
       typeof error === "object" &&

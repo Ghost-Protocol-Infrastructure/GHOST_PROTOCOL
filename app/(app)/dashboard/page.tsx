@@ -77,6 +77,16 @@ type AgentGatewayConfigRecord = {
   lastCanaryStatusCode: number | null;
   lastCanaryLatencyMs: number | null;
   lastCanaryError: string | null;
+  canaryHistory: AgentGatewayCanaryHistoryEntry[];
+};
+
+type AgentGatewayCanaryHistoryEntry = {
+  id: string;
+  checkedAt: string;
+  success: boolean;
+  statusCode: number | null;
+  latencyMs: number | null;
+  error: string | null;
 };
 
 type AgentGatewayConfigResponse = {
@@ -95,6 +105,7 @@ const SDK_SECURITY_NOTICE =
   "Security Notice: Ghost Protocol gate access is authenticated with Web3 wallet signatures (EIP-712). Configure SDKs with a signer private key in a trusted backend/server/CLI environment only. Never expose private keys in frontend code or commit them to version control.";
 
 const DEFAULT_CANARY_PATH = "/ghostgate/canary";
+const DEFAULT_MERCHANT_CANARY_HISTORY_LIMIT = 8;
 const MAX_DEPOSIT_CREDIT_SYNC_CATCHUP_ATTEMPTS = 12;
 const DEPOSIT_CREDIT_SYNC_CATCHUP_DELAY_MS = 200;
 const MAX_WITHDRAW_BALANCE_REFETCH_ATTEMPTS = 8;
@@ -253,6 +264,23 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
   }
 
   return fallback;
+};
+
+const formatRelativeTimeFromIso = (value: string): string => {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "unknown";
+
+  const deltaMs = Date.now() - timestamp;
+  const absMs = Math.abs(deltaMs);
+  const minuteMs = 60_000;
+  const hourMs = 60 * minuteMs;
+  const dayMs = 24 * hourMs;
+
+  const suffix = deltaMs >= 0 ? "ago" : "from now";
+  if (absMs < minuteMs) return `just now`;
+  if (absMs < hourMs) return `${Math.max(1, Math.round(absMs / minuteMs))}m ${suffix}`;
+  if (absMs < dayMs) return `${Math.max(1, Math.round(absMs / hourMs))}h ${suffix}`;
+  return `${Math.max(1, Math.round(absMs / dayMs))}d ${suffix}`;
 };
 
 type SyncCreditsResponse = {
@@ -449,8 +477,15 @@ function DashboardPageContent() {
     return snapshot.credits;
   }, [syncCreditsLedgerSnapshot]);
 
-  const fetchAgentGatewayConfig = useCallback(async (agentId: string): Promise<AgentGatewayConfigRecord> => {
+  const fetchAgentGatewayConfig = useCallback(async (
+    agentId: string,
+    options?: { includeHistory?: boolean; historyLimit?: number },
+  ): Promise<AgentGatewayConfigRecord> => {
     const params = new URLSearchParams({ agentId });
+    if (options?.includeHistory) {
+      params.set("includeHistory", "1");
+      params.set("historyLimit", String(options.historyLimit ?? DEFAULT_MERCHANT_CANARY_HISTORY_LIMIT));
+    }
     const response = await fetch(`/api/agent-gateway/config?${params.toString()}`, {
       cache: "no-store",
       headers: {
@@ -489,6 +524,26 @@ function DashboardPageContent() {
       lastCanaryLatencyMs:
         typeof config.lastCanaryLatencyMs === "number" ? config.lastCanaryLatencyMs : null,
       lastCanaryError: typeof config.lastCanaryError === "string" ? config.lastCanaryError : null,
+      canaryHistory: Array.isArray((config as { canaryHistory?: unknown[] }).canaryHistory)
+        ? (config as { canaryHistory: unknown[] }).canaryHistory
+            .map((entry): AgentGatewayCanaryHistoryEntry | null => {
+              if (!entry || typeof entry !== "object") return null;
+              const row = entry as Record<string, unknown>;
+              if (typeof row.id !== "string" || typeof row.checkedAt !== "string" || typeof row.success !== "boolean") {
+                return null;
+              }
+
+              return {
+                id: row.id,
+                checkedAt: row.checkedAt,
+                success: row.success,
+                statusCode: typeof row.statusCode === "number" ? row.statusCode : null,
+                latencyMs: typeof row.latencyMs === "number" ? row.latencyMs : null,
+                error: typeof row.error === "string" ? row.error : null,
+              };
+            })
+            .filter((entry): entry is AgentGatewayCanaryHistoryEntry => entry != null)
+        : [],
     };
   }, []);
 
@@ -872,7 +927,7 @@ print("body:", response.text)`,
       setIsLoadingMerchantGatewayConfig(true);
       setMerchantGatewayError(null);
       try {
-        const config = await fetchAgentGatewayConfig(selectedOwnedAgentId);
+        const config = await fetchAgentGatewayConfig(selectedOwnedAgentId, { includeHistory: true });
         if (!active) return;
         setMerchantGatewayConfig(config);
         setMerchantGatewayEndpointUrl(config.endpointUrl ?? "");
@@ -939,6 +994,7 @@ print("body:", response.text)`,
     merchantGatewayConfig?.lastCanaryCheckedAt ?? selectedOwnedAgent?.gatewayLastCanaryCheckedAt ?? null;
   const merchantGatewayLastPassedAt =
     merchantGatewayConfig?.lastCanaryPassedAt ?? selectedOwnedAgent?.gatewayLastCanaryPassedAt ?? null;
+  const merchantGatewayCanaryHistory = merchantGatewayConfig?.canaryHistory ?? [];
 
   const consumerHasExplicitAgentTarget = Boolean(normalizedRequestedAgentId && !usesFallbackAgentAddress);
   const consumerEffectiveGatewayReadinessStatus = consumerHasExplicitAgentTarget
@@ -1001,7 +1057,7 @@ print("body:", response.text)`,
               ...payload.config,
               readinessStatus: normalizeGatewayReadinessStatus(payload.config.readinessStatus),
             }
-          : await fetchAgentGatewayConfig(selectedOwnedAgent.agentId);
+          : await fetchAgentGatewayConfig(selectedOwnedAgent.agentId, { includeHistory: true });
 
       setMerchantGatewayConfig(config as AgentGatewayConfigRecord);
       setMerchantGatewayEndpointUrl((config as AgentGatewayConfigRecord).endpointUrl ?? "");
@@ -1063,7 +1119,7 @@ print("body:", response.text)`,
         readinessStatus?: GatewayReadinessStatus;
       };
 
-      const refreshed = await fetchAgentGatewayConfig(selectedOwnedAgent.agentId);
+      const refreshed = await fetchAgentGatewayConfig(selectedOwnedAgent.agentId, { includeHistory: true });
       setMerchantGatewayConfig(refreshed);
       setMerchantGatewayEndpointUrl(refreshed.endpointUrl ?? "");
       setMerchantGatewayCanaryPath(refreshed.canaryPath ?? DEFAULT_CANARY_PATH);
@@ -1417,10 +1473,16 @@ def my_agent():
                     {(merchantGatewayLastCheckedAt || merchantGatewayLastPassedAt) && (
                       <div className="text-xs text-neutral-600">
                         {merchantGatewayLastCheckedAt && (
-                          <p>Last checked: {new Date(merchantGatewayLastCheckedAt).toLocaleString()}</p>
+                          <p>
+                            Last checked: {new Date(merchantGatewayLastCheckedAt).toLocaleString()} (
+                            {formatRelativeTimeFromIso(merchantGatewayLastCheckedAt)})
+                          </p>
                         )}
                         {merchantGatewayLastPassedAt && (
-                          <p>Last passed: {new Date(merchantGatewayLastPassedAt).toLocaleString()}</p>
+                          <p>
+                            Last passed: {new Date(merchantGatewayLastPassedAt).toLocaleString()} (
+                            {formatRelativeTimeFromIso(merchantGatewayLastPassedAt)})
+                          </p>
                         )}
                       </div>
                     )}
@@ -1433,6 +1495,53 @@ def my_agent():
 
                     {merchantGatewayError && <p className="text-xs text-red-500">{merchantGatewayError}</p>}
                     {merchantGatewayNotice && <p className="text-xs text-neutral-400">{merchantGatewayNotice}</p>}
+
+                    <div className="border border-neutral-900 bg-neutral-950/60 p-3">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
+                          Verification History
+                        </p>
+                        <span className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
+                          {merchantGatewayCanaryHistory.length} recent
+                        </span>
+                      </div>
+                      {merchantGatewayCanaryHistory.length === 0 ? (
+                        <p className="text-xs text-neutral-600">
+                          No canary verification history yet. Run VERIFY GATEWAY to record checks.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {merchantGatewayCanaryHistory.map((entry) => (
+                            <div
+                              key={entry.id}
+                              className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 border border-neutral-900 bg-neutral-900/60 px-3 py-2"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`h-2 w-2 rounded-none ${entry.success ? "bg-emerald-400" : "bg-rose-400"}`}
+                                />
+                                <span
+                                  className={`text-[10px] uppercase tracking-[0.16em] font-bold ${
+                                    entry.success ? "text-emerald-300" : "text-rose-300"
+                                  }`}
+                                >
+                                  {entry.success ? "PASS" : "FAIL"}
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-neutral-500">
+                                <div className="flex flex-wrap items-center gap-x-2">
+                                  <span>{new Date(entry.checkedAt).toLocaleString()}</span>
+                                  <span>({formatRelativeTimeFromIso(entry.checkedAt)})</span>
+                                  {entry.statusCode != null && <span>HTTP {entry.statusCode}</span>}
+                                  {entry.latencyMs != null && <span>{entry.latencyMs} ms</span>}
+                                </div>
+                                {entry.error && <p className="mt-1 text-rose-400">{entry.error}</p>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
