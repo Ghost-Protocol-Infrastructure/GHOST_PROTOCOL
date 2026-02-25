@@ -264,6 +264,10 @@ type SyncCreditsResponse = {
   lastSyncedBlock?: string;
   toBlock?: string;
   headBlock?: string;
+  targetCaughtUp?: boolean;
+  targetDepositBlock?: string | null;
+  txAwareCatchupApplied?: boolean;
+  txAwareCatchupSteps?: number;
 };
 
 type SyncCreditsSnapshot = {
@@ -274,6 +278,11 @@ type SyncCreditsSnapshot = {
   lastSyncedBlock: bigint | null;
   toBlock: bigint | null;
   headBlock: bigint | null;
+};
+
+type SyncCreditsSnapshotRequest = {
+  depositTxHash?: string | null;
+  depositReceiptBlock?: bigint | null;
 };
 
 const parseNullableDecimalBigInt = (value: unknown): bigint | null => {
@@ -397,8 +406,15 @@ function DashboardPageContent() {
     },
   });
 
-  const syncCreditsLedgerSnapshot = useCallback(async (userAddress: Address): Promise<SyncCreditsSnapshot> => {
+  const syncCreditsLedgerSnapshot = useCallback(
+    async (userAddress: Address, options?: SyncCreditsSnapshotRequest): Promise<SyncCreditsSnapshot> => {
     const params = new URLSearchParams({ userAddress });
+    if (options?.depositTxHash) {
+      params.set("depositTxHash", options.depositTxHash);
+    }
+    if (options?.depositReceiptBlock != null) {
+      params.set("depositReceiptBlock", options.depositReceiptBlock.toString());
+    }
     const response = await fetch(`/api/sync-credits?${params.toString()}`, {
       method: "GET",
       cache: "no-store",
@@ -484,7 +500,10 @@ function DashboardPageContent() {
     try {
       let latestCredits = syncedCredits ?? "0";
       for (let attempt = 0; attempt < MAX_DEPOSIT_CREDIT_SYNC_CATCHUP_ATTEMPTS; attempt += 1) {
-        const snapshot = await syncCreditsLedgerSnapshot(userAddress);
+        const snapshot = await syncCreditsLedgerSnapshot(userAddress, {
+          depositTxHash: hash,
+          depositReceiptBlock: confirmedDepositBlock ?? null,
+        });
         latestCredits = snapshot.credits;
         setSyncedCredits(snapshot.credits);
 

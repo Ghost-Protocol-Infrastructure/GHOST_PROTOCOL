@@ -284,36 +284,92 @@ export const updateUserCredits = async (userAddress: Address, amount: bigint): P
   return mapCreditBalance(record);
 };
 
+export type SyncDepositsOptions = {
+  expectedLastSyncedBlock?: bigint | null;
+};
+
+export type SyncDepositsResult = {
+  before: bigint;
+  added: bigint;
+  after: bigint;
+  lastSyncedBlock: bigint;
+  applied: boolean;
+  conflict: boolean;
+};
+
 export const syncDeposits = async (
   userAddress: Address,
   depositedWei: bigint,
   creditPriceWei: bigint,
   syncedToBlock: bigint,
-): Promise<{ before: bigint; added: bigint; after: bigint; lastSyncedBlock: bigint }> => {
+  options?: SyncDepositsOptions,
+): Promise<SyncDepositsResult> => {
   if (creditPriceWei <= 0n) {
     throw new Error("creditPriceWei must be greater than zero.");
   }
   if (syncedToBlock < 0n) {
     throw new Error("syncedToBlock must be non-negative.");
   }
+  if (options?.expectedLastSyncedBlock != null && options.expectedLastSyncedBlock < 0n) {
+    throw new Error("expectedLastSyncedBlock must be non-negative.");
+  }
 
   const safeDeposited = depositedWei > 0n ? depositedWei : 0n;
   const addedCredits = safeDeposited / creditPriceWei;
   const key = normalizeAddressKey(userAddress);
+  const expectedLastSyncedBlock = options?.expectedLastSyncedBlock ?? null;
 
   return prisma.$transaction(async (tx) => {
     const existing = await tx.creditBalance.findUnique({
       where: { walletAddress: key },
     });
 
+    const actualLastSyncedBlock = existing?.lastSyncedBlock ?? 0n;
+    if (expectedLastSyncedBlock != null && actualLastSyncedBlock !== expectedLastSyncedBlock) {
+      const currentCredits = BigInt(existing?.credits ?? 0);
+      return {
+        before: currentCredits,
+        added: 0n,
+        after: currentCredits,
+        lastSyncedBlock: actualLastSyncedBlock,
+        applied: false,
+        conflict: true,
+      };
+    }
+
     if (!existing) {
-      const created = await tx.creditBalance.create({
-        data: {
-          walletAddress: key,
-          credits: toPrismaInt(addedCredits, "added credits"),
-          lastSyncedBlock: syncedToBlock,
-        },
-      });
+      let created;
+      try {
+        created = await tx.creditBalance.create({
+          data: {
+            walletAddress: key,
+            credits: toPrismaInt(addedCredits, "added credits"),
+            lastSyncedBlock: syncedToBlock,
+          },
+        });
+      } catch (error) {
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          (error as { code?: string }).code === "P2002"
+        ) {
+          const current = await tx.creditBalance.findUnique({
+            where: { walletAddress: key },
+          });
+          const currentCredits = BigInt(current?.credits ?? 0);
+          return {
+            before: currentCredits,
+            added: 0n,
+            after: currentCredits,
+            lastSyncedBlock: current?.lastSyncedBlock ?? 0n,
+            applied: false,
+            conflict: true,
+          };
+        }
+
+        throw error;
+      }
 
       const after = BigInt(created.credits);
       if (addedCredits > 0n) {
@@ -337,6 +393,8 @@ export const syncDeposits = async (
         added: addedCredits,
         after,
         lastSyncedBlock: created.lastSyncedBlock,
+        applied: true,
+        conflict: false,
       };
     }
 
@@ -345,13 +403,38 @@ export const syncDeposits = async (
     const nextLastSyncedBlock =
       syncedToBlock > existing.lastSyncedBlock ? syncedToBlock : existing.lastSyncedBlock;
 
-    const updated = await tx.creditBalance.update({
-      where: { walletAddress: key },
+    const casUpdated = await tx.creditBalance.updateMany({
+      where: {
+        walletAddress: key,
+        lastSyncedBlock: existing.lastSyncedBlock,
+      },
       data: {
         credits: toPrismaInt(after, "credits"),
         lastSyncedBlock: nextLastSyncedBlock,
       },
     });
+
+    if (casUpdated.count === 0) {
+      const current = await tx.creditBalance.findUnique({
+        where: { walletAddress: key },
+      });
+      const currentCredits = BigInt(current?.credits ?? 0);
+      return {
+        before: currentCredits,
+        added: 0n,
+        after: currentCredits,
+        lastSyncedBlock: current?.lastSyncedBlock ?? 0n,
+        applied: false,
+        conflict: true,
+      };
+    }
+
+    const updated = await tx.creditBalance.findUnique({
+      where: { walletAddress: key },
+    });
+    if (!updated) {
+      throw new Error("Credit balance row disappeared during sync.");
+    }
 
     const updatedAfter = BigInt(updated.credits);
     if (addedCredits > 0n) {
@@ -376,6 +459,8 @@ export const syncDeposits = async (
       added: addedCredits,
       after: updatedAfter,
       lastSyncedBlock: updated.lastSyncedBlock,
+      applied: true,
+      conflict: false,
     };
   });
 };
