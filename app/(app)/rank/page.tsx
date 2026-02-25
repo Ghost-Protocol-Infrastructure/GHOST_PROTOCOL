@@ -845,23 +845,25 @@ export default function Home() {
                               {getGatewayReadinessChipLabel(agent.gatewayReadinessStatus)}
                             </span>
                           </div>
-                          <div className="mt-1 flex items-center gap-2 text-[10px] text-neutral-600 font-mono">
-                            <span title={agent.owner}>{truncateAddress(agent.owner)}</span>
-                            <button
-                              type="button"
-                              onClick={() => handleCopyOwner(agent.owner)}
-                              className="inline-flex items-center justify-center border border-neutral-800 px-1 py-0.5 text-neutral-500 transition hover:border-neutral-600 hover:text-neutral-300"
-                              aria-label={`Copy ${agent.owner}`}
-                              title={copiedOwner === agent.owner ? "Copied" : "Copy full address"}
+                          <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[10px] text-neutral-600 font-mono">
+                            <div className="min-w-0 flex items-center gap-2">
+                              <span title={agent.owner}>{truncateAddress(agent.owner)}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyOwner(agent.owner)}
+                                className="inline-flex items-center justify-center border border-neutral-800 px-1 py-0.5 text-neutral-500 transition hover:border-neutral-600 hover:text-neutral-300"
+                                aria-label={`Copy ${agent.owner}`}
+                                title={copiedOwner === agent.owner ? "Copied" : "Copy full address"}
                               >
                                 <Copy className="h-3 w-3" />
                               </button>
                             </div>
-                          {gatewayReadinessAgeText && (
-                            <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-neutral-600">
-                              {gatewayReadinessAgeText}
-                            </div>
-                          )}
+                            {gatewayReadinessAgeText && (
+                              <span className="shrink-0 text-[10px] uppercase tracking-[0.12em] text-neutral-600">
+                                {gatewayReadinessAgeText}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
 
@@ -1030,23 +1032,25 @@ export default function Home() {
                                 {getGatewayReadinessChipLabel(agent.gatewayReadinessStatus)}
                               </span>
                             </div>
-                            <div className="mt-1 flex items-center gap-2 text-[10px] text-neutral-600 font-mono">
-                              <span title={agent.owner}>{truncateAddress(agent.owner)}</span>
-                              <button
-                                type="button"
-                                onClick={() => handleCopyOwner(agent.owner)}
-                                className="inline-flex items-center justify-center border border-neutral-800 px-1 py-0.5 text-neutral-500 transition hover:border-neutral-600 hover:text-neutral-300"
-                                aria-label={`Copy ${agent.owner}`}
-                                title={copiedOwner === agent.owner ? "Copied" : "Copy full address"}
-                              >
-                                <Copy className="h-3 w-3" />
-                              </button>
-                            </div>
-                            {gatewayReadinessAgeText && (
-                              <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-neutral-600">
-                                {gatewayReadinessAgeText}
+                            <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[10px] text-neutral-600 font-mono">
+                              <div className="min-w-0 flex items-center gap-2">
+                                <span title={agent.owner}>{truncateAddress(agent.owner)}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyOwner(agent.owner)}
+                                  className="inline-flex items-center justify-center border border-neutral-800 px-1 py-0.5 text-neutral-500 transition hover:border-neutral-600 hover:text-neutral-300"
+                                  aria-label={`Copy ${agent.owner}`}
+                                  title={copiedOwner === agent.owner ? "Copied" : "Copy full address"}
+                                >
+                                  <Copy className="h-3 w-3" />
+                                </button>
                               </div>
-                            )}
+                              {gatewayReadinessAgeText && (
+                                <span className="shrink-0 text-[10px] uppercase tracking-[0.12em] text-neutral-600">
+                                  {gatewayReadinessAgeText}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
