@@ -6,7 +6,7 @@ on:
       base_url:
         description: "Base URL to call (defaults to production)"
         required: false
-        default: "https://ghostprotocol.cc"
+        default: "https://www.ghostprotocol.cc"
         type: string
       limit:
         description: "Max gateway configs to process"
@@ -50,8 +50,11 @@ jobs:
             exit 1
           fi
 
-          base_url="${BASE_URL_INPUT:-https://ghostprotocol.cc}"
+          base_url="${BASE_URL_INPUT:-https://www.ghostprotocol.cc}"
           base_url="${base_url%/}"
+          if [ "${base_url}" = "https://ghostprotocol.cc" ]; then
+            base_url="https://www.ghostprotocol.cc"
+          fi
           limit="${LIMIT_INPUT:-50}"
           dry_run="${DRY_RUN_INPUT:-false}"
 
@@ -73,4 +76,3 @@ jobs:
             echo "Gateway recheck endpoint failed with HTTP ${http_code}" >&2
             exit 1
           fi
-
