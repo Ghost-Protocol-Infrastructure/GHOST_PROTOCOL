@@ -10,6 +10,7 @@ import {
   getServiceCreditCost,
   getUserCredits,
   logGateAccessEvent,
+  prisma,
 } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -60,6 +61,8 @@ const NONCE_STORE_ENABLED = process.env.GHOST_GATE_NONCE_STORE_ENABLED === "true
 const ENFORCE_NONCE_UNIQUENESS = process.env.GHOST_GATE_ENFORCE_NONCE_UNIQUENESS === "true";
 const ENABLE_DB_SERVICE_PRICING = process.env.GHOST_GATE_DB_SERVICE_PRICING_ENABLED === "true";
 const RECEIPT_SIGNING_SECRET = process.env.GHOST_GATE_RECEIPT_SIGNING_SECRET?.trim() ?? "";
+const ENFORCE_LIVE_GATEWAY_READINESS = process.env.GHOST_GATE_ENFORCE_LIVE_GATEWAY_READINESS === "true";
+const ENFORCE_LIVE_GATEWAY_READINESS_AGENT_ONLY = process.env.GHOST_GATE_ENFORCE_LIVE_GATEWAY_READINESS_AGENT_ONLY !== "false";
 
 const ENV_SERVICE_PRICING = (() => {
   const raw = process.env.GHOST_GATE_SERVICE_PRICING_JSON?.trim();
@@ -217,6 +220,60 @@ const buildSignedReceipt = (input: {
   };
 };
 
+type ServiceGatewayReadiness = {
+  readinessStatus: "UNCONFIGURED" | "CONFIGURED" | "LIVE" | "DEGRADED";
+  lastCanaryCheckedAt: string | null;
+  lastCanaryPassedAt: string | null;
+};
+
+const shouldEnforceServiceGatewayReadiness = (service: string): boolean => {
+  if (!ENFORCE_LIVE_GATEWAY_READINESS) return false;
+  if (!ENFORCE_LIVE_GATEWAY_READINESS_AGENT_ONLY) return true;
+  return /^agent-\d+$/i.test(service);
+};
+
+const resolveServiceGatewayReadiness = async (service: string): Promise<ServiceGatewayReadiness> => {
+  try {
+    const config = await prisma.agentGatewayConfig.findFirst({
+      where: { serviceSlug: service },
+      orderBy: [{ updatedAt: "desc" }],
+      select: {
+        readinessStatus: true,
+        lastCanaryCheckedAt: true,
+        lastCanaryPassedAt: true,
+      },
+    });
+
+    if (!config) {
+      return {
+        readinessStatus: "UNCONFIGURED",
+        lastCanaryCheckedAt: null,
+        lastCanaryPassedAt: null,
+      };
+    }
+
+    return {
+      readinessStatus: config.readinessStatus,
+      lastCanaryCheckedAt: config.lastCanaryCheckedAt?.toISOString() ?? null,
+      lastCanaryPassedAt: config.lastCanaryPassedAt?.toISOString() ?? null,
+    };
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      ((error as { code?: string }).code === "P2021" || (error as { code?: string }).code === "P2022")
+    ) {
+      return {
+        readinessStatus: "UNCONFIGURED",
+        lastCanaryCheckedAt: null,
+        lastCanaryPassedAt: null,
+      };
+    }
+    throw error;
+  }
+};
+
 const handle = async (request: NextRequest, context: RouteContext): Promise<NextResponse> => {
   const requestedService = await resolveServiceFromSlug(context);
   if (!requestedService) {
@@ -336,8 +393,58 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
     });
   }
 
-  const { cost: requestCost, source: requestCostSource } = await resolveRequestCost(request, requestedService);
   const requestId = buildRequestId(request, requestedService, signer, payload.nonce);
+
+  if (shouldEnforceServiceGatewayReadiness(requestedService)) {
+    let serviceGatewayReadiness: ServiceGatewayReadiness;
+    try {
+      serviceGatewayReadiness = await resolveServiceGatewayReadiness(requestedService);
+    } catch {
+      return respondWithOutcome({
+        outcome: "SERVICE_MISMATCH",
+        status: 500,
+        body: {
+          error: "Failed to resolve service gateway readiness",
+          code: 500,
+        },
+        signer,
+        nonce: payload.nonce,
+        requestId,
+        metadata: {
+          reason: "service_gateway_readiness_lookup_failed",
+        },
+      });
+    }
+
+    if (serviceGatewayReadiness.readinessStatus !== "LIVE") {
+      return respondWithOutcome({
+        outcome: "SERVICE_MISMATCH",
+        status: 423,
+        body: {
+          error: "Service not live",
+          code: 423,
+          authCode: "SERVICE_NOT_LIVE",
+          details: {
+            service: requestedService,
+            readinessStatus: serviceGatewayReadiness.readinessStatus,
+            lastCanaryCheckedAt: serviceGatewayReadiness.lastCanaryCheckedAt,
+            lastCanaryPassedAt: serviceGatewayReadiness.lastCanaryPassedAt,
+          },
+        },
+        signer,
+        nonce: payload.nonce,
+        requestId,
+        metadata: {
+          reason: "service_not_live",
+          readinessStatus: serviceGatewayReadiness.readinessStatus,
+          lastCanaryCheckedAt: serviceGatewayReadiness.lastCanaryCheckedAt,
+          lastCanaryPassedAt: serviceGatewayReadiness.lastCanaryPassedAt,
+        },
+      });
+    }
+  }
+
+  const { cost: requestCost, source: requestCostSource } = await resolveRequestCost(request, requestedService);
 
   const consumed = await consumeUserCreditsForGate(signer, requestCost, {
     service: requestedService,

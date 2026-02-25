@@ -33,6 +33,8 @@ type ApiAgent = {
   volume: string;
   score: number;
   gatewayReadinessStatus?: GatewayReadinessStatus | string | null;
+  gatewayLastCanaryCheckedAt?: string | null;
+  gatewayLastCanaryPassedAt?: string | null;
 };
 
 type ProcessedLead = {
@@ -50,6 +52,8 @@ type ProcessedLead = {
   yieldEth: number | null;
   uptimePct: number | null;
   gatewayReadinessStatus: GatewayReadinessStatus;
+  gatewayLastCanaryCheckedAt: string | null;
+  gatewayLastCanaryPassedAt: string | null;
 };
 
 type AgentApiResponse = {
@@ -236,6 +240,72 @@ const normalizeGatewayReadinessStatus = (value: string | null | undefined): Gate
   return "UNCONFIGURED";
 };
 
+const normalizeIsoTimestamp = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Date.parse(trimmed);
+  return Number.isFinite(parsed) ? trimmed : null;
+};
+
+const formatRelativeAgeShort = (iso: string | null): string | null => {
+  if (!iso) return null;
+  const parsed = Date.parse(iso);
+  if (!Number.isFinite(parsed)) return null;
+  const deltaSeconds = Math.max(0, Math.floor((Date.now() - parsed) / 1000));
+  if (deltaSeconds < 60) return `${deltaSeconds}s`;
+  if (deltaSeconds < 3600) return `${Math.floor(deltaSeconds / 60)}m`;
+  if (deltaSeconds < 86400) return `${Math.floor(deltaSeconds / 3600)}h`;
+  return `${Math.floor(deltaSeconds / 86400)}d`;
+};
+
+const getGatewayReadinessChipClassName = (status: GatewayReadinessStatus): string => {
+  switch (status) {
+    case "LIVE":
+      return "border-emerald-900/40 bg-emerald-950/10 text-emerald-300";
+    case "DEGRADED":
+      return "border-rose-900/40 bg-rose-950/10 text-rose-300";
+    case "CONFIGURED":
+      return "border-amber-900/40 bg-amber-950/10 text-amber-300";
+    case "UNCONFIGURED":
+    default:
+      return "border-neutral-800 bg-neutral-950 text-neutral-500";
+  }
+};
+
+const getGatewayReadinessChipLabel = (status: GatewayReadinessStatus): string => {
+  switch (status) {
+    case "LIVE":
+      return "LIVE";
+    case "DEGRADED":
+      return "DEGRADED";
+    case "CONFIGURED":
+      return "CONFIGURED";
+    case "UNCONFIGURED":
+    default:
+      return "UNCONFIGURED";
+  }
+};
+
+const getGatewayReadinessAgeText = (lead: Pick<ProcessedLead, "gatewayReadinessStatus" | "gatewayLastCanaryCheckedAt" | "gatewayLastCanaryPassedAt">): string | null => {
+  if (lead.gatewayReadinessStatus === "LIVE") {
+    const age = formatRelativeAgeShort(lead.gatewayLastCanaryPassedAt ?? lead.gatewayLastCanaryCheckedAt);
+    return age ? `last pass ${age} ago` : null;
+  }
+  if (lead.gatewayReadinessStatus === "DEGRADED") {
+    const lastPassAge = formatRelativeAgeShort(lead.gatewayLastCanaryPassedAt);
+    const lastCheckAge = formatRelativeAgeShort(lead.gatewayLastCanaryCheckedAt);
+    if (lastPassAge) return `stale ${lastPassAge} since pass`;
+    if (lastCheckAge) return `last check ${lastCheckAge} ago`;
+    return "verification stale/failed";
+  }
+  if (lead.gatewayReadinessStatus === "CONFIGURED") {
+    const lastCheckAge = formatRelativeAgeShort(lead.gatewayLastCanaryCheckedAt);
+    return lastCheckAge ? `last check ${lastCheckAge} ago` : "verify required";
+  }
+  return null;
+};
+
 const buildLeadsFromApi = (agents: ApiAgent[]): ProcessedLead[] => {
   const maxTxCount = Math.max(
     0,
@@ -289,6 +359,8 @@ const buildLeadsFromApi = (agents: ApiAgent[]): ProcessedLead[] => {
       yieldEth: isClaimed ? rawYield : null,
       uptimePct: isClaimed ? rawUptime : null,
       gatewayReadinessStatus: normalizeGatewayReadinessStatus(agent.gatewayReadinessStatus ?? null),
+      gatewayLastCanaryCheckedAt: normalizeIsoTimestamp(agent.gatewayLastCanaryCheckedAt ?? null),
+      gatewayLastCanaryPassedAt: normalizeIsoTimestamp(agent.gatewayLastCanaryPassedAt ?? null),
     };
   });
 
@@ -666,6 +738,7 @@ export default function Home() {
                       : "text-neutral-300";
                   const hasTopRankBadge = agent.rank <= 3;
                   const consumerAccessBlocked = !isOwner && agent.gatewayReadinessStatus !== "LIVE";
+                  const gatewayReadinessAgeText = getGatewayReadinessAgeText(agent);
                   const rankBadgeClassName =
                     agent.rank === 1
                       ? "border border-red-500/70 bg-red-600 text-neutral-100"
@@ -763,6 +836,14 @@ export default function Home() {
                                 RESERVED
                               </span>
                             )}
+                            <span
+                              className={`inline-flex shrink-0 items-center border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap ${getGatewayReadinessChipClassName(
+                                agent.gatewayReadinessStatus,
+                              )}`}
+                              title={`Gateway readiness: ${agent.gatewayReadinessStatus}`}
+                            >
+                              {getGatewayReadinessChipLabel(agent.gatewayReadinessStatus)}
+                            </span>
                           </div>
                           <div className="mt-1 flex items-center gap-2 text-[10px] text-neutral-600 font-mono">
                             <span title={agent.owner}>{truncateAddress(agent.owner)}</span>
@@ -772,10 +853,15 @@ export default function Home() {
                               className="inline-flex items-center justify-center border border-neutral-800 px-1 py-0.5 text-neutral-500 transition hover:border-neutral-600 hover:text-neutral-300"
                               aria-label={`Copy ${agent.owner}`}
                               title={copiedOwner === agent.owner ? "Copied" : "Copy full address"}
-                            >
-                              <Copy className="h-3 w-3" />
-                            </button>
-                          </div>
+                              >
+                                <Copy className="h-3 w-3" />
+                              </button>
+                            </div>
+                          {gatewayReadinessAgeText && (
+                            <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-neutral-600">
+                              {gatewayReadinessAgeText}
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -861,6 +947,7 @@ export default function Home() {
                       : "text-neutral-300";
                   const hasTopRankBadge = agent.rank <= 3;
                   const consumerAccessBlocked = !isOwner && agent.gatewayReadinessStatus !== "LIVE";
+                  const gatewayReadinessAgeText = getGatewayReadinessAgeText(agent);
                   const rankBadgeClassName =
                     agent.rank === 1
                       ? "border border-red-500/70 bg-red-600 text-neutral-100"
@@ -934,6 +1021,14 @@ export default function Home() {
                                   RESERVED
                                 </span>
                               )}
+                              <span
+                                className={`inline-flex shrink-0 items-center border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap ${getGatewayReadinessChipClassName(
+                                  agent.gatewayReadinessStatus,
+                                )}`}
+                                title={`Gateway readiness: ${agent.gatewayReadinessStatus}`}
+                              >
+                                {getGatewayReadinessChipLabel(agent.gatewayReadinessStatus)}
+                              </span>
                             </div>
                             <div className="mt-1 flex items-center gap-2 text-[10px] text-neutral-600 font-mono">
                               <span title={agent.owner}>{truncateAddress(agent.owner)}</span>
@@ -947,6 +1042,11 @@ export default function Home() {
                                 <Copy className="h-3 w-3" />
                               </button>
                             </div>
+                            {gatewayReadinessAgeText && (
+                              <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-neutral-600">
+                                {gatewayReadinessAgeText}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>

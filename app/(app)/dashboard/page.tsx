@@ -389,6 +389,8 @@ function DashboardPageContent() {
   const [merchantGatewayError, setMerchantGatewayError] = useState<string | null>(null);
   const [merchantGatewayNotice, setMerchantGatewayNotice] = useState<string | null>(null);
   const [consumerGatewayReadinessStatus, setConsumerGatewayReadinessStatus] = useState<GatewayReadinessStatus | null>(null);
+  const [consumerGatewayLastCheckedAt, setConsumerGatewayLastCheckedAt] = useState<string | null>(null);
+  const [consumerGatewayLastPassedAt, setConsumerGatewayLastPassedAt] = useState<string | null>(null);
   const [consumerGatewayReadinessError, setConsumerGatewayReadinessError] = useState<string | null>(null);
   const [isLoadingConsumerGatewayReadiness, setIsLoadingConsumerGatewayReadiness] = useState(false);
   const syncedHashesRef = useRef<Set<string>>(new Set());
@@ -957,6 +959,8 @@ print("body:", response.text)`,
   useEffect(() => {
     if (!normalizedRequestedAgentId) {
       setConsumerGatewayReadinessStatus(null);
+      setConsumerGatewayLastCheckedAt(null);
+      setConsumerGatewayLastPassedAt(null);
       setConsumerGatewayReadinessError(null);
       setIsLoadingConsumerGatewayReadiness(false);
       return;
@@ -971,9 +975,13 @@ print("body:", response.text)`,
         const config = await fetchAgentGatewayConfig(normalizedRequestedAgentId);
         if (!active) return;
         setConsumerGatewayReadinessStatus(config.readinessStatus);
+        setConsumerGatewayLastCheckedAt(config.lastCanaryCheckedAt);
+        setConsumerGatewayLastPassedAt(config.lastCanaryPassedAt);
       } catch (error) {
         if (!active) return;
         setConsumerGatewayReadinessStatus(null);
+        setConsumerGatewayLastCheckedAt(null);
+        setConsumerGatewayLastPassedAt(null);
         setConsumerGatewayReadinessError(getErrorMessage(error, "Failed to load agent gateway readiness."));
       } finally {
         if (active) setIsLoadingConsumerGatewayReadiness(false);
@@ -1003,6 +1011,14 @@ print("body:", response.text)`,
   const consumerGatewayReadinessTone = getGatewayReadinessTone(
     consumerEffectiveGatewayReadinessStatus ?? "UNCONFIGURED",
   );
+  const consumerGatewayLastCheckedAtEffective =
+    consumerHasExplicitAgentTarget && normalizedRequestedAgentId === selectedOwnedAgentId
+      ? merchantGatewayLastCheckedAt ?? consumerGatewayLastCheckedAt
+      : consumerGatewayLastCheckedAt;
+  const consumerGatewayLastPassedAtEffective =
+    consumerHasExplicitAgentTarget && normalizedRequestedAgentId === selectedOwnedAgentId
+      ? merchantGatewayLastPassedAt ?? consumerGatewayLastPassedAt
+      : consumerGatewayLastPassedAt;
   const consumerGatewayActivationBlocked = consumerHasExplicitAgentTarget
     ? isLoadingConsumerGatewayReadiness || !isGatewayLive(consumerEffectiveGatewayReadinessStatus)
     : false;
@@ -1141,13 +1157,12 @@ print("body:", response.text)`,
       setMerchantGatewayNotice(`Gateway verified // Service live${latencyText}`);
       if (normalizedRequestedAgentId === selectedOwnedAgent.agentId) {
         setConsumerGatewayReadinessStatus(refreshed.readinessStatus);
+        setConsumerGatewayLastCheckedAt(refreshed.lastCanaryCheckedAt);
+        setConsumerGatewayLastPassedAt(refreshed.lastCanaryPassedAt);
         setConsumerGatewayReadinessError(null);
       }
     } catch (error) {
       setMerchantGatewayError(getErrorMessage(error, "Gateway canary verification failed."));
-      if (normalizedRequestedAgentId === selectedOwnedAgent.agentId) {
-        setConsumerGatewayReadinessStatus(null);
-      }
     } finally {
       setIsVerifyingMerchantGateway(false);
     }
@@ -1771,10 +1786,28 @@ def my_agent():
                     </div>
                     {consumerGatewayActivationBlocked && !isLoadingConsumerGatewayReadiness && (
                       <p className="mt-2 text-xs text-neutral-400">
-                        This agent has not activated GhostGate yet. Merchant must register and verify a gateway canary
-                        before consumers can deposit or use this agent.
+                        {consumerEffectiveGatewayReadinessStatus === "DEGRADED"
+                          ? "This agent gateway is degraded. The last canary verification is stale or failing, so consumer access is temporarily disabled."
+                          : "This agent has not activated GhostGate yet. Merchant must register and verify a gateway canary before consumers can deposit or use this agent."}
                       </p>
                     )}
+                    {(consumerGatewayLastCheckedAtEffective || consumerGatewayLastPassedAtEffective) &&
+                      !isLoadingConsumerGatewayReadiness && (
+                        <div className="mt-2 text-xs text-neutral-500">
+                          {consumerGatewayLastCheckedAtEffective && (
+                            <p>
+                              Last checked: {new Date(consumerGatewayLastCheckedAtEffective).toLocaleString()} (
+                              {formatRelativeTimeFromIso(consumerGatewayLastCheckedAtEffective)})
+                            </p>
+                          )}
+                          {consumerGatewayLastPassedAtEffective && (
+                            <p>
+                              Last passed: {new Date(consumerGatewayLastPassedAtEffective).toLocaleString()} (
+                              {formatRelativeTimeFromIso(consumerGatewayLastPassedAtEffective)})
+                            </p>
+                          )}
+                        </div>
+                      )}
                     {consumerGatewayReadinessError && (
                       <p className="mt-2 text-xs text-red-500">{consumerGatewayReadinessError}</p>
                     )}
@@ -1856,7 +1889,9 @@ def my_agent():
                         ? "Gateway Activation Check Pending"
                         : isGatewayLive(consumerEffectiveGatewayReadinessStatus)
                           ? "Agent Gateway Live // Consumer Access Enabled"
-                          : "Agent Gateway Not Live // Consumer Access Disabled"}
+                          : consumerEffectiveGatewayReadinessStatus === "DEGRADED"
+                            ? "Agent Gateway Degraded // Consumer Access Disabled"
+                            : "Agent Gateway Not Live // Consumer Access Disabled"}
                     </p>
                   </div>
                 )}

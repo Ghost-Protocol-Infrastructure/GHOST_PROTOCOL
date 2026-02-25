@@ -48,6 +48,15 @@ const toTitleCase = (value: string): string =>
 
 const truncateAddress = (address: string): string => `${address.slice(0, 6)}...${address.slice(-4)}`;
 
+const formatRelativeTimeFromDate = (value: Date | null): string | null => {
+  if (!value) return null;
+  const deltaSeconds = Math.max(0, Math.floor((Date.now() - value.getTime()) / 1000));
+  if (deltaSeconds < 60) return `${deltaSeconds}s ago`;
+  if (deltaSeconds < 3600) return `${Math.floor(deltaSeconds / 60)}m ago`;
+  if (deltaSeconds < 86400) return `${Math.floor(deltaSeconds / 3600)}h ago`;
+  return `${Math.floor(deltaSeconds / 86400)}d ago`;
+};
+
 const gatewayReadinessLabel: Record<GatewayReadinessStatus, string> = {
   UNCONFIGURED: "UNCONFIGURED",
   CONFIGURED: "CONFIGURED",
@@ -173,6 +182,8 @@ export default async function AgentProfilePage({ params, searchParams }: AgentPa
   const agentImageUrl = resolveAgentImageUrl(agent.image);
   const gatewayReadinessStatus: GatewayReadinessStatus = agent.gatewayConfig?.readinessStatus ?? "UNCONFIGURED";
   const isGatewayLive = gatewayReadinessStatus === "LIVE";
+  const gatewayLastCheckedAt = agent.gatewayConfig?.lastCanaryCheckedAt ?? null;
+  const gatewayLastPassedAt = agent.gatewayConfig?.lastCanaryPassedAt ?? null;
   const merchantSetupHref = `/dashboard?mode=merchant&agentId=${encodeURIComponent(agent.agentId)}&owner=${encodeURIComponent(ownerAddress)}`;
   const consumerTerminalHref = `/dashboard?mode=consumer&agentId=${encodeURIComponent(agent.agentId)}&owner=${encodeURIComponent(ownerAddress)}`;
   const agentConsoleHref = `/dashboard?agentId=${encodeURIComponent(agent.agentId)}&owner=${encodeURIComponent(ownerAddress)}`;
@@ -306,12 +317,28 @@ export default async function AgentProfilePage({ params, searchParams }: AgentPa
               </span>
               {!isGatewayLive ? (
                 <span className="text-xs text-amber-200/90">
-                  This agent has not activated GhostGate yet.
+                  {gatewayReadinessStatus === "DEGRADED"
+                    ? "This agent gateway is degraded. Canary verification is stale or failing."
+                    : "This agent has not activated GhostGate yet."}
                 </span>
               ) : (
                 <span className="text-xs text-neutral-500">Gateway canary verified.</span>
               )}
             </div>
+            {(gatewayLastCheckedAt || gatewayLastPassedAt) && (
+              <div className="mt-2 text-xs text-neutral-500">
+                {gatewayLastCheckedAt && (
+                  <p>
+                    Last checked: {gatewayLastCheckedAt.toLocaleString()} ({formatRelativeTimeFromDate(gatewayLastCheckedAt)})
+                  </p>
+                )}
+                {gatewayLastPassedAt && (
+                  <p>
+                    Last passed: {gatewayLastPassedAt.toLocaleString()} ({formatRelativeTimeFromDate(gatewayLastPassedAt)})
+                  </p>
+                )}
+              </div>
+            )}
           </div>
           <div className="border border-neutral-800 bg-neutral-900 p-4">
             <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Agent ID</p>
