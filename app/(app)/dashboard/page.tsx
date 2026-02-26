@@ -32,6 +32,7 @@ type CopyState = "idle" | "copied" | "error";
 type CreditSyncState = "idle" | "syncing" | "synced" | "error";
 type ConsumerSdk = "node" | "python";
 type GatewayReadinessStatus = "UNCONFIGURED" | "CONFIGURED" | "LIVE" | "DEGRADED";
+type DelegatedSignerStatus = "ACTIVE" | "REVOKED";
 
 type AgentApiRow = {
   address: string;
@@ -94,6 +95,27 @@ type AgentGatewayConfigResponse = {
   config: AgentGatewayConfigRecord;
 };
 
+type AgentGatewayDelegatedSignerEntry = {
+  id: string;
+  signerAddress: string;
+  status: DelegatedSignerStatus;
+  label: string | null;
+  createdAt: string;
+  revokedAt: string | null;
+};
+
+type AgentGatewayDelegatedSignersResponse = {
+  ok: boolean;
+  agentId: string;
+  ownerAddress: string;
+  serviceSlug: string;
+  gatewayConfigId: string;
+  authMode?: string;
+  maxActiveSigners: number;
+  activeSignerCount: number;
+  signers: AgentGatewayDelegatedSignerEntry[];
+};
+
 const isHexAddress = (value: string): boolean => /^0x[a-fA-F0-9]{40}$/.test(value);
 const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/, "");
 const APP_BASE_URL = normalizeBaseUrl(process.env.NEXT_PUBLIC_BASE_URL?.trim() || "https://ghostprotocol.cc");
@@ -106,6 +128,7 @@ const SDK_SECURITY_NOTICE =
 
 const DEFAULT_CANARY_PATH = "/ghostgate/canary";
 const DEFAULT_MERCHANT_CANARY_HISTORY_LIMIT = 8;
+const DEFAULT_MERCHANT_DELEGATED_SIGNER_MAX_ACTIVE = 2;
 const GATEWAY_READINESS_POLL_INTERVAL_MS = 10_000;
 const MAX_DEPOSIT_CREDIT_SYNC_CATCHUP_ATTEMPTS = 12;
 const DEPOSIT_CREDIT_SYNC_CATCHUP_DELAY_MS = 200;
@@ -117,6 +140,12 @@ const isGatewayReadinessStatus = (value: unknown): value is GatewayReadinessStat
 
 const normalizeGatewayReadinessStatus = (value: unknown): GatewayReadinessStatus =>
   isGatewayReadinessStatus(value) ? value : "UNCONFIGURED";
+
+const isDelegatedSignerStatus = (value: unknown): value is DelegatedSignerStatus =>
+  value === "ACTIVE" || value === "REVOKED";
+
+const normalizeDelegatedSignerStatus = (value: unknown): DelegatedSignerStatus =>
+  isDelegatedSignerStatus(value) ? value : "REVOKED";
 
 const isGatewayLive = (status: GatewayReadinessStatus | null | undefined): boolean => status === "LIVE";
 
@@ -389,6 +418,18 @@ function DashboardPageContent() {
   const [isVerifyingMerchantGateway, setIsVerifyingMerchantGateway] = useState(false);
   const [merchantGatewayError, setMerchantGatewayError] = useState<string | null>(null);
   const [merchantGatewayNotice, setMerchantGatewayNotice] = useState<string | null>(null);
+  const [merchantDelegatedSigners, setMerchantDelegatedSigners] = useState<AgentGatewayDelegatedSignerEntry[]>([]);
+  const [merchantDelegatedSignerActiveCount, setMerchantDelegatedSignerActiveCount] = useState(0);
+  const [merchantDelegatedSignerMaxActive, setMerchantDelegatedSignerMaxActive] = useState(
+    DEFAULT_MERCHANT_DELEGATED_SIGNER_MAX_ACTIVE,
+  );
+  const [merchantDelegatedSignerAddressInput, setMerchantDelegatedSignerAddressInput] = useState("");
+  const [merchantDelegatedSignerLabelInput, setMerchantDelegatedSignerLabelInput] = useState("");
+  const [isLoadingMerchantDelegatedSigners, setIsLoadingMerchantDelegatedSigners] = useState(false);
+  const [isRegisteringMerchantDelegatedSigner, setIsRegisteringMerchantDelegatedSigner] = useState(false);
+  const [revokingMerchantDelegatedSignerId, setRevokingMerchantDelegatedSignerId] = useState<string | null>(null);
+  const [merchantDelegatedSignerError, setMerchantDelegatedSignerError] = useState<string | null>(null);
+  const [merchantDelegatedSignerNotice, setMerchantDelegatedSignerNotice] = useState<string | null>(null);
   const [consumerGatewayReadinessStatus, setConsumerGatewayReadinessStatus] = useState<GatewayReadinessStatus | null>(null);
   const [consumerGatewayLastCheckedAt, setConsumerGatewayLastCheckedAt] = useState<string | null>(null);
   const [consumerGatewayLastPassedAt, setConsumerGatewayLastPassedAt] = useState<string | null>(null);
@@ -549,6 +590,62 @@ function DashboardPageContent() {
         : [],
     };
   }, []);
+
+  const fetchAgentGatewayDelegatedSigners = useCallback(
+    async (agentId: string): Promise<AgentGatewayDelegatedSignersResponse> => {
+      const params = new URLSearchParams({ agentId });
+      const response = await fetch(`/api/agent-gateway/delegated-signers?${params.toString()}`, {
+        cache: "no-store",
+        headers: {
+          "cache-control": "no-cache",
+        },
+      });
+
+      const payload = (await response.json()) as Partial<AgentGatewayDelegatedSignersResponse> & {
+        code?: number;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(typeof payload.error === "string" ? payload.error : "Failed to load delegated signers.");
+      }
+
+      const signers = Array.isArray(payload.signers)
+        ? payload.signers
+          .map((entry): AgentGatewayDelegatedSignerEntry | null => {
+            if (!entry || typeof entry !== "object") return null;
+            const row = entry as Record<string, unknown>;
+            if (typeof row.id !== "string" || typeof row.signerAddress !== "string") return null;
+
+            return {
+              id: row.id,
+              signerAddress: row.signerAddress.toLowerCase(),
+              status: normalizeDelegatedSignerStatus(row.status),
+              label: typeof row.label === "string" ? row.label : null,
+              createdAt: typeof row.createdAt === "string" ? row.createdAt : new Date().toISOString(),
+              revokedAt:
+                typeof row.revokedAt === "string" || row.revokedAt === null ? (row.revokedAt ?? null) : null,
+            };
+          })
+          .filter((entry): entry is AgentGatewayDelegatedSignerEntry => entry != null)
+        : [];
+
+      return {
+        ok: payload.ok === true,
+        agentId: typeof payload.agentId === "string" ? payload.agentId : agentId,
+        ownerAddress: typeof payload.ownerAddress === "string" ? payload.ownerAddress.toLowerCase() : "",
+        serviceSlug: typeof payload.serviceSlug === "string" ? payload.serviceSlug : `agent-${agentId}`,
+        gatewayConfigId: typeof payload.gatewayConfigId === "string" ? payload.gatewayConfigId : "",
+        authMode: typeof payload.authMode === "string" ? payload.authMode : undefined,
+        maxActiveSigners:
+          typeof payload.maxActiveSigners === "number"
+            ? payload.maxActiveSigners
+            : DEFAULT_MERCHANT_DELEGATED_SIGNER_MAX_ACTIVE,
+        activeSignerCount: typeof payload.activeSignerCount === "number" ? payload.activeSignerCount : 0,
+        signers,
+      };
+    },
+    [],
+  );
 
   const syncCreditsFromChain = useCallback(
     async (userAddress: Address, hash: string, confirmedDepositBlock?: bigint | null): Promise<void> => {
@@ -934,6 +1031,17 @@ print("body:", response.text)`,
     [fetchAgentGatewayConfig, normalizedRequestedAgentId, patchOwnedAgentGatewayReadiness],
   );
 
+  const refreshMerchantDelegatedSignerSnapshot = useCallback(
+    async (agentId: string) => {
+      const result = await fetchAgentGatewayDelegatedSigners(agentId);
+      setMerchantDelegatedSigners(result.signers);
+      setMerchantDelegatedSignerActiveCount(result.activeSignerCount);
+      setMerchantDelegatedSignerMaxActive(result.maxActiveSigners);
+      return result;
+    },
+    [fetchAgentGatewayDelegatedSigners],
+  );
+
   useEffect(() => {
     if (!showMerchantView || !selectedOwnedAgentId) {
       setMerchantGatewayConfig(null);
@@ -977,6 +1085,46 @@ print("body:", response.text)`,
       active = false;
     };
   }, [fetchAgentGatewayConfig, patchOwnedAgentGatewayReadiness, selectedOwnedAgentId, showMerchantView]);
+
+  useEffect(() => {
+    if (!showMerchantView || !selectedOwnedAgentId) {
+      setMerchantDelegatedSigners([]);
+      setMerchantDelegatedSignerActiveCount(0);
+      setMerchantDelegatedSignerMaxActive(DEFAULT_MERCHANT_DELEGATED_SIGNER_MAX_ACTIVE);
+      setMerchantDelegatedSignerAddressInput("");
+      setMerchantDelegatedSignerLabelInput("");
+      setMerchantDelegatedSignerError(null);
+      setMerchantDelegatedSignerNotice(null);
+      setIsLoadingMerchantDelegatedSigners(false);
+      return;
+    }
+
+    let active = true;
+
+    const loadMerchantDelegatedSigners = async () => {
+      setIsLoadingMerchantDelegatedSigners(true);
+      setMerchantDelegatedSignerError(null);
+      try {
+        const result = await fetchAgentGatewayDelegatedSigners(selectedOwnedAgentId);
+        if (!active) return;
+        setMerchantDelegatedSigners(result.signers);
+        setMerchantDelegatedSignerActiveCount(result.activeSignerCount);
+        setMerchantDelegatedSignerMaxActive(result.maxActiveSigners);
+      } catch (error) {
+        if (!active) return;
+        setMerchantDelegatedSigners([]);
+        setMerchantDelegatedSignerError(getErrorMessage(error, "Failed to load delegated signers."));
+      } finally {
+        if (active) setIsLoadingMerchantDelegatedSigners(false);
+      }
+    };
+
+    void loadMerchantDelegatedSigners();
+
+    return () => {
+      active = false;
+    };
+  }, [fetchAgentGatewayDelegatedSigners, selectedOwnedAgentId, showMerchantView]);
 
   useEffect(() => {
     if (!showMerchantView || !selectedOwnedAgentId) return;
@@ -1199,6 +1347,12 @@ print("body:", response.text)`,
         (config as AgentGatewayConfigRecord).lastCanaryCheckedAt,
         (config as AgentGatewayConfigRecord).lastCanaryPassedAt,
       );
+      try {
+        await refreshMerchantDelegatedSignerSnapshot(selectedOwnedAgent.agentId);
+        setMerchantDelegatedSignerError(null);
+      } catch {
+        // Keep delegated signer panel errors non-blocking for gateway config save flow.
+      }
       setMerchantGatewayNotice("Gateway config saved. Run verification to mark this agent as live.");
     } catch (error) {
       setMerchantGatewayError(getErrorMessage(error, "Failed to save gateway config."));
@@ -1253,6 +1407,12 @@ print("body:", response.text)`,
       const refreshed = await refreshMerchantGatewayReadinessSnapshot(selectedOwnedAgent.agentId);
       setMerchantGatewayEndpointUrl(refreshed.endpointUrl ?? "");
       setMerchantGatewayCanaryPath(refreshed.canaryPath ?? DEFAULT_CANARY_PATH);
+      try {
+        await refreshMerchantDelegatedSignerSnapshot(selectedOwnedAgent.agentId);
+        setMerchantDelegatedSignerError(null);
+      } catch {
+        // Keep delegated signer panel errors non-blocking for gateway verify flow.
+      }
 
       if (!response.ok) {
         throw new Error(typeof payload.error === "string" ? payload.error : "Gateway canary verification failed.");
@@ -1267,6 +1427,127 @@ print("body:", response.text)`,
       setMerchantGatewayError(getErrorMessage(error, "Gateway canary verification failed."));
     } finally {
       setIsVerifyingMerchantGateway(false);
+    }
+  };
+
+  const handleRegisterMerchantDelegatedSigner = async () => {
+    if (!selectedOwnedAgent || !address) return;
+
+    const normalizedSignerAddress = normalizeAddress(merchantDelegatedSignerAddressInput);
+    if (!normalizedSignerAddress) {
+      setMerchantDelegatedSignerError("Enter a valid delegated signer address.");
+      setMerchantDelegatedSignerNotice(null);
+      return;
+    }
+
+    setMerchantDelegatedSignerError(null);
+    setMerchantDelegatedSignerNotice(null);
+    setIsRegisteringMerchantDelegatedSigner(true);
+
+    try {
+      const authPayload = createMerchantGatewayAuthPayload({
+        action: "delegated_signer_register",
+        agentId: selectedOwnedAgent.agentId,
+        ownerAddress: selectedOwnedAgent.owner,
+        actorAddress: address.toLowerCase(),
+        serviceSlug: `agent-${selectedOwnedAgent.agentId}`,
+        nonce: crypto.randomUUID().replace(/-/g, ""),
+      });
+      const authSignature = await signMessageAsync({
+        message: buildMerchantGatewayAuthMessage(authPayload),
+      });
+
+      const response = await fetch("/api/agent-gateway/delegated-signers/register", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "cache-control": "no-store",
+        },
+        body: JSON.stringify({
+          agentId: selectedOwnedAgent.agentId,
+          ownerAddress: selectedOwnedAgent.owner,
+          actorAddress: address.toLowerCase(),
+          serviceSlug: `agent-${selectedOwnedAgent.agentId}`,
+          signerAddress: normalizedSignerAddress.toLowerCase(),
+          label: merchantDelegatedSignerLabelInput.trim() || null,
+          authPayload,
+          authSignature,
+        }),
+      });
+
+      const payload = (await response.json()) as Partial<AgentGatewayDelegatedSignersResponse> & {
+        error?: string;
+        alreadyActive?: boolean;
+      };
+      if (!response.ok) {
+        throw new Error(typeof payload.error === "string" ? payload.error : "Failed to register delegated signer.");
+      }
+
+      await refreshMerchantDelegatedSignerSnapshot(selectedOwnedAgent.agentId);
+      setMerchantDelegatedSignerAddressInput("");
+      setMerchantDelegatedSignerLabelInput("");
+      setMerchantDelegatedSignerNotice(
+        payload.alreadyActive === true
+          ? "Delegated signer is already active for this gateway."
+          : "Delegated signer registered.",
+      );
+    } catch (error) {
+      setMerchantDelegatedSignerError(getErrorMessage(error, "Failed to register delegated signer."));
+    } finally {
+      setIsRegisteringMerchantDelegatedSigner(false);
+    }
+  };
+
+  const handleRevokeMerchantDelegatedSigner = async (delegatedSignerId: string) => {
+    if (!selectedOwnedAgent || !address) return;
+
+    setMerchantDelegatedSignerError(null);
+    setMerchantDelegatedSignerNotice(null);
+    setRevokingMerchantDelegatedSignerId(delegatedSignerId);
+
+    try {
+      const authPayload = createMerchantGatewayAuthPayload({
+        action: "delegated_signer_revoke",
+        agentId: selectedOwnedAgent.agentId,
+        ownerAddress: selectedOwnedAgent.owner,
+        actorAddress: address.toLowerCase(),
+        serviceSlug: `agent-${selectedOwnedAgent.agentId}`,
+        nonce: crypto.randomUUID().replace(/-/g, ""),
+      });
+      const authSignature = await signMessageAsync({
+        message: buildMerchantGatewayAuthMessage(authPayload),
+      });
+
+      const response = await fetch("/api/agent-gateway/delegated-signers/revoke", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "cache-control": "no-store",
+        },
+        body: JSON.stringify({
+          agentId: selectedOwnedAgent.agentId,
+          ownerAddress: selectedOwnedAgent.owner,
+          actorAddress: address.toLowerCase(),
+          serviceSlug: `agent-${selectedOwnedAgent.agentId}`,
+          delegatedSignerId,
+          authPayload,
+          authSignature,
+        }),
+      });
+
+      const payload = (await response.json()) as { error?: string; alreadyRevoked?: boolean };
+      if (!response.ok) {
+        throw new Error(typeof payload.error === "string" ? payload.error : "Failed to revoke delegated signer.");
+      }
+
+      await refreshMerchantDelegatedSignerSnapshot(selectedOwnedAgent.agentId);
+      setMerchantDelegatedSignerNotice(
+        payload.alreadyRevoked === true ? "Delegated signer was already revoked." : "Delegated signer revoked.",
+      );
+    } catch (error) {
+      setMerchantDelegatedSignerError(getErrorMessage(error, "Failed to revoke delegated signer."));
+    } finally {
+      setRevokingMerchantDelegatedSignerId(null);
     }
   };
 
@@ -1655,6 +1936,131 @@ def my_agent():
                               </div>
                             </div>
                           ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="border border-neutral-900 bg-neutral-950/60 p-3">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
+                          Delegated Runtime Signers
+                        </p>
+                        <span className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
+                          {merchantDelegatedSignerActiveCount}/{merchantDelegatedSignerMaxActive} active
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-3">
+                        <label className="block text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
+                          Delegated Signer Address
+                          <input
+                            value={merchantDelegatedSignerAddressInput}
+                            onChange={(event) => setMerchantDelegatedSignerAddressInput(event.target.value)}
+                            placeholder="0x..."
+                            className="mt-2 w-full border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-red-600 rounded-none font-mono"
+                          />
+                        </label>
+
+                        <label className="block text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
+                          Label (Optional)
+                          <input
+                            value={merchantDelegatedSignerLabelInput}
+                            onChange={(event) => setMerchantDelegatedSignerLabelInput(event.target.value)}
+                            placeholder="booski-prod-1"
+                            maxLength={64}
+                            className="mt-2 w-full border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-red-600 rounded-none font-mono"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          onClick={handleRegisterMerchantDelegatedSigner}
+                          disabled={
+                            !selectedOwnedAgent ||
+                            !isConnected ||
+                            !merchantOwnsSelectedAgent ||
+                            isLoadingMerchantDelegatedSigners ||
+                            isRegisteringMerchantDelegatedSigner ||
+                            !!revokingMerchantDelegatedSignerId ||
+                            !merchantGatewayConfig ||
+                            !merchantDelegatedSignerAddressInput.trim()
+                          }
+                          className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isRegisteringMerchantDelegatedSigner ? "REGISTERING..." : "REGISTER SIGNER"}
+                        </button>
+                      </div>
+
+                      <p className="mt-3 text-xs text-neutral-600">
+                        Delegated signers are merchant server runtime keys used for fulfillment capture. Keep these keys off the frontend and rotate
+                        by registering a new signer before revoking the old signer.
+                      </p>
+
+                      {merchantDelegatedSignerError && <p className="mt-3 text-xs text-red-500">{merchantDelegatedSignerError}</p>}
+                      {merchantDelegatedSignerNotice && (
+                        <p className="mt-3 text-xs text-neutral-400">{merchantDelegatedSignerNotice}</p>
+                      )}
+
+                      {isLoadingMerchantDelegatedSigners ? (
+                        <p className="mt-3 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold animate-pulse">
+                          Loading delegated signers...
+                        </p>
+                      ) : merchantDelegatedSigners.length === 0 ? (
+                        <p className="mt-3 text-xs text-neutral-600">No delegated runtime signers registered yet.</p>
+                      ) : (
+                        <div className="mt-3 space-y-2 overflow-y-auto max-h-72 pr-1">
+                          {merchantDelegatedSigners.map((signer) => {
+                            const isActiveSigner = signer.status === "ACTIVE";
+                            const isRevoking = revokingMerchantDelegatedSignerId === signer.id;
+                            return (
+                              <div
+                                key={signer.id}
+                                className="border border-neutral-900 bg-neutral-900/60 px-3 py-2"
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                                    <span
+                                      className={`h-2 w-2 rounded-none ${isActiveSigner ? "bg-emerald-400" : "bg-neutral-600"}`}
+                                    />
+                                    <span
+                                      className={`text-[10px] uppercase tracking-[0.16em] font-bold ${isActiveSigner ? "text-emerald-300" : "text-neutral-500"}`}
+                                    >
+                                      {signer.status}
+                                    </span>
+                                    {signer.label && (
+                                      <span className="text-[10px] uppercase tracking-[0.14em] text-neutral-500">
+                                        {signer.label}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleRevokeMerchantDelegatedSigner(signer.id)}
+                                    disabled={
+                                      !isActiveSigner ||
+                                      !selectedOwnedAgent ||
+                                      !isConnected ||
+                                      !merchantOwnsSelectedAgent ||
+                                      isRegisteringMerchantDelegatedSigner ||
+                                      !!revokingMerchantDelegatedSignerId
+                                    }
+                                    className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-neutral-400 transition hover:border-red-700 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {isRevoking ? "REVOKING..." : "REVOKE"}
+                                  </button>
+                                </div>
+                                <p className="mt-2 break-all text-xs text-neutral-400 font-mono">{signer.signerAddress}</p>
+                                <p className="mt-1 text-[11px] text-neutral-600">
+                                  Added {new Date(signer.createdAt).toLocaleString()} ({formatRelativeTimeFromIso(signer.createdAt)})
+                                  {signer.revokedAt
+                                    ? ` // Revoked ${new Date(signer.revokedAt).toLocaleString()} (${formatRelativeTimeFromIso(signer.revokedAt)})`
+                                    : ""}
+                                </p>
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
