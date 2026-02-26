@@ -439,41 +439,41 @@ function DashboardPageContent() {
 
   const syncCreditsLedgerSnapshot = useCallback(
     async (userAddress: Address, options?: SyncCreditsSnapshotRequest): Promise<SyncCreditsSnapshot> => {
-    const params = new URLSearchParams({ userAddress });
-    if (options?.depositTxHash) {
-      params.set("depositTxHash", options.depositTxHash);
-    }
-    if (options?.depositReceiptBlock != null) {
-      params.set("depositReceiptBlock", options.depositReceiptBlock.toString());
-    }
-    const response = await fetch(`/api/sync-credits?${params.toString()}`, {
-      method: "GET",
-      cache: "no-store",
-    });
+      const params = new URLSearchParams({ userAddress });
+      if (options?.depositTxHash) {
+        params.set("depositTxHash", options.depositTxHash);
+      }
+      if (options?.depositReceiptBlock != null) {
+        params.set("depositReceiptBlock", options.depositReceiptBlock.toString());
+      }
+      const response = await fetch(`/api/sync-credits?${params.toString()}`, {
+        method: "GET",
+        cache: "no-store",
+      });
 
-    const payload = (await response.json()) as Partial<SyncCreditsResponse> & {
-      error?: string;
-      details?: string;
-    };
+      const payload = (await response.json()) as Partial<SyncCreditsResponse> & {
+        error?: string;
+        details?: string;
+      };
 
-    if (!response.ok) {
-      const message =
-        typeof payload.error === "string" && payload.error.length > 0
-          ? payload.error
-          : "Failed to sync credits.";
-      throw new Error(message);
-    }
+      if (!response.ok) {
+        const message =
+          typeof payload.error === "string" && payload.error.length > 0
+            ? payload.error
+            : "Failed to sync credits.";
+        throw new Error(message);
+      }
 
-    return {
-      credits: typeof payload.credits === "string" ? payload.credits : "0",
-      partialSync: payload.partialSync === true,
-      matchedDeposits: parseNullableInteger(payload.matchedDeposits),
-      addedCredits: parseNullableDecimalBigInt(payload.addedCredits),
-      lastSyncedBlock: parseNullableDecimalBigInt(payload.lastSyncedBlock),
-      toBlock: parseNullableDecimalBigInt(payload.toBlock),
-      headBlock: parseNullableDecimalBigInt(payload.headBlock),
-    };
-  }, []);
+      return {
+        credits: typeof payload.credits === "string" ? payload.credits : "0",
+        partialSync: payload.partialSync === true,
+        matchedDeposits: parseNullableInteger(payload.matchedDeposits),
+        addedCredits: parseNullableDecimalBigInt(payload.addedCredits),
+        lastSyncedBlock: parseNullableDecimalBigInt(payload.lastSyncedBlock),
+        toBlock: parseNullableDecimalBigInt(payload.toBlock),
+        headBlock: parseNullableDecimalBigInt(payload.headBlock),
+      };
+    }, []);
 
   const readCreditsFromLedger = useCallback(async (userAddress: Address): Promise<string> => {
     const snapshot = await syncCreditsLedgerSnapshot(userAddress);
@@ -529,65 +529,65 @@ function DashboardPageContent() {
       lastCanaryError: typeof config.lastCanaryError === "string" ? config.lastCanaryError : null,
       canaryHistory: Array.isArray((config as { canaryHistory?: unknown[] }).canaryHistory)
         ? (config as { canaryHistory: unknown[] }).canaryHistory
-            .map((entry): AgentGatewayCanaryHistoryEntry | null => {
-              if (!entry || typeof entry !== "object") return null;
-              const row = entry as Record<string, unknown>;
-              if (typeof row.id !== "string" || typeof row.checkedAt !== "string" || typeof row.success !== "boolean") {
-                return null;
-              }
+          .map((entry): AgentGatewayCanaryHistoryEntry | null => {
+            if (!entry || typeof entry !== "object") return null;
+            const row = entry as Record<string, unknown>;
+            if (typeof row.id !== "string" || typeof row.checkedAt !== "string" || typeof row.success !== "boolean") {
+              return null;
+            }
 
-              return {
-                id: row.id,
-                checkedAt: row.checkedAt,
-                success: row.success,
-                statusCode: typeof row.statusCode === "number" ? row.statusCode : null,
-                latencyMs: typeof row.latencyMs === "number" ? row.latencyMs : null,
-                error: typeof row.error === "string" ? row.error : null,
-              };
-            })
-            .filter((entry): entry is AgentGatewayCanaryHistoryEntry => entry != null)
+            return {
+              id: row.id,
+              checkedAt: row.checkedAt,
+              success: row.success,
+              statusCode: typeof row.statusCode === "number" ? row.statusCode : null,
+              latencyMs: typeof row.latencyMs === "number" ? row.latencyMs : null,
+              error: typeof row.error === "string" ? row.error : null,
+            };
+          })
+          .filter((entry): entry is AgentGatewayCanaryHistoryEntry => entry != null)
         : [],
     };
   }, []);
 
   const syncCreditsFromChain = useCallback(
     async (userAddress: Address, hash: string, confirmedDepositBlock?: bigint | null): Promise<void> => {
-    setCreditSyncState("syncing");
-    setCreditSyncError(null);
+      setCreditSyncState("syncing");
+      setCreditSyncError(null);
 
-    try {
-      let latestCredits = syncedCredits ?? "0";
-      for (let attempt = 0; attempt < MAX_DEPOSIT_CREDIT_SYNC_CATCHUP_ATTEMPTS; attempt += 1) {
-        const snapshot = await syncCreditsLedgerSnapshot(userAddress, {
-          depositTxHash: hash,
-          depositReceiptBlock: confirmedDepositBlock ?? null,
-        });
-        latestCredits = snapshot.credits;
-        setSyncedCredits(snapshot.credits);
+      try {
+        let latestCredits = syncedCredits ?? "0";
+        for (let attempt = 0; attempt < MAX_DEPOSIT_CREDIT_SYNC_CATCHUP_ATTEMPTS; attempt += 1) {
+          const snapshot = await syncCreditsLedgerSnapshot(userAddress, {
+            depositTxHash: hash,
+            depositReceiptBlock: confirmedDepositBlock ?? null,
+          });
+          latestCredits = snapshot.credits;
+          setSyncedCredits(snapshot.credits);
 
-        const syncCursor = snapshot.lastSyncedBlock ?? snapshot.toBlock;
-        const reachedDepositBlock =
-          confirmedDepositBlock != null && syncCursor != null ? syncCursor >= confirmedDepositBlock : false;
-        const foundDepositInWindow =
-          (snapshot.matchedDeposits ?? 0) > 0 || (snapshot.addedCredits != null && snapshot.addedCredits > 0n);
+          const syncCursor = snapshot.lastSyncedBlock ?? snapshot.toBlock;
+          const reachedDepositBlock =
+            confirmedDepositBlock != null && syncCursor != null ? syncCursor >= confirmedDepositBlock : false;
+          const foundDepositInWindow =
+            (snapshot.matchedDeposits ?? 0) > 0 || (snapshot.addedCredits != null && snapshot.addedCredits > 0n);
 
-        if (!snapshot.partialSync || reachedDepositBlock || foundDepositInWindow) {
-          break;
+          if (!snapshot.partialSync || reachedDepositBlock || foundDepositInWindow) {
+            break;
+          }
+
+          if (attempt < MAX_DEPOSIT_CREDIT_SYNC_CATCHUP_ATTEMPTS - 1) {
+            await waitMs(DEPOSIT_CREDIT_SYNC_CATCHUP_DELAY_MS);
+          }
         }
 
-        if (attempt < MAX_DEPOSIT_CREDIT_SYNC_CATCHUP_ATTEMPTS - 1) {
-          await waitMs(DEPOSIT_CREDIT_SYNC_CATCHUP_DELAY_MS);
-        }
+        setSyncedCredits(latestCredits);
+        setCreditSyncState("synced");
+      } catch (error) {
+        syncedHashesRef.current.delete(hash);
+        setCreditSyncState("error");
+        setCreditSyncError(getErrorMessage(error, "Failed to sync credits."));
       }
-
-      setSyncedCredits(latestCredits);
-      setCreditSyncState("synced");
-    } catch (error) {
-      syncedHashesRef.current.delete(hash);
-      setCreditSyncState("error");
-      setCreditSyncError(getErrorMessage(error, "Failed to sync credits."));
-    }
-  }, [syncCreditsLedgerSnapshot, syncedCredits]);
+    }, [syncCreditsLedgerSnapshot, syncedCredits]);
 
   const handleRetryCreditSync = async () => {
     if (!address || !depositTxHash || !isDepositConfirmed) return;
@@ -1185,9 +1185,9 @@ print("body:", response.text)`,
       const config =
         payload.config && typeof payload.config === "object"
           ? {
-              ...payload.config,
-              readinessStatus: normalizeGatewayReadinessStatus(payload.config.readinessStatus),
-            }
+            ...payload.config,
+            readinessStatus: normalizeGatewayReadinessStatus(payload.config.readinessStatus),
+          }
           : await fetchAgentGatewayConfig(selectedOwnedAgent.agentId, { includeHistory: true });
 
       setMerchantGatewayConfig(config as AgentGatewayConfigRecord);
@@ -1575,7 +1575,7 @@ def my_agent():
                           isSavingMerchantGatewayConfig ||
                           isVerifyingMerchantGateway
                         }
-                        className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-red-600 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-red-600 hover:bg-red-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {isVerifyingMerchantGateway ? "VERIFYING..." : "VERIFY GATEWAY"}
                       </button>
@@ -1627,7 +1627,7 @@ def my_agent():
                           No canary verification history yet. Run VERIFY GATEWAY to record checks.
                         </p>
                       ) : (
-                        <div className="space-y-2">
+                        <div className="space-y-2 overflow-y-auto max-h-72 pr-1">
                           {merchantGatewayCanaryHistory.map((entry) => (
                             <div
                               key={entry.id}
@@ -1638,9 +1638,8 @@ def my_agent():
                                   className={`h-2 w-2 rounded-none ${entry.success ? "bg-emerald-400" : "bg-rose-400"}`}
                                 />
                                 <span
-                                  className={`text-[10px] uppercase tracking-[0.16em] font-bold ${
-                                    entry.success ? "text-emerald-300" : "text-rose-300"
-                                  }`}
+                                  className={`text-[10px] uppercase tracking-[0.16em] font-bold ${entry.success ? "text-emerald-300" : "text-rose-300"
+                                    }`}
                                 >
                                   {entry.success ? "PASS" : "FAIL"}
                                 </span>
@@ -1882,8 +1881,8 @@ def my_agent():
                         {isLoadingConsumerGatewayReadiness
                           ? "Checking Gateway Activation..."
                           : `Gateway Status // ${formatGatewayReadinessLabel(
-                              consumerEffectiveGatewayReadinessStatus ?? "UNCONFIGURED",
-                            )}`}
+                            consumerEffectiveGatewayReadinessStatus ?? "UNCONFIGURED",
+                          )}`}
                       </p>
                     </div>
                     {consumerGatewayActivationBlocked && !isLoadingConsumerGatewayReadiness && (

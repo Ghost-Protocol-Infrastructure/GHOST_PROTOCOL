@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "domain": {
+    "name": "GhostGateFulfillment",
+    "version": "1",
+    "chainId": 8453,
+    "verifyingContract": "0x0000000000000000000000000000000000000000"
+  },
+  "signers": {
+    "protocolSigner": {
+      "privateKey": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "address": "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a"
+    },
+    "consumer": {
+      "privateKey": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "address": "0x1563915e194d8cfba1943570603f7606a3115508"
+    },
+    "merchantSigner": {
+      "privateKey": "0x3333333333333333333333333333333333333333333333333333333333333333",
+      "address": "0x5cbdd86a2fa8dc4bddd8a8f69dba48572eec07fb"
+    }
+  },
+  "ticket": {
+    "message": {
+      "ticketId": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "consumer": "0x1563915e194d8cfba1943570603f7606a3115508",
+      "merchantOwner": "0xf0f6152c8b02a48a00c73c6dcac0c7748c0b4fbe",
+      "gatewayConfigIdHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "serviceSlug": "agent-18755",
+      "method": "POST",
+      "path": "/ask",
+      "queryHash": "0x7bb1ce7862cefc0211a7705e4ced31a7b4b5e992390c3394517af394b2dbf57e",
+      "bodyHash": "0x717bf12edd99f139c178636151783e49091fd8451fada5674e05f8fc3618e7f0",
+      "cost": "1",
+      "issuedAt": "1730000000",
+      "expiresAt": "1730000060"
+    },
+    "typedHash": "0xd74384c495d9fbf67a48f73626cbb0d89cdef074ae649efbcab491eacd5ac754",
+    "signature": "0xaaf64b341ac4b7e6eabfa380a2e9ce468e19c50d3e35348deed98fb8a220017e19cf86cb9bacf7262f46cbcd07a9483393d610ae38721062484dc3fac70752a11c",
+    "transport": {
+      "envelope": {
+        "version": 1,
+        "payload": "eyJ0aWNrZXRJZCI6IjB4YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsImNvbnN1bWVyIjoiMHgxNTYzOTE1ZTE5NGQ4Y2ZiYTE5NDM1NzA2MDNmNzYwNmEzMTE1NTA4IiwibWVyY2hhbnRPd25lciI6IjB4ZjBmNjE1MmM4YjAyYTQ4YTAwYzczYzZkY2FjMGM3NzQ4YzBiNGZiZSIsImdhdGV3YXlDb25maWdJZEhhc2giOiIweGJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmIiLCJzZXJ2aWNlU2x1ZyI6ImFnZW50LTE4NzU1IiwibWV0aG9kIjoiUE9TVCIsInBhdGgiOiIvYXNrIiwicXVlcnlIYXNoIjoiMHg3YmIxY2U3ODYyY2VmYzAyMTFhNzcwNWU0Y2VkMzFhN2I0YjVlOTkyMzkwYzMzOTQ1MTdhZjM5NGIyZGJmNTdlIiwiYm9keUhhc2giOiIweDcxN2JmMTJlZGQ5OWYxMzljMTc4NjM2MTUxNzgzZTQ5MDkxZmQ4NDUxZmFkYTU2NzRlMDVmOGZjMzYxOGU3ZjAiLCJjb3N0IjoiMSIsImlzc3VlZEF0IjoiMTczMDAwMDAwMCIsImV4cGlyZXNBdCI6IjE3MzAwMDAwNjAifQ",
+        "signature": "0xaaf64b341ac4b7e6eabfa380a2e9ce468e19c50d3e35348deed98fb8a220017e19cf86cb9bacf7262f46cbcd07a9483393d610ae38721062484dc3fac70752a11c"
+      },
+      "headers": {
+        "x-ghost-fulfillment-ticket-version": "1",
+        "x-ghost-fulfillment-ticket": "eyJ0aWNrZXRJZCI6IjB4YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsImNvbnN1bWVyIjoiMHgxNTYzOTE1ZTE5NGQ4Y2ZiYTE5NDM1NzA2MDNmNzYwNmEzMTE1NTA4IiwibWVyY2hhbnRPd25lciI6IjB4ZjBmNjE1MmM4YjAyYTQ4YTAwYzczYzZkY2FjMGM3NzQ4YzBiNGZiZSIsImdhdGV3YXlDb25maWdJZEhhc2giOiIweGJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmIiLCJzZXJ2aWNlU2x1ZyI6ImFnZW50LTE4NzU1IiwibWV0aG9kIjoiUE9TVCIsInBhdGgiOiIvYXNrIiwicXVlcnlIYXNoIjoiMHg3YmIxY2U3ODYyY2VmYzAyMTFhNzcwNWU0Y2VkMzFhN2I0YjVlOTkyMzkwYzMzOTQ1MTdhZjM5NGIyZGJmNTdlIiwiYm9keUhhc2giOiIweDcxN2JmMTJlZGQ5OWYxMzljMTc4NjM2MTUxNzgzZTQ5MDkxZmQ4NDUxZmFkYTU2NzRlMDVmOGZjMzYxOGU3ZjAiLCJjb3N0IjoiMSIsImlzc3VlZEF0IjoiMTczMDAwMDAwMCIsImV4cGlyZXNBdCI6IjE3MzAwMDAwNjAifQ",
+        "x-ghost-fulfillment-ticket-sig": "0xaaf64b341ac4b7e6eabfa380a2e9ce468e19c50d3e35348deed98fb8a220017e19cf86cb9bacf7262f46cbcd07a9483393d610ae38721062484dc3fac70752a11c",
+        "x-ghost-fulfillment-ticket-id": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "x-ghost-fulfillment-client-request-id": "client-req-123"
+      }
+    }
+  },
+  "deliveryProof": {
+    "message": {
+      "ticketId": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "deliveryProofId": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "merchantSigner": "0x5cbdd86a2fa8dc4bddd8a8f69dba48572eec07fb",
+      "serviceSlug": "agent-18755",
+      "completedAt": "1730000030",
+      "statusCode": "200",
+      "latencyMs": "387",
+      "responseHash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "typedHash": "0xe1ff2b8f742be09b9f6e4e3450ab6b76a8bd9a521ab3988fe0d62c343e1f8ab2",
+    "signature": "0xe609f2cc3d2db8a72b3cc6013cbf2b81050c993748c4a8518e1744946ca8b2a522eaa5665b3f625e19005670eebccec49914462c3042a00939ea744db954c8531c",
+    "transport": {
+      "envelope": {
+        "payload": "eyJ0aWNrZXRJZCI6IjB4YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsImRlbGl2ZXJ5UHJvb2ZJZCI6IjB4Y2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYyIsIm1lcmNoYW50U2lnbmVyIjoiMHg1Y2JkZDg2YTJmYThkYzRiZGRkOGE4ZjY5ZGJhNDg1NzJlZWMwN2ZiIiwic2VydmljZVNsdWciOiJhZ2VudC0xODc1NSIsImNvbXBsZXRlZEF0IjoiMTczMDAwMDAzMCIsInN0YXR1c0NvZGUiOiIyMDAiLCJsYXRlbmN5TXMiOiIzODciLCJyZXNwb25zZUhhc2giOiIweGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGQifQ",
+        "signature": "0xe609f2cc3d2db8a72b3cc6013cbf2b81050c993748c4a8518e1744946ca8b2a522eaa5665b3f625e19005670eebccec49914462c3042a00939ea744db954c8531c"
+      }
+    }
+  },
+  "ticketRequestAuth": {
+    "message": {
+      "action": "fulfillment_ticket",
+      "serviceSlug": "agent-18755",
+      "method": "POST",
+      "path": "/ask",
+      "queryHash": "0x7bb1ce7862cefc0211a7705e4ced31a7b4b5e992390c3394517af394b2dbf57e",
+      "bodyHash": "0x717bf12edd99f139c178636151783e49091fd8451fada5674e05f8fc3618e7f0",
+      "cost": "1",
+      "issuedAt": "1730000000",
+      "nonce": "ticket-req-nonce-001"
+    },
+    "typedHash": "0xfb03b182f4f291b7971f5dec102587da62b84c1df7599b38136400438b03c316",
+    "signature": "0xb875928d77147de4643e05017a5eab940325cc07c5af4c54f272c1d06a329adf0be9d193681e3658ce55a18b06df58ee6705ac2075bbfe6bdadb4bc728cdb33f1c",
+    "transport": {
+      "payload": "eyJhY3Rpb24iOiJmdWxmaWxsbWVudF90aWNrZXQiLCJzZXJ2aWNlU2x1ZyI6ImFnZW50LTE4NzU1IiwibWV0aG9kIjoiUE9TVCIsInBhdGgiOiIvYXNrIiwicXVlcnlIYXNoIjoiMHg3YmIxY2U3ODYyY2VmYzAyMTFhNzcwNWU0Y2VkMzFhN2I0YjVlOTkyMzkwYzMzOTQ1MTdhZjM5NGIyZGJmNTdlIiwiYm9keUhhc2giOiIweDcxN2JmMTJlZGQ5OWYxMzljMTc4NjM2MTUxNzgzZTQ5MDkxZmQ4NDUxZmFkYTU2NzRlMDVmOGZjMzYxOGU3ZjAiLCJjb3N0IjoiMSIsImlzc3VlZEF0IjoiMTczMDAwMDAwMCIsIm5vbmNlIjoidGlja2V0LXJlcS1ub25jZS0wMDEifQ"
+    }
+  }
+}

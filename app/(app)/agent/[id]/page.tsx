@@ -194,10 +194,10 @@ export default async function AgentProfilePage({ params, searchParams }: AgentPa
       <AgentProfileAutoRefresh agentId={agent.agentId} />
       <div className="mx-auto max-w-5xl px-4 py-10 md:px-8">
         <div className="mb-6 flex items-center justify-between">
-          <h1 className="text-sm uppercase tracking-[0.18em] text-neutral-500 font-bold">{"// AGENT PROFILE"}</h1>
+          <h1 className="text-sm uppercase tracking-[0.18em] text-white font-bold">{"// AGENT PROFILE"}</h1>
           <Link
             href="/rank"
-            className="border border-neutral-900 bg-neutral-950 px-3 py-2 text-xs uppercase tracking-[0.12em] text-neutral-400 transition hover:border-red-600 hover:text-red-500 font-bold"
+            className="border border-white bg- px-3 py-2 text-xs uppercase tracking-[0.12em] text-white transition hover:border-red-600 hover:bg-red-600 hover:text-white font-bold"
           >
             {"//BACK_TO_RANK"}
           </Link>
@@ -362,7 +362,7 @@ export default async function AgentProfilePage({ params, searchParams }: AgentPa
             {!isGatewayLive ? (
               <Link
                 href={merchantSetupHref}
-                className="border border-amber-700/40 bg-amber-950/10 px-3 py-2 text-xs uppercase tracking-[0.12em] text-amber-300 transition hover:border-amber-500/70 hover:text-amber-200 font-bold"
+                className="border border-white bg- px-3 py-2 text-xs uppercase tracking-[0.12em] text-white transition hover:border-red-600 hover:bg-red-600 hover:text-white font-bold"
               >
                 {"//OPEN_MERCHANT_CONSOLE"}
               </Link>

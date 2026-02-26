@@ -2,7 +2,11 @@ export const MERCHANT_GATEWAY_AUTH_SCOPE = "agent_gateway";
 export const MERCHANT_GATEWAY_AUTH_VERSION = "1";
 export const MERCHANT_GATEWAY_AUTH_MAX_AGE_SECONDS = 300;
 
-export type MerchantGatewayAuthAction = "config" | "verify";
+export type MerchantGatewayAuthAction =
+  | "config"
+  | "verify"
+  | "delegated_signer_register"
+  | "delegated_signer_revoke";
 
 export type MerchantGatewayAuthPayload = {
   scope: typeof MERCHANT_GATEWAY_AUTH_SCOPE;
@@ -33,7 +37,14 @@ export const normalizeMerchantGatewayAuthPayload = (value: unknown): MerchantGat
   if (record.scope !== MERCHANT_GATEWAY_AUTH_SCOPE) return null;
   if (record.version !== MERCHANT_GATEWAY_AUTH_VERSION) return null;
   const action = record.action;
-  if (action !== "config" && action !== "verify") return null;
+  if (
+    action !== "config" &&
+    action !== "verify" &&
+    action !== "delegated_signer_register" &&
+    action !== "delegated_signer_revoke"
+  ) {
+    return null;
+  }
 
   const agentId = normalizeStringField(record.agentId, 64);
   const ownerAddress = typeof record.ownerAddress === "string" ? record.ownerAddress.trim().toLowerCase() : null;

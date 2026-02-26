@@ -1,6 +1,10 @@
 import { NextRequest } from "next/server";
 
-type AgentGatewayRateLimitAction = "config" | "verify";
+type AgentGatewayRateLimitAction =
+  | "config"
+  | "verify"
+  | "delegated_signer_register"
+  | "delegated_signer_revoke";
 
 type Bucket = {
   count: number;
@@ -11,10 +15,19 @@ const WINDOW_MS = 60_000;
 const LIMITS_PER_WINDOW: Record<AgentGatewayRateLimitAction, number> = {
   config: 10,
   verify: 12,
+  delegated_signer_register: 8,
+  delegated_signer_revoke: 12,
 };
 
 const buckets = new Map<string, Bucket>();
 let lastSweepAtMs = 0;
+
+const ACTION_LABELS: Record<AgentGatewayRateLimitAction, string> = {
+  config: "config",
+  verify: "verify",
+  delegated_signer_register: "delegated signer register",
+  delegated_signer_revoke: "delegated signer revoke",
+};
 
 const getClientIp = (request: NextRequest): string => {
   const forwardedFor = request.headers.get("x-forwarded-for");
@@ -62,7 +75,7 @@ export const consumeAgentGatewayRateLimit = (input: {
     return {
       ok: false,
       status: 429,
-      error: `Too many merchant gateway ${input.action} attempts. Try again in ${retryAfterSeconds}s.`,
+      error: `Too many merchant gateway ${ACTION_LABELS[input.action]} attempts. Try again in ${retryAfterSeconds}s.`,
       retryAfterSeconds,
     };
   }

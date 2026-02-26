@@ -2,16 +2,17 @@ import { config as loadEnv } from "dotenv";
 import { PrismaClient, type GateAccessOutcome, Prisma } from "@prisma/client";
 import { getAddress, type Address } from "viem";
 
-const MAX_PRISMA_INT = 2_147_483_647n;
-const CREDIT_LEDGER_ENABLED = process.env.GHOST_CREDIT_LEDGER_ENABLED === "true";
-const GATE_NONCE_STORE_ENABLED = process.env.GHOST_GATE_NONCE_STORE_ENABLED === "true";
-const GATE_ACCESS_EVENT_LOG_ENABLED = process.env.GHOST_GATE_ACCESS_EVENT_LOG_ENABLED !== "false";
-let gateAccessEventTableAvailable: boolean | null = null;
-
 if (!process.env.POSTGRES_PRISMA_URL) {
   loadEnv({ path: ".env", quiet: true });
   loadEnv({ path: ".env.local", override: true, quiet: true });
 }
+
+const MAX_PRISMA_INT = 2_147_483_647n;
+const MIN_PRISMA_INT = -2_147_483_648n;
+const CREDIT_LEDGER_ENABLED = process.env.GHOST_CREDIT_LEDGER_ENABLED === "true";
+const GATE_NONCE_STORE_ENABLED = process.env.GHOST_GATE_NONCE_STORE_ENABLED === "true";
+const GATE_ACCESS_EVENT_LOG_ENABLED = process.env.GHOST_GATE_ACCESS_EVENT_LOG_ENABLED !== "false";
+let gateAccessEventTableAvailable: boolean | null = null;
 
 declare global {
   var prismaGlobal: PrismaClient | undefined;
@@ -32,6 +33,13 @@ const toPrismaInt = (value: bigint, field: string): number => {
   return Number(value);
 };
 
+const toPrismaSignedInt = (value: bigint, field: string): number => {
+  if (value < MIN_PRISMA_INT || value > MAX_PRISMA_INT) {
+    throw new Error(`${field} exceeds Int column capacity.`);
+  }
+  return Number(value);
+};
+
 const toPrismaOptionalInt = (value: bigint | null | undefined): number | null => {
   if (value == null) return null;
   if (value < 0n || value > MAX_PRISMA_INT) return null;
@@ -47,6 +55,15 @@ const normalizeSignerForLog = (signer: Address | string | null | undefined): str
   }
 };
 
+const toJsDate = (value: Date | string, field: string): Date => {
+  if (value instanceof Date) return value;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`${field} is not a valid date value.`);
+  }
+  return parsed;
+};
+
 export const prisma =
   globalThis.prismaGlobal ??
   new PrismaClient({
@@ -58,6 +75,7 @@ if (process.env.NODE_ENV !== "production") globalThis.prismaGlobal = prisma;
 type CreditBalanceRecord = {
   walletAddress: string;
   credits: number;
+  heldCredits: number;
   lastSyncedBlock: bigint;
   updatedAt: Date;
 };
@@ -65,6 +83,7 @@ type CreditBalanceRecord = {
 const mapCreditBalance = (record: CreditBalanceRecord) => ({
   walletAddress: record.walletAddress,
   credits: BigInt(record.credits),
+  heldCredits: BigInt(record.heldCredits),
   lastSyncedBlock: record.lastSyncedBlock,
   updatedAt: record.updatedAt,
 });
@@ -86,6 +105,8 @@ type CreditLedgerWriteInput = {
   walletAddress: string;
   direction: "CREDIT" | "DEBIT" | "ADJUSTMENT";
   amount: bigint;
+  availableCreditsDelta?: bigint | null;
+  heldCreditsDelta?: bigint | null;
   balanceBefore: bigint;
   balanceAfter: bigint;
   reason: string;
@@ -127,6 +148,10 @@ const writeCreditLedger = async (
       walletAddress: input.walletAddress,
       direction: input.direction,
       amount: toPrismaInt(input.amount, "ledger amount"),
+      availableCreditsDelta:
+        input.availableCreditsDelta == null ? null : toPrismaSignedInt(input.availableCreditsDelta, "availableCreditsDelta"),
+      heldCreditsDelta:
+        input.heldCreditsDelta == null ? null : toPrismaSignedInt(input.heldCreditsDelta, "heldCreditsDelta"),
       balanceBefore: toPrismaInt(input.balanceBefore, "ledger balanceBefore"),
       balanceAfter: toPrismaInt(input.balanceAfter, "ledger balanceAfter"),
       reason: input.reason,
@@ -286,6 +311,137 @@ export const updateUserCredits = async (userAddress: Address, amount: bigint): P
 
 export type SyncDepositsOptions = {
   expectedLastSyncedBlock?: bigint | null;
+};
+
+export type CreateFulfillmentHoldInput = {
+  walletAddress: Address;
+  serviceSlug: string;
+  agentId?: string | null;
+  gatewayConfigId?: string | null;
+  merchantOwnerAddress: Address | string;
+  requestMethod: string;
+  requestPath: string;
+  queryHash: `0x${string}` | string;
+  bodyHash: `0x${string}` | string;
+  cost: bigint;
+  ticketId: `0x${string}` | string;
+  issuedAt: Date;
+  expiresAt: Date;
+  requestNonce: string;
+  requestAuthIssuedAtSeconds: bigint;
+  requestAuthSignature?: `0x${string}` | string | null;
+  requestId?: string | null;
+  clientRequestId?: string | null;
+  walletHoldCap: number;
+};
+
+export type CreateFulfillmentHoldResult =
+  | {
+      status: "ok";
+      holdId: string;
+      ticketId: string;
+      walletAddress: string;
+      serviceSlug: string;
+      cost: bigint;
+      creditsBefore: bigint;
+      creditsAfter: bigint;
+      heldCreditsBefore: bigint;
+      heldCreditsAfter: bigint;
+    }
+  | { status: "insufficient_credits"; balance: bigint; required: bigint }
+  | { status: "wallet_hold_cap_exceeded"; activeWalletHolds: number; walletHoldCap: number }
+  | { status: "wallet_service_hold_exists" }
+  | { status: "replay" };
+
+export type CaptureFulfillmentHoldInput = {
+  ticketId: `0x${string}` | string;
+  deliveryProofId: `0x${string}` | string;
+  merchantSigner: Address | string;
+  serviceSlug: string;
+  completedAt: Date;
+  statusCode: bigint;
+  latencyMs: bigint;
+  responseHash?: `0x${string}` | string | null;
+  proofTypedHash?: `0x${string}` | string | null;
+  rawMeta?: Prisma.InputJsonValue | null;
+};
+
+export type CaptureFulfillmentHoldResult =
+  | {
+      status: "captured";
+      holdId: string;
+      ticketId: string;
+      deliveryProofId: string;
+      captureDisposition: "CAPTURED";
+      serviceSlug: string;
+      walletAddress: string;
+      merchantSigner: string;
+      state: "CAPTURED";
+      capturedAt: Date;
+      cost: bigint;
+      creditsBefore: bigint;
+      creditsAfter: bigint;
+      heldCreditsBefore: bigint;
+      heldCreditsAfter: bigint;
+    }
+  | {
+      status: "idempotent_replay";
+      holdId: string;
+      ticketId: string;
+      deliveryProofId: string;
+      captureDisposition: "IDEMPOTENT_REPLAY";
+      serviceSlug: string;
+      walletAddress: string;
+      merchantSigner: string;
+      state: "CAPTURED";
+      capturedAt: Date;
+    }
+  | { status: "hold_not_found" }
+  | { status: "unauthorized_signer"; ticketId: string; holdId: string; gatewayConfigId: string | null }
+  | { status: "service_mismatch"; ticketId: string; holdId: string; expectedServiceSlug: string; providedServiceSlug: string }
+  | { status: "expired_due"; ticketId: string; holdId: string; expiresAt: Date }
+  | { status: "terminal"; ticketId: string; holdId: string; state: "RELEASED" | "EXPIRED"; deliveryProofId: string | null }
+  | { status: "capture_conflict"; ticketId: string; holdId: string; existingDeliveryProofId: string | null; state: "CAPTURED" };
+
+export type FulfillmentExpireSweepCandidate = {
+  id: string;
+  ticketId: string;
+  walletAddress: string;
+  serviceSlug: string;
+  cost: bigint;
+  state: "HELD" | "CAPTURED" | "RELEASED" | "EXPIRED";
+  expiresAt: Date;
+};
+
+export type FulfillmentExpireSweepItemResult =
+  | {
+      holdId: string;
+      ticketId: string;
+      status: "expired";
+      walletAddress: string;
+      serviceSlug: string;
+      cost: bigint;
+      creditsBefore: bigint;
+      creditsAfter: bigint;
+      heldCreditsBefore: bigint;
+      heldCreditsAfter: bigint;
+    }
+  | {
+      holdId: string;
+      ticketId: string;
+      status: "skipped_terminal" | "skipped_not_due";
+      state: "HELD" | "CAPTURED" | "RELEASED" | "EXPIRED";
+      expiresAt: Date;
+    };
+
+export type FulfillmentExpireSweepResult = {
+  selected: number;
+  processed: number;
+  released: number;
+  skippedTerminal: number;
+  skippedNotDue: number;
+  errors: number;
+  results: FulfillmentExpireSweepItemResult[];
 };
 
 export type SyncDepositsResult = {
@@ -463,6 +619,676 @@ export const syncDeposits = async (
       conflict: false,
     };
   });
+};
+
+export const createFulfillmentHold = async (
+  input: CreateFulfillmentHoldInput,
+): Promise<CreateFulfillmentHoldResult> => {
+  if (input.cost <= 0n) {
+    throw new Error("Fulfillment hold cost must be greater than zero.");
+  }
+  if (!Number.isInteger(input.walletHoldCap) || input.walletHoldCap <= 0) {
+    throw new Error("walletHoldCap must be a positive integer.");
+  }
+
+  const walletKey = normalizeAddressKey(input.walletAddress);
+  const merchantOwnerKey = normalizeSignerKey(input.merchantOwnerAddress);
+  const ticketId = String(input.ticketId).trim().toLowerCase();
+  const queryHash = String(input.queryHash).trim().toLowerCase();
+  const bodyHash = String(input.bodyHash).trim().toLowerCase();
+  const requestNonce = input.requestNonce.trim();
+  const requestId = ticketId;
+  const ledgerClientRequestId = input.clientRequestId?.trim() || null;
+  const debit = toPrismaInt(input.cost, "fulfillment hold cost");
+
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const lockedBalanceRows = await tx.$queryRaw<Array<{ walletAddress: string; credits: number; heldCredits: number }>>(
+        Prisma.sql`
+          SELECT "walletAddress", "credits", "heldCredits"
+          FROM "CreditBalance"
+          WHERE "walletAddress" = ${walletKey}
+          FOR UPDATE
+        `,
+      );
+
+      const lockedBalance = lockedBalanceRows[0];
+      const creditsBefore = BigInt(lockedBalance?.credits ?? 0);
+      if (!lockedBalance || creditsBefore < input.cost) {
+        return {
+          status: "insufficient_credits",
+          balance: creditsBefore,
+          required: input.cost,
+        } satisfies CreateFulfillmentHoldResult;
+      }
+
+      const heldCreditsBefore = BigInt(lockedBalance.heldCredits);
+
+      const activeWalletHolds = await tx.fulfillmentHold.count({
+        where: {
+          walletAddress: walletKey,
+          state: "HELD",
+        },
+      });
+      if (activeWalletHolds >= input.walletHoldCap) {
+        return {
+          status: "wallet_hold_cap_exceeded",
+          activeWalletHolds,
+          walletHoldCap: input.walletHoldCap,
+        } satisfies CreateFulfillmentHoldResult;
+      }
+
+      await persistAccessNonce(tx, {
+        signer: normalizeSignerKey(input.walletAddress),
+        service: `fulfillment_ticket:${input.serviceSlug}`,
+        nonce: requestNonce,
+        payloadTimestamp: input.requestAuthIssuedAtSeconds,
+        signature: input.requestAuthSignature ?? null,
+        enforceUnique: true,
+      });
+
+      const updatedBalance = await tx.creditBalance.update({
+        where: { walletAddress: walletKey },
+        data: {
+          credits: { decrement: debit },
+          heldCredits: { increment: debit },
+        },
+      });
+
+      const creditsAfter = BigInt(updatedBalance.credits);
+      const heldCreditsAfter = BigInt(updatedBalance.heldCredits);
+
+      const hold = await tx.fulfillmentHold.create({
+        data: {
+          ticketId,
+          walletAddress: walletKey,
+          serviceSlug: input.serviceSlug,
+          agentId: input.agentId ?? null,
+          gatewayConfigId: input.gatewayConfigId ?? null,
+          merchantOwnerAddress: merchantOwnerKey,
+          requestMethod: input.requestMethod,
+          requestPath: input.requestPath,
+          queryHash,
+          bodyHash,
+          cost: debit,
+          state: "HELD",
+          issuedAt: input.issuedAt,
+          expiresAt: input.expiresAt,
+        },
+      });
+
+      await writeCreditLedger(tx, {
+        walletAddress: walletKey,
+        direction: "DEBIT",
+        amount: input.cost,
+        availableCreditsDelta: -input.cost,
+        heldCreditsDelta: input.cost,
+        balanceBefore: creditsBefore,
+        balanceAfter: creditsAfter,
+        reason: "FULFILLMENT_HOLD_CREATED",
+        service: input.serviceSlug,
+        nonce: requestNonce,
+        requestId,
+        metadata: {
+          ticketId,
+          holdId: hold.id,
+          serviceSlug: input.serviceSlug,
+          agentId: input.agentId ?? null,
+          gatewayConfigId: input.gatewayConfigId ?? null,
+          merchantOwnerAddress: merchantOwnerKey,
+          cost: input.cost.toString(),
+          request: {
+            method: input.requestMethod,
+            path: input.requestPath,
+            queryHash,
+            bodyHash,
+          },
+          clientRequestId: ledgerClientRequestId,
+          issuedAt: input.issuedAt.toISOString(),
+          expiresAt: input.expiresAt.toISOString(),
+        },
+      });
+
+      return {
+        status: "ok",
+        holdId: hold.id,
+        ticketId,
+        walletAddress: walletKey,
+        serviceSlug: input.serviceSlug,
+        cost: input.cost,
+        creditsBefore,
+        creditsAfter,
+        heldCreditsBefore,
+        heldCreditsAfter,
+      } satisfies CreateFulfillmentHoldResult;
+    });
+  } catch (error) {
+    if (error instanceof AccessNonceReplayError) {
+      return { status: "replay" };
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      const target = (() => {
+        const meta = error.meta as { target?: unknown } | undefined;
+        if (Array.isArray(meta?.target)) return meta?.target.join(",");
+        return typeof meta?.target === "string" ? meta.target : "";
+      })();
+      if (
+        target.includes("FulfillmentHold_wallet_service_active_held_idx") ||
+        error.message.includes("FulfillmentHold_wallet_service_active_held_idx")
+      ) {
+        return { status: "wallet_service_hold_exists" };
+      }
+    }
+
+    throw error;
+  }
+};
+
+export const captureFulfillmentHold = async (
+  input: CaptureFulfillmentHoldInput,
+): Promise<CaptureFulfillmentHoldResult> => {
+  const ticketId = String(input.ticketId).trim().toLowerCase();
+  const deliveryProofId = String(input.deliveryProofId).trim().toLowerCase();
+  const merchantSigner = normalizeSignerKey(input.merchantSigner);
+  const serviceSlug = input.serviceSlug.trim();
+  if (!ticketId || !deliveryProofId || !serviceSlug) {
+    throw new Error("captureFulfillmentHold requires ticketId, deliveryProofId, and serviceSlug.");
+  }
+  if (input.statusCode < 0n || input.latencyMs < 0n) {
+    throw new Error("captureFulfillmentHold statusCode/latencyMs must be non-negative.");
+  }
+
+  const statusCodeInt = toPrismaOptionalInt(input.statusCode);
+  const latencyMsInt = toPrismaOptionalInt(input.latencyMs);
+  const responseHash = typeof input.responseHash === "string" ? input.responseHash.trim().toLowerCase() : null;
+
+  return prisma.$transaction(async (tx) => {
+    const lockedHoldRows = await tx.$queryRaw<
+      Array<{
+        id: string;
+        ticketId: string;
+        walletAddress: string;
+        serviceSlug: string;
+        gatewayConfigId: string | null;
+        merchantOwnerAddress: string;
+        cost: number;
+        state: "HELD" | "CAPTURED" | "RELEASED" | "EXPIRED";
+        expiresAt: Date | string;
+        capturedAt: Date | string | null;
+        captureDeliveryProofId: string | null;
+      }>
+    >(Prisma.sql`
+      SELECT
+        "id",
+        "ticketId",
+        "walletAddress",
+        "serviceSlug",
+        "gatewayConfigId",
+        "merchantOwnerAddress",
+        "cost",
+        "state",
+        "expiresAt",
+        "capturedAt",
+        "captureDeliveryProofId"
+      FROM "FulfillmentHold"
+      WHERE "ticketId" = ${ticketId}
+      FOR UPDATE
+    `);
+
+    const hold = lockedHoldRows[0];
+    if (!hold) {
+      return { status: "hold_not_found" } satisfies CaptureFulfillmentHoldResult;
+    }
+
+    const createAttempt = async (args: {
+      success: boolean;
+      httpStatus: number;
+      captureDisposition?: string | null;
+      errorCode?: string | null;
+      errorMessage?: string | null;
+    }): Promise<void> => {
+      await tx.fulfillmentCaptureAttempt.create({
+        data: {
+          holdId: hold.id,
+          ticketId: hold.ticketId,
+          deliveryProofId,
+          merchantSigner,
+          success: args.success,
+          httpStatus: args.httpStatus,
+          captureDisposition: args.captureDisposition ?? null,
+          errorCode: args.errorCode ?? null,
+          errorMessage: args.errorMessage ?? null,
+          rawMeta: input.rawMeta ?? undefined,
+        },
+      });
+    };
+
+    if (hold.serviceSlug !== serviceSlug) {
+      await createAttempt({
+        success: false,
+        httpStatus: 409,
+        errorCode: "SERVICE_MISMATCH",
+        errorMessage: "delivery proof serviceSlug does not match held serviceSlug",
+      });
+      return {
+        status: "service_mismatch",
+        ticketId: hold.ticketId,
+        holdId: hold.id,
+        expectedServiceSlug: hold.serviceSlug,
+        providedServiceSlug: serviceSlug,
+      } satisfies CaptureFulfillmentHoldResult;
+    }
+
+    if (!hold.gatewayConfigId) {
+      await createAttempt({
+        success: false,
+        httpStatus: 403,
+        errorCode: "UNAUTHORIZED_DELEGATED_SIGNER",
+        errorMessage: "hold has no gateway config bound",
+      });
+      return {
+        status: "unauthorized_signer",
+        ticketId: hold.ticketId,
+        holdId: hold.id,
+        gatewayConfigId: null,
+      } satisfies CaptureFulfillmentHoldResult;
+    }
+
+    const activeSigner = await tx.agentGatewayDelegatedSigner.findFirst({
+      where: {
+        gatewayConfigId: hold.gatewayConfigId,
+        signerAddress: merchantSigner,
+        status: "ACTIVE",
+      },
+      select: { id: true },
+    });
+    if (!activeSigner) {
+      await createAttempt({
+        success: false,
+        httpStatus: 403,
+        errorCode: "UNAUTHORIZED_DELEGATED_SIGNER",
+        errorMessage: "merchant signer is not active for gateway config",
+      });
+      return {
+        status: "unauthorized_signer",
+        ticketId: hold.ticketId,
+        holdId: hold.id,
+        gatewayConfigId: hold.gatewayConfigId,
+      } satisfies CaptureFulfillmentHoldResult;
+    }
+
+    const holdExpiresAt = toJsDate(hold.expiresAt, "FulfillmentHold.expiresAt");
+    const holdCapturedAt = hold.capturedAt == null ? null : toJsDate(hold.capturedAt, "FulfillmentHold.capturedAt");
+
+    if (hold.state === "CAPTURED") {
+      if (hold.captureDeliveryProofId && hold.captureDeliveryProofId === deliveryProofId && holdCapturedAt) {
+        await createAttempt({
+          success: true,
+          httpStatus: 200,
+          captureDisposition: "IDEMPOTENT_REPLAY",
+        });
+        return {
+          status: "idempotent_replay",
+          holdId: hold.id,
+          ticketId: hold.ticketId,
+          deliveryProofId,
+          captureDisposition: "IDEMPOTENT_REPLAY",
+          serviceSlug: hold.serviceSlug,
+          walletAddress: hold.walletAddress,
+          merchantSigner,
+          state: "CAPTURED",
+          capturedAt: holdCapturedAt,
+        } satisfies CaptureFulfillmentHoldResult;
+      }
+
+      await createAttempt({
+        success: false,
+        httpStatus: 409,
+        errorCode: "CAPTURE_CONFLICT",
+        errorMessage: "ticket already captured with a different delivery proof",
+      });
+      return {
+        status: "capture_conflict",
+        ticketId: hold.ticketId,
+        holdId: hold.id,
+        existingDeliveryProofId: hold.captureDeliveryProofId,
+        state: "CAPTURED",
+      } satisfies CaptureFulfillmentHoldResult;
+    }
+
+    if (hold.state === "RELEASED" || hold.state === "EXPIRED") {
+      await createAttempt({
+        success: false,
+        httpStatus: 409,
+        errorCode: "HOLD_NOT_ACTIVE",
+        errorMessage: `ticket hold is ${hold.state.toLowerCase()}`,
+      });
+      return {
+        status: "terminal",
+        ticketId: hold.ticketId,
+        holdId: hold.id,
+        state: hold.state,
+        deliveryProofId: hold.captureDeliveryProofId,
+      } satisfies CaptureFulfillmentHoldResult;
+    }
+
+    if (holdExpiresAt <= input.completedAt) {
+      await createAttempt({
+        success: false,
+        httpStatus: 409,
+        errorCode: "HOLD_EXPIRED",
+        errorMessage: "ticket hold expired before capture completion",
+      });
+      return {
+        status: "expired_due",
+        ticketId: hold.ticketId,
+        holdId: hold.id,
+        expiresAt: holdExpiresAt,
+      } satisfies CaptureFulfillmentHoldResult;
+    }
+
+    const lockedBalanceRows = await tx.$queryRaw<Array<{ walletAddress: string; credits: number; heldCredits: number }>>(
+      Prisma.sql`
+        SELECT "walletAddress", "credits", "heldCredits"
+        FROM "CreditBalance"
+        WHERE "walletAddress" = ${hold.walletAddress}
+        FOR UPDATE
+      `,
+    );
+
+    const balance = lockedBalanceRows[0];
+    if (!balance) {
+      throw new Error(`CreditBalance missing for fulfillment hold wallet ${hold.walletAddress}`);
+    }
+
+    const cost = BigInt(hold.cost);
+    const creditsBefore = BigInt(balance.credits);
+    const heldCreditsBefore = BigInt(balance.heldCredits);
+    if (heldCreditsBefore < cost) {
+      throw new Error(
+        `heldCredits invariant violation for wallet ${hold.walletAddress}: held=${heldCreditsBefore} cost=${cost}`,
+      );
+    }
+
+    await tx.fulfillmentHold.update({
+      where: { id: hold.id },
+      data: {
+        state: "CAPTURED",
+        capturedAt: input.completedAt,
+        captureDeliveryProofId: deliveryProofId,
+        captureStatusCode: statusCodeInt,
+        captureLatencyMs: latencyMsInt,
+        releasedAt: null,
+        releaseReason: null,
+        lastError: null,
+      },
+    });
+
+    const updatedBalance = await tx.creditBalance.update({
+      where: { walletAddress: hold.walletAddress },
+      data: {
+        heldCredits: { decrement: hold.cost },
+      },
+    });
+
+    const creditsAfter = BigInt(updatedBalance.credits);
+    const heldCreditsAfter = BigInt(updatedBalance.heldCredits);
+
+    await writeCreditLedger(tx, {
+      walletAddress: hold.walletAddress,
+      direction: "DEBIT",
+      amount: cost,
+      availableCreditsDelta: 0n,
+      heldCreditsDelta: -cost,
+      balanceBefore: creditsBefore,
+      balanceAfter: creditsAfter,
+      reason: "FULFILLMENT_CAPTURE_FINALIZED",
+      service: hold.serviceSlug,
+      requestId: `${hold.ticketId}:capture`,
+      metadata: {
+        holdId: hold.id,
+        ticketId: hold.ticketId,
+        deliveryProofId,
+        serviceSlug: hold.serviceSlug,
+        merchantSigner,
+        merchantOwnerAddress: hold.merchantOwnerAddress,
+        completedAt: input.completedAt.toISOString(),
+        statusCode: input.statusCode.toString(),
+        latencyMs: input.latencyMs.toString(),
+        responseHash,
+        proofTypedHash: input.proofTypedHash ?? null,
+      },
+    });
+
+    await createAttempt({
+      success: true,
+      httpStatus: 200,
+      captureDisposition: "CAPTURED",
+    });
+
+    return {
+      status: "captured",
+      holdId: hold.id,
+      ticketId: hold.ticketId,
+      deliveryProofId,
+      captureDisposition: "CAPTURED",
+      serviceSlug: hold.serviceSlug,
+      walletAddress: hold.walletAddress,
+      merchantSigner,
+      state: "CAPTURED",
+      capturedAt: input.completedAt,
+      cost,
+      creditsBefore,
+      creditsAfter,
+      heldCreditsBefore,
+      heldCreditsAfter,
+    } satisfies CaptureFulfillmentHoldResult;
+  });
+};
+
+export const listExpiredFulfillmentHoldCandidates = async (input: {
+  now?: Date;
+  limit: number;
+}): Promise<FulfillmentExpireSweepCandidate[]> => {
+  if (!Number.isInteger(input.limit) || input.limit <= 0) {
+    throw new Error("Fulfillment expire sweep limit must be a positive integer.");
+  }
+
+  const now = input.now ?? new Date();
+  const rows = await prisma.fulfillmentHold.findMany({
+    where: {
+      state: "HELD",
+      expiresAt: { lte: now },
+    },
+    orderBy: [{ expiresAt: "asc" }, { createdAt: "asc" }],
+    take: input.limit,
+    select: {
+      id: true,
+      ticketId: true,
+      walletAddress: true,
+      serviceSlug: true,
+      cost: true,
+      state: true,
+      expiresAt: true,
+    },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    ticketId: row.ticketId,
+    walletAddress: row.walletAddress,
+    serviceSlug: row.serviceSlug,
+    cost: BigInt(row.cost),
+    state: row.state,
+    expiresAt: row.expiresAt,
+  }));
+};
+
+const expireFulfillmentHoldById = async (input: {
+  holdId: string;
+  now: Date;
+}): Promise<FulfillmentExpireSweepItemResult> => {
+  return prisma.$transaction(async (tx) => {
+    const lockedHoldRows = await tx.$queryRaw<
+      Array<{
+        id: string;
+        ticketId: string;
+        walletAddress: string;
+        serviceSlug: string;
+        cost: number;
+        state: "HELD" | "CAPTURED" | "RELEASED" | "EXPIRED";
+        expiresAt: Date;
+      }>
+    >(Prisma.sql`
+      SELECT "id", "ticketId", "walletAddress", "serviceSlug", "cost", "state", "expiresAt"
+      FROM "FulfillmentHold"
+      WHERE "id" = ${input.holdId}
+      FOR UPDATE
+    `);
+
+    const hold = lockedHoldRows[0];
+    if (!hold) {
+      throw new Error(`Fulfillment hold not found during expire sweep: ${input.holdId}`);
+    }
+
+    if (hold.state !== "HELD") {
+      return {
+        holdId: hold.id,
+        ticketId: hold.ticketId,
+        status: "skipped_terminal",
+        state: hold.state,
+        expiresAt: hold.expiresAt,
+      };
+    }
+
+    if (hold.expiresAt > input.now) {
+      return {
+        holdId: hold.id,
+        ticketId: hold.ticketId,
+        status: "skipped_not_due",
+        state: hold.state,
+        expiresAt: hold.expiresAt,
+      };
+    }
+
+    const lockedBalanceRows = await tx.$queryRaw<Array<{ walletAddress: string; credits: number; heldCredits: number }>>(
+      Prisma.sql`
+        SELECT "walletAddress", "credits", "heldCredits"
+        FROM "CreditBalance"
+        WHERE "walletAddress" = ${hold.walletAddress}
+        FOR UPDATE
+      `,
+    );
+    const balance = lockedBalanceRows[0];
+    if (!balance) {
+      throw new Error(`CreditBalance missing for fulfillment hold wallet ${hold.walletAddress}`);
+    }
+
+    const cost = BigInt(hold.cost);
+    const creditsBefore = BigInt(balance.credits);
+    const heldCreditsBefore = BigInt(balance.heldCredits);
+    if (heldCreditsBefore < cost) {
+      throw new Error(
+        `heldCredits invariant violation for wallet ${hold.walletAddress}: held=${heldCreditsBefore} cost=${cost}`,
+      );
+    }
+
+    await tx.fulfillmentHold.update({
+      where: { id: hold.id },
+      data: {
+        state: "EXPIRED",
+        releasedAt: input.now,
+        releaseReason: "TTL_EXPIRED",
+        lastError: null,
+      },
+    });
+
+    const updatedBalance = await tx.creditBalance.update({
+      where: { walletAddress: hold.walletAddress },
+      data: {
+        credits: { increment: hold.cost },
+        heldCredits: { decrement: hold.cost },
+      },
+    });
+
+    const creditsAfter = BigInt(updatedBalance.credits);
+    const heldCreditsAfter = BigInt(updatedBalance.heldCredits);
+
+    await writeCreditLedger(tx, {
+      walletAddress: hold.walletAddress,
+      direction: "CREDIT",
+      amount: cost,
+      availableCreditsDelta: cost,
+      heldCreditsDelta: -cost,
+      balanceBefore: creditsBefore,
+      balanceAfter: creditsAfter,
+      reason: "FULFILLMENT_HOLD_EXPIRED",
+      service: hold.serviceSlug,
+      requestId: `${hold.ticketId}:expire`,
+      metadata: {
+        ticketId: hold.ticketId,
+        holdId: hold.id,
+        serviceSlug: hold.serviceSlug,
+        releaseReason: "TTL_EXPIRED",
+        expiredAt: input.now.toISOString(),
+      },
+    });
+
+    return {
+      holdId: hold.id,
+      ticketId: hold.ticketId,
+      status: "expired",
+      walletAddress: hold.walletAddress,
+      serviceSlug: hold.serviceSlug,
+      cost,
+      creditsBefore,
+      creditsAfter,
+      heldCreditsBefore,
+      heldCreditsAfter,
+    };
+  });
+};
+
+export const expireFulfillmentHolds = async (input: {
+  now?: Date;
+  limit: number;
+}): Promise<FulfillmentExpireSweepResult> => {
+  const now = input.now ?? new Date();
+  const candidates = await listExpiredFulfillmentHoldCandidates({ now, limit: input.limit });
+
+  const results: FulfillmentExpireSweepItemResult[] = [];
+  let released = 0;
+  let skippedTerminal = 0;
+  let skippedNotDue = 0;
+  let errors = 0;
+
+  for (const candidate of candidates) {
+    try {
+      const result = await expireFulfillmentHoldById({ holdId: candidate.id, now });
+      results.push(result);
+      if (result.status === "expired") released += 1;
+      else if (result.status === "skipped_terminal") skippedTerminal += 1;
+      else if (result.status === "skipped_not_due") skippedNotDue += 1;
+    } catch (error) {
+      errors += 1;
+      console.error("Fulfillment expire sweep failed for hold.", {
+        holdId: candidate.id,
+        ticketId: candidate.ticketId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return {
+    selected: candidates.length,
+    processed: results.length,
+    released,
+    skippedTerminal,
+    skippedNotDue,
+    errors,
+    results,
+  };
 };
 
 export type ConsumeUserCreditsOptions = {

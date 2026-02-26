@@ -1,6 +1,7 @@
 {
   "name": "ghost-rank-indexer",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "packageManager": "npm@10.8.2",
   "scripts": {
@@ -12,6 +13,8 @@
     "score": "npx tsx scripts/score-leads.ts",
     "score:v2": "npx tsx scripts/score-v2.ts",
     "reconcile:credits": "npx tsx scripts/reconcile-credits.ts",
+    "generate:fulfillment:fixtures": "npx tsx scripts/generate-fulfillment-fixtures.ts",
+    "test:fulfillment:fixtures": "npx tsx scripts/verify-fulfillment-fixtures.ts",
     "monitor:credits": "npx tsx scripts/monitor-credit-alerts.ts",
     "test:credits:regression": "npx tsx scripts/test-credit-regression.ts",
     "typecheck": "tsc --noEmit",

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { privateKeyToAccount } from "viem/accounts";
 
+export * from "./fulfillment";
+
 export type GhostAgentConfig = {
   baseUrl?: string;
   privateKey?: `0x${string}`;

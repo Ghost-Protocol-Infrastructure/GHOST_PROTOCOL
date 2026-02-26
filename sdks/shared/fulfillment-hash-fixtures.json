@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "jsonCases": [
+    {
+      "name": "simple_sorted_object",
+      "input": {
+        "b": 2,
+        "a": 1
+      },
+      "canonical": "{\"a\":1,\"b\":2}",
+      "sha256": "0x43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777"
+    },
+    {
+      "name": "nested_utf8_array",
+      "input": {
+        "service": "agent-18755",
+        "payload": {
+          "z": [
+            "x",
+            true,
+            null,
+            {
+              "é": "✓"
+            }
+          ],
+          "a": "hello"
+        }
+      },
+      "canonical": "{\"payload\":{\"a\":\"hello\",\"z\":[\"x\",true,null,{\"é\":\"✓\"}]},\"service\":\"agent-18755\"}",
+      "sha256": "0x717bf12edd99f139c178636151783e49091fd8451fada5674e05f8fc3618e7f0"
+    },
+    {
+      "name": "number_and_escape_handling",
+      "input": {
+        "path": "/ask",
+        "quote": "\"hello\"",
+        "amount": 1.25,
+        "zero": 0
+      },
+      "canonical": "{\"amount\":1.25,\"path\":\"/ask\",\"quote\":\"\\\"hello\\\"\",\"zero\":0}",
+      "sha256": "0x958fdbec65ef7df9a8c1251c86dd857d1deb6e180cccc2cdff5acedd2c042c1c"
+    }
+  ],
+  "queryCases": [
+    {
+      "name": "empty",
+      "input": "",
+      "canonical": "",
+      "parsedPairs": [],
+      "sha256": "0x0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "key_only",
+      "input": "debug",
+      "canonical": "debug=",
+      "parsedPairs": [
+        {
+          "key": "debug",
+          "value": ""
+        }
+      ],
+      "sha256": "0x77839a0cc1710aa6c768747cbf26dd381057e6bc776f1f11339e326a76507730"
+    },
+    {
+      "name": "plus_space_and_sorting",
+      "input": "b=two+words&a=%2fapi%2fv1&z=last",
+      "canonical": "a=%2Fapi%2Fv1&b=two%20words&z=last",
+      "parsedPairs": [
+        {
+          "key": "a",
+          "value": "/api/v1"
+        },
+        {
+          "key": "b",
+          "value": "two words"
+        },
+        {
+          "key": "z",
+          "value": "last"
+        }
+      ],
+      "sha256": "0xe84d8567c1e8b38e4ba9fc4fb33907f208d3fb516a722e18ef2cde28acab0497"
+    },
+    {
+      "name": "utf8_and_reserved",
+      "input": "q=%E2%9C%93+ok&msg=a%2Bb%26c&path=%2fapi%2fv1",
+      "canonical": "msg=a%2Bb%26c&path=%2Fapi%2Fv1&q=%E2%9C%93%20ok",
+      "parsedPairs": [
+        {
+          "key": "msg",
+          "value": "a+b&c"
+        },
+        {
+          "key": "path",
+          "value": "/api/v1"
+        },
+        {
+          "key": "q",
+          "value": "✓ ok"
+        }
+      ],
+      "sha256": "0x7bb1ce7862cefc0211a7705e4ced31a7b4b5e992390c3394517af394b2dbf57e"
+    },
+    {
+      "name": "question_prefix",
+      "input": "?name=Booski&mode=consumer",
+      "canonical": "mode=consumer&name=Booski",
+      "parsedPairs": [
+        {
+          "key": "mode",
+          "value": "consumer"
+        },
+        {
+          "key": "name",
+          "value": "Booski"
+        }
+      ],
+      "sha256": "0xb2942df43f3f9be7176f82696287edd1eafa54fbd6d38a7921eef733c598ec4d"
+    }
+  ],
+  "queryRejectCases": [
+    {
+      "name": "duplicate_key",
+      "input": "a=1&a=2",
+      "errorCode": "FULFILLMENT_QUERY_DUPLICATE_KEY"
+    },
+    {
+      "name": "empty_key",
+      "input": "=value",
+      "errorCode": "FULFILLMENT_QUERY_EMPTY_KEY"
+    },
+    {
+      "name": "malformed_percent",
+      "input": "bad=%ZZ",
+      "errorCode": "FULFILLMENT_QUERY_MALFORMED_PERCENT_ESCAPE"
+    }
+  ]
+}
