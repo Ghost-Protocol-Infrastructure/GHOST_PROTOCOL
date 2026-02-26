@@ -1297,7 +1297,18 @@ const upsertAgents = async (records: Map<string, IndexedAgentRecord>, usedAgentI
   markIndexerProgress(`upsertAgents:load-existing:start records=${records.size}`);
   const existing = await prisma.agent.findMany({
     where: { address: { in: addresses } },
-    select: { address: true, agentId: true },
+    select: {
+      address: true,
+      agentId: true,
+      name: true,
+      creator: true,
+      owner: true,
+      image: true,
+      description: true,
+      telegram: true,
+      twitter: true,
+      website: true,
+    },
   });
   markIndexerProgress(`upsertAgents:load-existing:done existing=${existing.length}`);
   const existingSet = new Set(existing.map((row) => row.address));
@@ -1315,33 +1326,44 @@ const upsertAgents = async (records: Map<string, IndexedAgentRecord>, usedAgentI
     const resolvedAgentId = current?.agentId
       ? current.agentId
       : allocateUniqueAgentId(deriveAgentId(record), record.address, resolvedUsedAgentIds);
+    const nextData = {
+      agentId: resolvedAgentId,
+      name: record.name,
+      creator: record.creator,
+      owner: record.owner,
+      image: record.image,
+      description: record.description,
+      telegram: record.telegram,
+      twitter: record.twitter,
+      website: record.website,
+    };
 
-    await prisma.agent.upsert({
-      where: { address: record.address },
-      create: {
-        address: record.address,
-        agentId: resolvedAgentId,
-        name: record.name,
-        creator: record.creator,
-        owner: record.owner,
-        image: record.image,
-        description: record.description,
-        telegram: record.telegram,
-        twitter: record.twitter,
-        website: record.website,
-      },
-      update: {
-        agentId: resolvedAgentId,
-        name: record.name,
-        creator: record.creator,
-        owner: record.owner,
-        image: record.image,
-        description: record.description,
-        telegram: record.telegram,
-        twitter: record.twitter,
-        website: record.website,
-      },
-    });
+    if (!current) {
+      await prisma.agent.create({
+        data: {
+          address: record.address,
+          ...nextData,
+        },
+      });
+    } else {
+      const unchanged =
+        current.agentId === nextData.agentId &&
+        current.name === nextData.name &&
+        current.creator === nextData.creator &&
+        current.owner === nextData.owner &&
+        current.image === nextData.image &&
+        current.description === nextData.description &&
+        current.telegram === nextData.telegram &&
+        current.twitter === nextData.twitter &&
+        current.website === nextData.website;
+
+      if (!unchanged) {
+        await prisma.agent.update({
+          where: { address: record.address },
+          data: nextData,
+        });
+      }
+    }
 
     processed += 1;
     if (processed % 250 === 0 || processed === records.size) {
