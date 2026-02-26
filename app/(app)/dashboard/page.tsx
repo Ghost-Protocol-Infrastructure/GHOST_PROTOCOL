@@ -129,6 +129,7 @@ const SDK_SECURITY_NOTICE =
 const DEFAULT_CANARY_PATH = "/ghostgate/canary";
 const DEFAULT_MERCHANT_CANARY_HISTORY_LIMIT = 8;
 const DEFAULT_MERCHANT_DELEGATED_SIGNER_MAX_ACTIVE = 2;
+const DEFAULT_MERCHANT_REVOKED_SIGNER_HISTORY_VISIBLE = false;
 const GATEWAY_READINESS_POLL_INTERVAL_MS = 10_000;
 const MAX_DEPOSIT_CREDIT_SYNC_CATCHUP_ATTEMPTS = 12;
 const DEPOSIT_CREDIT_SYNC_CATCHUP_DELAY_MS = 200;
@@ -430,6 +431,9 @@ function DashboardPageContent() {
   const [revokingMerchantDelegatedSignerId, setRevokingMerchantDelegatedSignerId] = useState<string | null>(null);
   const [merchantDelegatedSignerError, setMerchantDelegatedSignerError] = useState<string | null>(null);
   const [merchantDelegatedSignerNotice, setMerchantDelegatedSignerNotice] = useState<string | null>(null);
+  const [showRevokedMerchantDelegatedSignerHistory, setShowRevokedMerchantDelegatedSignerHistory] = useState(
+    DEFAULT_MERCHANT_REVOKED_SIGNER_HISTORY_VISIBLE,
+  );
   const [consumerGatewayReadinessStatus, setConsumerGatewayReadinessStatus] = useState<GatewayReadinessStatus | null>(null);
   const [consumerGatewayLastCheckedAt, setConsumerGatewayLastCheckedAt] = useState<string | null>(null);
   const [consumerGatewayLastPassedAt, setConsumerGatewayLastPassedAt] = useState<string | null>(null);
@@ -442,6 +446,14 @@ function DashboardPageContent() {
     if (amountWei == null) return null;
     return amountWei / CREDIT_PRICE_WEI;
   }, [amountWei]);
+  const activeMerchantDelegatedSigners = useMemo(
+    () => merchantDelegatedSigners.filter((signer) => signer.status === "ACTIVE"),
+    [merchantDelegatedSigners],
+  );
+  const revokedMerchantDelegatedSigners = useMemo(
+    () => merchantDelegatedSigners.filter((signer) => signer.status === "REVOKED"),
+    [merchantDelegatedSigners],
+  );
 
   const requestedAgentId = searchParams.get("agentId");
   const requestedOwner = searchParams.get("owner");
@@ -2010,57 +2022,110 @@ def my_agent():
                       ) : merchantDelegatedSigners.length === 0 ? (
                         <p className="mt-3 text-xs text-neutral-600">No delegated runtime signers registered yet.</p>
                       ) : (
-                        <div className="mt-3 space-y-2 overflow-y-auto max-h-72 pr-1">
-                          {merchantDelegatedSigners.map((signer) => {
-                            const isActiveSigner = signer.status === "ACTIVE";
-                            const isRevoking = revokingMerchantDelegatedSignerId === signer.id;
-                            return (
-                              <div
-                                key={signer.id}
-                                className="border border-neutral-900 bg-neutral-900/60 px-3 py-2"
-                              >
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <div className="flex min-w-0 flex-1 items-center gap-2">
-                                    <span
-                                      className={`h-2 w-2 rounded-none ${isActiveSigner ? "bg-emerald-400" : "bg-neutral-600"}`}
-                                    />
-                                    <span
-                                      className={`text-[10px] uppercase tracking-[0.16em] font-bold ${isActiveSigner ? "text-emerald-300" : "text-neutral-500"}`}
+                        <div className="mt-3 space-y-3">
+                          {activeMerchantDelegatedSigners.length > 0 && (
+                            <div className="space-y-2">
+                              <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
+                                Active Signers ({activeMerchantDelegatedSigners.length})
+                              </p>
+                              <div className="space-y-2">
+                                {activeMerchantDelegatedSigners.map((signer) => {
+                                  const isRevoking = revokingMerchantDelegatedSignerId === signer.id;
+                                  return (
+                                    <div
+                                      key={signer.id}
+                                      className="border border-neutral-900 bg-neutral-900/60 px-3 py-2"
                                     >
-                                      {signer.status}
-                                    </span>
-                                    {signer.label && (
-                                      <span className="text-[10px] uppercase tracking-[0.14em] text-neutral-500">
-                                        {signer.label}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => void handleRevokeMerchantDelegatedSigner(signer.id)}
-                                    disabled={
-                                      !isActiveSigner ||
-                                      !selectedOwnedAgent ||
-                                      !isConnected ||
-                                      !merchantOwnsSelectedAgent ||
-                                      isRegisteringMerchantDelegatedSigner ||
-                                      !!revokingMerchantDelegatedSignerId
-                                    }
-                                    className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-neutral-400 transition hover:border-red-700 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
-                                  >
-                                    {isRevoking ? "REVOKING..." : "REVOKE"}
-                                  </button>
-                                </div>
-                                <p className="mt-2 break-all text-xs text-neutral-400 font-mono">{signer.signerAddress}</p>
-                                <p className="mt-1 text-[11px] text-neutral-600">
-                                  Added {new Date(signer.createdAt).toLocaleString()} ({formatRelativeTimeFromIso(signer.createdAt)})
-                                  {signer.revokedAt
-                                    ? ` // Revoked ${new Date(signer.revokedAt).toLocaleString()} (${formatRelativeTimeFromIso(signer.revokedAt)})`
-                                    : ""}
-                                </p>
+                                      <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <div className="flex min-w-0 flex-1 items-center gap-2">
+                                          <span className="h-2 w-2 rounded-none bg-emerald-400" />
+                                          <span className="text-[10px] uppercase tracking-[0.16em] font-bold text-emerald-300">
+                                            ACTIVE
+                                          </span>
+                                          {signer.label && (
+                                            <span className="text-[10px] uppercase tracking-[0.14em] text-neutral-500">
+                                              {signer.label}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => void handleRevokeMerchantDelegatedSigner(signer.id)}
+                                          disabled={
+                                            !selectedOwnedAgent ||
+                                            !isConnected ||
+                                            !merchantOwnsSelectedAgent ||
+                                            isRegisteringMerchantDelegatedSigner ||
+                                            !!revokingMerchantDelegatedSignerId
+                                          }
+                                          className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-neutral-400 transition hover:border-red-700 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                          {isRevoking ? "REVOKING..." : "REVOKE"}
+                                        </button>
+                                      </div>
+                                      <p className="mt-2 break-all text-xs text-neutral-400 font-mono">{signer.signerAddress}</p>
+                                      <p className="mt-1 text-[11px] text-neutral-600">
+                                        Added {new Date(signer.createdAt).toLocaleString()} ({formatRelativeTimeFromIso(signer.createdAt)})
+                                      </p>
+                                    </div>
+                                  );
+                                })}
                               </div>
-                            );
-                          })}
+                            </div>
+                          )}
+
+                          {revokedMerchantDelegatedSigners.length > 0 && (
+                            <div className="space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
+                                  Revoked History ({revokedMerchantDelegatedSigners.length})
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setShowRevokedMerchantDelegatedSignerHistory((current) => !current)
+                                  }
+                                  className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-neutral-500 transition hover:border-neutral-700 hover:text-neutral-300"
+                                >
+                                  {showRevokedMerchantDelegatedSignerHistory ? "HIDE" : "SHOW"}
+                                </button>
+                              </div>
+                              {showRevokedMerchantDelegatedSignerHistory && (
+                                <div className="space-y-2 overflow-y-auto max-h-44 pr-1">
+                                  {revokedMerchantDelegatedSigners.map((signer) => (
+                                    <div
+                                      key={signer.id}
+                                      className="border border-neutral-900 bg-neutral-900/60 px-3 py-2"
+                                    >
+                                      <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <div className="flex min-w-0 flex-1 items-center gap-2">
+                                          <span className="h-2 w-2 rounded-none bg-neutral-600" />
+                                          <span className="text-[10px] uppercase tracking-[0.16em] font-bold text-neutral-500">
+                                            REVOKED
+                                          </span>
+                                          {signer.label && (
+                                            <span className="text-[10px] uppercase tracking-[0.14em] text-neutral-500">
+                                              {signer.label}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <span className="text-[10px] uppercase tracking-[0.16em] text-neutral-700 font-bold">
+                                          NO ACTION
+                                        </span>
+                                      </div>
+                                      <p className="mt-2 break-all text-xs text-neutral-400 font-mono">{signer.signerAddress}</p>
+                                      <p className="mt-1 text-[11px] text-neutral-600">
+                                        Added {new Date(signer.createdAt).toLocaleString()} ({formatRelativeTimeFromIso(signer.createdAt)})
+                                        {signer.revokedAt
+                                          ? ` // Revoked ${new Date(signer.revokedAt).toLocaleString()} (${formatRelativeTimeFromIso(signer.revokedAt)})`
+                                          : ""}
+                                      </p>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
