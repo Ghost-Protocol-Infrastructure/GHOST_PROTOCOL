@@ -454,6 +454,8 @@ function DashboardPageContent() {
     () => merchantDelegatedSigners.filter((signer) => signer.status === "REVOKED"),
     [merchantDelegatedSigners],
   );
+  const merchantDelegatedSignerAtCapacity =
+    merchantDelegatedSignerMaxActive > 0 && merchantDelegatedSignerActiveCount >= merchantDelegatedSignerMaxActive;
 
   const requestedAgentId = searchParams.get("agentId");
   const requestedOwner = searchParams.get("owner");
@@ -1444,6 +1446,13 @@ print("body:", response.text)`,
 
   const handleRegisterMerchantDelegatedSigner = async () => {
     if (!selectedOwnedAgent || !address) return;
+    if (merchantDelegatedSignerAtCapacity) {
+      setMerchantDelegatedSignerError(
+        `Active signer cap reached (${merchantDelegatedSignerActiveCount}/${merchantDelegatedSignerMaxActive}). Revoke an active signer before registering another.`,
+      );
+      setMerchantDelegatedSignerNotice(null);
+      return;
+    }
 
     const normalizedSignerAddress = normalizeAddress(merchantDelegatedSignerAddressInput);
     if (!normalizedSignerAddress) {
@@ -1510,12 +1519,19 @@ print("body:", response.text)`,
     }
   };
 
-  const handleRevokeMerchantDelegatedSigner = async (delegatedSignerId: string) => {
+  const handleRevokeMerchantDelegatedSigner = async (signer: AgentGatewayDelegatedSignerEntry) => {
     if (!selectedOwnedAgent || !address) return;
+    if (signer.status !== "ACTIVE") return;
+
+    const signerLabel = signer.label ? ` (${signer.label})` : "";
+    const confirmed = window.confirm(
+      `Revoke delegated signer${signerLabel}?\n\n${signer.signerAddress}\n\nThis will block new fulfillment captures signed with this key. Revoked history will remain visible.`,
+    );
+    if (!confirmed) return;
 
     setMerchantDelegatedSignerError(null);
     setMerchantDelegatedSignerNotice(null);
-    setRevokingMerchantDelegatedSignerId(delegatedSignerId);
+    setRevokingMerchantDelegatedSignerId(signer.id);
 
     try {
       const authPayload = createMerchantGatewayAuthPayload({
@@ -1541,7 +1557,7 @@ print("body:", response.text)`,
           ownerAddress: selectedOwnedAgent.owner,
           actorAddress: address.toLowerCase(),
           serviceSlug: `agent-${selectedOwnedAgent.agentId}`,
-          delegatedSignerId,
+          delegatedSignerId: signer.id,
           authPayload,
           authSignature,
         }),
@@ -1969,6 +1985,7 @@ def my_agent():
                             value={merchantDelegatedSignerAddressInput}
                             onChange={(event) => setMerchantDelegatedSignerAddressInput(event.target.value)}
                             placeholder="0x..."
+                            disabled={merchantDelegatedSignerAtCapacity}
                             className="mt-2 w-full border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-red-600 rounded-none font-mono"
                           />
                         </label>
@@ -1980,6 +1997,7 @@ def my_agent():
                             onChange={(event) => setMerchantDelegatedSignerLabelInput(event.target.value)}
                             placeholder="booski-prod-1"
                             maxLength={64}
+                            disabled={merchantDelegatedSignerAtCapacity}
                             className="mt-2 w-full border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-red-600 rounded-none font-mono"
                           />
                         </label>
@@ -1996,6 +2014,7 @@ def my_agent():
                             isLoadingMerchantDelegatedSigners ||
                             isRegisteringMerchantDelegatedSigner ||
                             !!revokingMerchantDelegatedSignerId ||
+                            merchantDelegatedSignerAtCapacity ||
                             !merchantGatewayConfig ||
                             !merchantDelegatedSignerAddressInput.trim()
                           }
@@ -2009,6 +2028,12 @@ def my_agent():
                         Delegated signers are merchant server runtime keys used for fulfillment capture. Keep these keys off the frontend and rotate
                         by registering a new signer before revoking the old signer.
                       </p>
+                      {merchantDelegatedSignerAtCapacity && (
+                        <p className="mt-2 text-xs text-amber-400">
+                          Active signer cap reached ({merchantDelegatedSignerActiveCount}/{merchantDelegatedSignerMaxActive}). Revoke an active signer
+                          to register another.
+                        </p>
+                      )}
 
                       {merchantDelegatedSignerError && <p className="mt-3 text-xs text-red-500">{merchantDelegatedSignerError}</p>}
                       {merchantDelegatedSignerNotice && (
@@ -2050,7 +2075,7 @@ def my_agent():
                                         </div>
                                         <button
                                           type="button"
-                                          onClick={() => void handleRevokeMerchantDelegatedSigner(signer.id)}
+                                          onClick={() => void handleRevokeMerchantDelegatedSigner(signer)}
                                           disabled={
                                             !selectedOwnedAgent ||
                                             !isConnected ||
