@@ -1,0 +1,80 @@
+name: Fulfillment Expire Sweep
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Base URL to call (defaults to production)"
+        required: false
+        default: "https://www.ghostprotocol.cc"
+        type: string
+      limit:
+        description: "Max expired holds to process"
+        required: false
+        default: "250"
+        type: string
+      dry_run:
+        description: "Select candidates only (no state changes)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+  schedule:
+    - cron: "* * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fulfillment-expire-sweep
+  cancel-in-progress: false
+
+jobs:
+  expire-sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Invoke fulfillment expire-sweep endpoint
+        env:
+          EXPIRE_SWEEP_SECRET: ${{ secrets.GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET }}
+          BASE_URL_INPUT: ${{ github.event.inputs.base_url }}
+          LIMIT_INPUT: ${{ github.event.inputs.limit }}
+          DRY_RUN_INPUT: ${{ github.event.inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${EXPIRE_SWEEP_SECRET:-}" ]; then
+            echo "Missing repo secret GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET" >&2
+            exit 1
+          fi
+
+          base_url="${BASE_URL_INPUT:-https://www.ghostprotocol.cc}"
+          base_url="${base_url%/}"
+          if [ "${base_url}" = "https://ghostprotocol.cc" ]; then
+            base_url="https://www.ghostprotocol.cc"
+          fi
+
+          limit="${LIMIT_INPUT:-250}"
+          dry_run="${DRY_RUN_INPUT:-false}"
+
+          url="${base_url}/api/fulfillment/expire-sweep?limit=${limit}"
+          if [ "${dry_run}" = "true" ]; then
+            url="${url}&dryRun=1"
+          fi
+
+          echo "Calling ${url}"
+          http_code="$(curl -sS -o response.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${EXPIRE_SWEEP_SECRET}" \
+            -H "Accept: application/json" \
+            "${url}")"
+
+          cat response.json
+          echo
+
+          if [ "${http_code}" != "200" ]; then
+            echo "Fulfillment expire-sweep endpoint failed with HTTP ${http_code}" >&2
+            exit 1
+          fi
+
