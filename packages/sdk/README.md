@@ -8,7 +8,7 @@ Node.js SDK for Ghost Protocol gate access, fulfillment, telemetry, and canary h
 npm install @ghostgate/sdk
 ```
 
-Until the package is published to npm, you can also test locally from this repo:
+If you need to test unreleased SDK changes from this repo locally:
 
 ```bash
 npm run build:sdk
@@ -31,7 +31,7 @@ npm install ../GHOST_PROTOCOL/packages/sdk
 ## Example
 
 ```ts
-import { GhostAgent, GhostMerchant } from "@ghostgate/sdk";
+import { GhostAgent } from "@ghostgate/sdk";
 
 const sdk = new GhostAgent({
   apiKey: process.env.GHOST_API_KEY,

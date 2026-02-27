@@ -14,7 +14,7 @@ Use this guide to send your first authorized request through Ghost Gate.
 npm install @ghostgate/sdk
 ```
 
-Until the npm package is published, you can build and install the local package from this repo:
+If you need to test unreleased SDK changes from this repo locally:
 
 ```bash
 npm run build:sdk
