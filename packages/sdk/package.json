@@ -2,8 +2,27 @@
   "name": "@ghostgate/sdk",
   "version": "0.1.0",
   "description": "Ghost Protocol Node.js SDK for gate access, fulfillment, telemetry, and canary helpers.",
+  "author": "Ghost Protocol",
   "license": "MIT",
   "type": "module",
+  "homepage": "https://ghostprotocol.cc",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ghost-Protocol-Infrastructure/GHOST_PROTOCOL.git",
+    "directory": "packages/sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/Ghost-Protocol-Infrastructure/GHOST_PROTOCOL/issues"
+  },
+  "keywords": [
+    "ghostprotocol",
+    "ghostgate",
+    "sdk",
+    "fulfillment",
+    "eip712",
+    "telemetry",
+    "base"
+  ],
   "publishConfig": {
     "access": "public"
   },
@@ -13,7 +32,8 @@
   "sideEffects": false,
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
