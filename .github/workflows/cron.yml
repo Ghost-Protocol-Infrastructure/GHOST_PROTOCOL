@@ -36,7 +36,7 @@ on:
           - "false"
           - "true"
   schedule:
-    - cron: '0 1-23/2 * * *'
+    - cron: "0 1-23/2 * * *"
 
 permissions:
   contents: read
