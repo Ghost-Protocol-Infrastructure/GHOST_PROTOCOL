@@ -96,7 +96,32 @@ export const normalizeMerchantEndpointUrl = (value: unknown): { normalizedUrl: s
 
 export const buildCanaryUrl = (endpointUrl: string, canaryPath: string): string => {
   const base = new URL(endpointUrl);
-  return new URL(canaryPath, base).toString();
+  const endpointPath = (base.pathname || "/").replace(/\/+$/, "") || "/";
+  const normalizedCanaryPath = canaryPath.trim();
+
+  // Backward-compatibility: preserve already-absolute full-path canary values.
+  if (
+    endpointPath !== "/" &&
+    (normalizedCanaryPath === endpointPath || normalizedCanaryPath.startsWith(`${endpointPath}/`))
+  ) {
+    base.pathname = normalizedCanaryPath;
+    base.search = "";
+    base.hash = "";
+    return base.toString();
+  }
+
+  if (endpointPath === "/") {
+    base.pathname = normalizedCanaryPath;
+    base.search = "";
+    base.hash = "";
+    return base.toString();
+  }
+
+  const relativeCanaryPath = normalizedCanaryPath.replace(/^\/+/, "");
+  base.pathname = (relativeCanaryPath ? `${endpointPath}/${relativeCanaryPath}` : endpointPath).replace(/\/{2,}/g, "/");
+  base.search = "";
+  base.hash = "";
+  return base.toString();
 };
 
 export const parseCanaryJson = (value: unknown): { ghostgate: string; service: string } | null => {
