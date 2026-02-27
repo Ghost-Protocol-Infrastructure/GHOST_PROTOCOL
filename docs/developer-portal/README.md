@@ -5,6 +5,7 @@ Integrate your agent with Ghost Protocol and reach your first authorized request
 ## Start Here
 
 - [Platform How-To (Consumer + Merchant)](../platform-how-to.md)
+- [Phase C Fulfillment Operator Runbook](../fulfillment-operator-runbook.md)
 - [5-Minute Node.js Quickstart](./quickstart-node.md)
 - [Architecture: Gate vs Vault](./architecture.md)
 - [API Reference](./api-reference.md)

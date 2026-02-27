@@ -10,6 +10,8 @@ import {
   parseBooleanFlag,
   parsePositiveIntBounded,
 } from "@/lib/fulfillment-route";
+import { consumeFulfillmentRateLimit } from "@/lib/fulfillment-rate-limit";
+import { extractFulfillmentErrorCode, observeFulfillmentResponseEvent } from "@/lib/fulfillment-observability";
 
 export const runtime = "nodejs";
 
@@ -37,9 +39,48 @@ const parseBodyOverrides = async (
 const isSchemaUnavailableError = (error: unknown): boolean =>
   error instanceof Prisma.PrismaClientKnownRequestError && (error.code === "P2021" || error.code === "P2022");
 
+const expireSweepResponse = (
+  body: unknown,
+  status = 200,
+  options?: { retryAfterSeconds?: number; meta?: Record<string, unknown> },
+): NextResponse => {
+  observeFulfillmentResponseEvent({
+    route: "expire_sweep",
+    status,
+    errorCode: extractFulfillmentErrorCode(body),
+    meta: options?.meta,
+  });
+  if (typeof options?.retryAfterSeconds === "number") {
+    return NextResponse.json(body, {
+      status,
+      headers: {
+        "cache-control": "no-store",
+        "retry-after": String(options.retryAfterSeconds),
+      },
+    });
+  }
+  return fulfillmentJson(body, status);
+};
+
 async function handle(request: NextRequest): Promise<NextResponse> {
+  const rateLimit = consumeFulfillmentRateLimit({ request, action: "expire_sweep", scopeKey: "internal" });
+  if (!rateLimit.ok) {
+    return expireSweepResponse(
+      {
+        code: 429,
+        error: rateLimit.error,
+        errorCode: rateLimit.errorCode,
+      },
+      429,
+      {
+        retryAfterSeconds: rateLimit.retryAfterSeconds,
+        meta: { rateLimited: true },
+      },
+    );
+  }
+
   if (!isFulfillmentExpireSweepAuthorized(request)) {
-    return fulfillmentJson({ code: 401, error: "Unauthorized expire sweep request.", errorCode: "UNAUTHORIZED" }, 401);
+    return expireSweepResponse({ code: 401, error: "Unauthorized expire sweep request.", errorCode: "UNAUTHORIZED" }, 401);
   }
 
   const bodyOverrides = await parseBodyOverrides(request);
@@ -58,7 +99,7 @@ async function handle(request: NextRequest): Promise<NextResponse> {
   try {
     if (dryRun) {
       const candidates = await listExpiredFulfillmentHoldCandidates({ now, limit });
-      return fulfillmentJson(
+      return expireSweepResponse(
         {
           ok: true,
           apiVersion: FULFILLMENT_API_VERSION,
@@ -87,7 +128,7 @@ async function handle(request: NextRequest): Promise<NextResponse> {
     }
 
     const result = await expireFulfillmentHolds({ now, limit });
-    return fulfillmentJson(
+    return expireSweepResponse(
       {
         ok: true,
         apiVersion: FULFILLMENT_API_VERSION,
@@ -128,7 +169,7 @@ async function handle(request: NextRequest): Promise<NextResponse> {
     );
   } catch (error) {
     if (isSchemaUnavailableError(error)) {
-      return fulfillmentJson(
+      return expireSweepResponse(
         {
           code: 503,
           error: "Phase C fulfillment schema is not available in this environment yet.",
@@ -138,7 +179,7 @@ async function handle(request: NextRequest): Promise<NextResponse> {
       );
     }
     console.error("Fulfillment expire sweep failed.", error);
-    return fulfillmentJson(
+    return expireSweepResponse(
       {
         code: 500,
         error: "Fulfillment expire sweep failed.",

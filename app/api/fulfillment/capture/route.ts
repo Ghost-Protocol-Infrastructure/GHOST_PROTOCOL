@@ -10,6 +10,8 @@ import {
 } from "@/lib/fulfillment-eip712";
 import { captureFulfillmentHold } from "@/lib/db";
 import { fulfillmentJson, normalizeHex32Lower, normalizeHexSignatureLower } from "@/lib/fulfillment-route";
+import { consumeFulfillmentRateLimit } from "@/lib/fulfillment-rate-limit";
+import { extractFulfillmentErrorCode, observeFulfillmentResponseEvent } from "@/lib/fulfillment-observability";
 
 export const runtime = "nodejs";
 
@@ -77,18 +79,57 @@ const parseCaptureRequest = (body: unknown): {
   };
 };
 
+const captureResponse = (
+  body: unknown,
+  status = 200,
+  options?: { retryAfterSeconds?: number; meta?: Record<string, unknown> },
+): NextResponse => {
+  observeFulfillmentResponseEvent({
+    route: "capture",
+    status,
+    errorCode: extractFulfillmentErrorCode(body),
+    meta: options?.meta,
+  });
+  if (typeof options?.retryAfterSeconds === "number") {
+    return NextResponse.json(body, {
+      status,
+      headers: {
+        "cache-control": "no-store",
+        "retry-after": String(options.retryAfterSeconds),
+      },
+    });
+  }
+  return fulfillmentJson(body, status);
+};
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const rateLimit = consumeFulfillmentRateLimit({ request, action: "capture" });
+  if (!rateLimit.ok) {
+    return captureResponse(
+      {
+        code: 429,
+        error: rateLimit.error,
+        errorCode: rateLimit.errorCode,
+      },
+      429,
+      {
+        retryAfterSeconds: rateLimit.retryAfterSeconds,
+        meta: { rateLimited: true },
+      },
+    );
+  }
+
   try {
     let body: unknown;
     try {
       body = await request.json();
     } catch {
-      return fulfillmentJson({ code: 400, error: "Invalid JSON body.", errorCode: "INVALID_CAPTURE_REQUEST" }, 400);
+      return captureResponse({ code: 400, error: "Invalid JSON body.", errorCode: "INVALID_CAPTURE_REQUEST" }, 400);
     }
 
     const parsed = parseCaptureRequest(body);
     if (!parsed) {
-      return fulfillmentJson(
+      return captureResponse(
         { code: 400, error: "Invalid fulfillment capture request shape.", errorCode: "INVALID_CAPTURE_REQUEST" },
         400,
       );
@@ -98,7 +139,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     try {
       deliveryProof = parseWireFulfillmentDeliveryProofMessage(parsed.deliveryProof.payload);
     } catch (error) {
-      return fulfillmentJson(
+      return captureResponse(
         {
           code: 400,
           error: "Invalid delivery proof payload.",
@@ -110,7 +151,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     if (deliveryProof.ticketId !== parsed.ticketId) {
-      return fulfillmentJson(
+      return captureResponse(
         {
           code: 400,
           error: "ticketId does not match deliveryProof.ticketId.",
@@ -125,7 +166,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       deliveryProof.statusCode !== BigInt(parsed.completionMeta.statusCode) ||
       deliveryProof.latencyMs !== BigInt(parsed.completionMeta.latencyMs)
     ) {
-      return fulfillmentJson(
+      return captureResponse(
         {
           code: 400,
           error: "completionMeta does not match signed delivery proof fields.",
@@ -135,7 +176,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
     if (parsed.completionMeta.responseHash && deliveryProof.responseHash !== parsed.completionMeta.responseHash) {
-      return fulfillmentJson(
+      return captureResponse(
         {
           code: 400,
           error: "completionMeta.responseHash does not match signed delivery proof.",
@@ -147,7 +188,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     if (deliveryProof.statusCode < 100n || deliveryProof.statusCode > 599n) {
-    return fulfillmentJson(
+    return captureResponse(
       {
         code: 400,
         error: "deliveryProof.statusCode is out of valid HTTP status range.",
@@ -158,7 +199,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     if (deliveryProof.latencyMs < 0n || deliveryProof.latencyMs > MAX_PRISMA_INT) {
-    return fulfillmentJson(
+    return captureResponse(
       {
         code: 400,
         error: "deliveryProof.latencyMs exceeds supported range.",
@@ -182,7 +223,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         signature: parsed.deliveryProof.signature,
       });
     } catch {
-      return fulfillmentJson(
+      return captureResponse(
         {
           code: 401,
           error: "Invalid merchant delivery proof signature.",
@@ -193,7 +234,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     if (!proofSignatureValid) {
-    return fulfillmentJson(
+    return captureResponse(
       {
         code: 401,
         error: "Invalid merchant delivery proof signature.",
@@ -204,7 +245,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     if (recoveredSigner !== deliveryProof.merchantSigner) {
-    return fulfillmentJson(
+    return captureResponse(
       {
         code: 401,
         error: "Delivery proof merchantSigner does not match signature signer.",
@@ -248,7 +289,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         error instanceof Prisma.PrismaClientKnownRequestError &&
         (error.code === "P2021" || error.code === "P2022")
       ) {
-        return fulfillmentJson(
+        return captureResponse(
           {
             code: 503,
             error: "Phase C fulfillment schema is not available in this environment yet.",
@@ -261,7 +302,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     if (captureResult.status === "hold_not_found") {
-    return fulfillmentJson(
+    return captureResponse(
       {
         code: 404,
         error: "Fulfillment hold not found for ticketId.",
@@ -272,7 +313,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     if (captureResult.status === "unauthorized_signer") {
-    return fulfillmentJson(
+    return captureResponse(
       {
         code: 403,
         error: "Merchant signer is not an active delegated signer for this gateway.",
@@ -289,7 +330,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     if (captureResult.status === "service_mismatch") {
-    return fulfillmentJson(
+    return captureResponse(
       {
         code: 409,
         error: "Delivery proof service does not match the held ticket service.",
@@ -306,7 +347,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     if (captureResult.status === "expired_due") {
-      return fulfillmentJson(
+      return captureResponse(
         {
           code: 409,
           error: "Ticket hold expired before capture completion.",
@@ -322,7 +363,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     if (captureResult.status === "terminal") {
-    return fulfillmentJson(
+    return captureResponse(
       {
         code: 409,
         error: "Ticket hold is not active.",
@@ -339,7 +380,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     if (captureResult.status === "capture_conflict") {
-    return fulfillmentJson(
+    return captureResponse(
       {
         code: 409,
         error: "Ticket already captured with a different delivery proof.",
@@ -356,7 +397,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
     }
 
-    return fulfillmentJson(
+    return captureResponse(
       {
         ok: true,
         apiVersion: FULFILLMENT_API_VERSION,
@@ -387,7 +428,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   } catch (error) {
     console.error("Fulfillment capture route error:", error);
-    return fulfillmentJson(
+    return captureResponse(
       {
         code: 500,
         error: "Fulfillment capture failed due to an internal error.",

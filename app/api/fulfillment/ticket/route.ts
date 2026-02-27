@@ -20,6 +20,8 @@ import {
   normalizeFulfillmentMethod,
   type FulfillmentTicketMessage,
 } from "@/lib/fulfillment-types";
+import { consumeFulfillmentRateLimit } from "@/lib/fulfillment-rate-limit";
+import { extractFulfillmentErrorCode, observeFulfillmentResponseEvent } from "@/lib/fulfillment-observability";
 
 export const runtime = "nodejs";
 
@@ -200,17 +202,56 @@ const toSafeIntNumber = (value: bigint): number | null => {
   return Number(value);
 };
 
+const ticketResponse = (
+  body: unknown,
+  status = 200,
+  options?: { retryAfterSeconds?: number; meta?: Record<string, unknown> },
+): NextResponse => {
+  observeFulfillmentResponseEvent({
+    route: "ticket",
+    status,
+    errorCode: extractFulfillmentErrorCode(body),
+    meta: options?.meta,
+  });
+  if (typeof options?.retryAfterSeconds === "number") {
+    return NextResponse.json(body, {
+      status,
+      headers: {
+        "cache-control": "no-store",
+        "retry-after": String(options.retryAfterSeconds),
+      },
+    });
+  }
+  return fulfillmentJson(body, status);
+};
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const rateLimit = consumeFulfillmentRateLimit({ request, action: "ticket" });
+  if (!rateLimit.ok) {
+    return ticketResponse(
+      {
+        code: 429,
+        error: rateLimit.error,
+        errorCode: rateLimit.errorCode,
+      },
+      429,
+      {
+        retryAfterSeconds: rateLimit.retryAfterSeconds,
+        meta: { rateLimited: true },
+      },
+    );
+  }
+
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return fulfillmentJson({ code: 400, error: "Invalid JSON body.", errorCode: "INVALID_TICKET_REQUEST" }, 400);
+    return ticketResponse({ code: 400, error: "Invalid JSON body.", errorCode: "INVALID_TICKET_REQUEST" }, 400);
   }
 
   const parsed = parseTopLevelRequest(body);
   if (!parsed) {
-    return fulfillmentJson(
+    return ticketResponse(
       { code: 400, error: "Invalid fulfillment ticket request shape.", errorCode: "INVALID_TICKET_REQUEST" },
       400,
     );
@@ -218,7 +259,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const requestedCost = parsePositiveCostBigInt(parsed.cost);
   if (requestedCost == null) {
-    return fulfillmentJson(
+    return ticketResponse(
       { code: 400, error: "cost must be a positive integer.", errorCode: "INVALID_BINDING_INPUT" },
       400,
     );
@@ -230,7 +271,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     normalizedMethod = normalizeFulfillmentMethod(parsed.method);
     normalizedPath = assertFulfillmentPath(parsed.path);
   } catch (error) {
-    return fulfillmentJson(
+    return ticketResponse(
       {
         code: 400,
         error: "Invalid method or path binding input.",
@@ -243,7 +284,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const clientRequestId = parseClientRequestId(parsed.clientRequestId);
   if (parsed.clientRequestId && !clientRequestId) {
-    return fulfillmentJson(
+    return ticketResponse(
       { code: 400, error: "clientRequestId is invalid.", errorCode: "INVALID_BINDING_INPUT" },
       400,
     );
@@ -253,7 +294,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     authMessage = parseWireFulfillmentTicketRequestAuthMessage(parsed.ticketRequestAuth.payload);
   } catch (error) {
-    return fulfillmentJson(
+    return ticketResponse(
       {
         code: 400,
         error: "Invalid fulfillment ticket request auth payload.",
@@ -271,7 +312,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     authMessage.path !== normalizedPath ||
     authMessage.queryHash !== computedQueryHash
   ) {
-    return fulfillmentJson(
+    return ticketResponse(
       {
         code: 400,
         error: "Request fields do not match signed binding payload.",
@@ -282,7 +323,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   if (authMessage.cost !== requestedCost) {
-    return fulfillmentJson(
+    return ticketResponse(
       {
         code: 400,
         error: "Requested cost does not match signed cost binding.",
@@ -297,7 +338,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   if (!isTicketRequestWindowValid(authMessage.issuedAt)) {
-    return fulfillmentJson(
+    return ticketResponse(
       {
         code: 401,
         error: "Ticket request auth payload expired or not yet valid.",
@@ -321,14 +362,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       signature: parsed.ticketRequestAuth.signature,
     });
   } catch {
-    return fulfillmentJson(
+    return ticketResponse(
       { code: 401, error: "Invalid consumer auth signature.", errorCode: "INVALID_CONSUMER_SIGNATURE" },
       401,
     );
   }
 
   if (!authSignatureValid) {
-    return fulfillmentJson(
+    return ticketResponse(
       { code: 401, error: "Invalid consumer auth signature.", errorCode: "INVALID_CONSUMER_SIGNATURE" },
       401,
     );
@@ -336,7 +377,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const readiness = await resolveServiceGatewayReadiness(parsed.serviceSlug);
   if (readiness.readinessStatus !== "LIVE" || !readiness.gatewayConfigId || !readiness.ownerAddress || !readiness.agentId) {
-    return fulfillmentJson(
+    return ticketResponse(
       {
         code: 423,
         error: "Service not live",
@@ -354,7 +395,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const authoritativeCost = await getServiceCreditCost(parsed.serviceSlug);
   if (authoritativeCost == null) {
-    return fulfillmentJson(
+    return ticketResponse(
       {
         code: 409,
         error: "Authoritative service pricing is not configured.",
@@ -365,7 +406,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   if (authoritativeCost !== requestedCost) {
-    return fulfillmentJson(
+    return ticketResponse(
       {
         code: 400,
         error: "Requested cost does not match authoritative service pricing.",
@@ -381,7 +422,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const protocolSigner = getProtocolSignerAccount();
   if (!protocolSigner) {
-    return fulfillmentJson(
+    return ticketResponse(
       {
         code: 500,
         error: "Fulfillment protocol signer is not configured.",
@@ -424,7 +465,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       error instanceof Prisma.PrismaClientKnownRequestError &&
       (error.code === "P2021" || error.code === "P2022")
     ) {
-      return fulfillmentJson(
+      return ticketResponse(
         {
           code: 503,
           error: "Phase C fulfillment schema is not available in this environment yet.",
@@ -437,11 +478,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   if (holdResult.status === "replay") {
-    return fulfillmentJson({ code: 409, error: "Replay detected.", errorCode: "REPLAY" }, 409);
+    return ticketResponse({ code: 409, error: "Replay detected.", errorCode: "REPLAY" }, 409);
   }
 
   if (holdResult.status === "wallet_service_hold_exists") {
-    return fulfillmentJson(
+    return ticketResponse(
       {
         code: 409,
         error: "An active hold already exists for this wallet/service.",
@@ -453,7 +494,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   if (holdResult.status === "wallet_hold_cap_exceeded") {
-    return fulfillmentJson(
+    return ticketResponse(
       {
         code: 409,
         error: "Wallet active hold cap exceeded.",
@@ -469,7 +510,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   if (holdResult.status === "insufficient_credits") {
-    return fulfillmentJson(
+    return ticketResponse(
       {
         code: 402,
         error: "Payment Required",
@@ -504,7 +545,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       expiresAt: ticketExpiresAtSeconds,
     });
   } catch (error) {
-    return fulfillmentJson(
+    return ticketResponse(
       {
         code: 500,
         error: "Failed to build normalized fulfillment ticket.",
@@ -519,13 +560,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const ticketEnvelope = buildFulfillmentTicketEnvelope(ticketMessage, ticketSignature);
   const safeCost = toSafeIntNumber(authoritativeCost);
   if (safeCost == null) {
-    return fulfillmentJson(
+    return ticketResponse(
       { code: 500, error: "Authoritative cost exceeds safe integer response range.", errorCode: "TICKET_BUILD_FAILED" },
       500,
     );
   }
 
-  return fulfillmentJson(
+  return ticketResponse(
     {
       ok: true,
       apiVersion: FULFILLMENT_API_VERSION,
