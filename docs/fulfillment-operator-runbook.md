@@ -2,6 +2,19 @@
 
 This runbook is for merchant operators running Phase C alpha/beta fulfillment in local and production environments.
 
+## 0) Gateway Configuration Preflight
+
+Before delegated signer setup, ensure gateway config is correct for the target agent:
+
+1. Set `MERCHANT ENDPOINT URL` to merchant base URL.
+   - Example alpha pilot: `https://www.ghostprotocol.cc/api/fulfillment-alpha/booski`
+2. Set `CANARY PATH` as relative path (recommended): `/canary`
+3. Save config, then verify canary and confirm readiness is `LIVE`.
+
+Canary path behavior:
+- Relative paths are joined to endpoint subpaths (recommended operational mode).
+- Backward compatibility exists for full-path canary values, but use relative path unless you have legacy config constraints.
+
 ## 1) Delegated Signer Setup And Rotation
 
 ### Register signer

@@ -45,6 +45,12 @@ You must provide:
 - Signer private key
 - Correct `serviceSlug` (`agent-<agentId>`)
 
+For Phase C fulfillment, also complete:
+- Configure `MERCHANT ENDPOINT URL` and `CANARY PATH`, then run `VERIFY GATEWAY` until status is `SERVICE LIVE`.
+- Register delegated runtime signer in `Delegated Runtime Signers`.
+- Set merchant runtime signer key (`GHOST_FULFILLMENT_MERCHANT_DELEGATED_PRIVATE_KEY`) in backend runtime only.
+- Ensure Ghost runtime protocol signer is configured (`GHOST_FULFILLMENT_PROTOCOL_SIGNER_PRIVATE_KEY`) so ticket issuance can succeed.
+
 Important:
 - Python snippet uses placeholders by design; replace values before running.
 - Node snippet expects env vars for sensitive values.
@@ -62,6 +68,8 @@ Important:
 - `Service mismatch`: check `serviceSlug` exactly.
 - `Invalid signature`: verify signer private key and payload signing flow.
 - `Replay blocked`: ensure nonce is unique per request.
+- `Service not live`: verify gateway canary and confirm `readinessStatus=LIVE`.
+- `Unauthorized delegated signer`: ensure capture signer is active and matches merchant runtime key.
 
 ## 8. Security Basics
 

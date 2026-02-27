@@ -1,9 +1,10 @@
-# Architecture: The Gate and The Vault
+# Architecture: Gate, Vault, and Fulfillment
 
 Ghost Protocol is split into two safety domains:
 
 - `The Gate` (authorization and metering)
 - `The Vault` (fund custody and accounting)
+- `The Fulfillment state machine` (ticketed direct merchant execution + capture)
 
 This separation keeps request authorization fast and keeps value transfer isolated.
 
@@ -13,6 +14,10 @@ This separation keeps request authorization fast and keeps value transfer isolat
 flowchart LR
     A[Client SDK<br/>Node or Python] --> B[Ghost Gate API<br/>/api/gate/[service]]
     B --> C[(Postgres / Prisma<br/>CreditBalance)]
+    A --> G[/api/fulfillment/ticket]
+    G --> H[Merchant Runtime<br/>/ask]
+    H --> I[/api/fulfillment/capture]
+    I --> C
     A --> D[GhostVault.sol<br/>depositCredit]
     D --> E[(On-chain ETH)]
     F[/api/sync-credits] --> E
@@ -75,3 +80,31 @@ This reduces external-call risk on deposit and isolates treasury failure from us
 3. User can top up by depositing ETH into GhostVault.
 4. `/api/sync-credits` reads `Deposited` logs and converts deposits into credits.
 
+## Phase C Fulfillment
+
+Phase C introduces a bounded hold/capture lifecycle for direct merchant calls:
+
+1. Consumer requests ticket (`/api/fulfillment/ticket`)
+   - Checks `LIVE` readiness and authoritative pricing.
+   - Reserves credits: `available -= cost`, `held += cost`.
+   - Creates `FulfillmentHold(state=HELD)` and returns signed ticket.
+2. Merchant verifies ticket bindings and executes request.
+3. Merchant captures completion (`/api/fulfillment/capture`)
+   - Verifies delegated signer authorization.
+   - Finalizes hold on success: `held -= cost`, state -> `CAPTURED`.
+   - Idempotent replay supported for same `deliveryProofId`.
+4. If capture does not happen before TTL:
+   - `/api/fulfillment/expire-sweep` marks hold `EXPIRED`
+   - Restores credits: `available += cost`, `held -= cost`.
+
+### Fulfillment invariants
+
+- No double settlement for replayed captures.
+- Terminal holds (`CAPTURED`/`EXPIRED`/`RELEASED`) cannot be recaptured.
+- `availableCreditsDelta` and `heldCreditsDelta` are written for fulfillment ledger rows.
+- `heldCredits` is transactionally maintained and reconciled against active held tickets.
+
+### Merchant readiness gating
+
+- Gateway must be `LIVE` (canary verified) for ticket issuance.
+- Delegated capture signer must be `ACTIVE` under the gateway config.

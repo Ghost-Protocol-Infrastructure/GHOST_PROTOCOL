@@ -155,3 +155,96 @@ Current SDK names:
 | `connect()` | `connect(apiKey)` | `guard(...)/_verify_access(...)` |
 | `pulse()` | HTTP call to `/api/telemetry/pulse` | `send_pulse(...)` |
 | `outcome()` | HTTP call to `/api/telemetry/outcome` | `report_consumer_outcome(...)` |
+
+---
+
+## Fulfillment SDK (Phase C)
+
+Phase C fulfillment helpers are implemented as additive modules:
+
+- Node: `sdks/node/fulfillment.ts`
+- Python: `sdks/python/ghost_fulfillment.py`
+
+### Node fulfillment SDK
+
+#### `GhostFulfillmentConsumer`
+
+Constructor:
+
+```ts
+new GhostFulfillmentConsumer({
+  baseUrl?: string;
+  privateKey: `0x${string}`;
+  chainId?: number;
+  defaultServiceSlug?: string;
+})
+```
+
+Key methods:
+
+- `requestTicket(input)` -> calls `/api/fulfillment/ticket`
+- `execute(input)` -> `requestTicket` + merchant request with fulfillment ticket headers
+
+Typical execute input:
+
+```ts
+{
+  serviceSlug: "agent-18755",
+  method: "POST",
+  path: "/ask",
+  query: { mode: "consumer" },
+  cost: 1,
+  body: { prompt: "hello" }
+}
+```
+
+#### `GhostFulfillmentMerchant`
+
+Constructor:
+
+```ts
+new GhostFulfillmentMerchant({
+  baseUrl?: string;
+  delegatedPrivateKey?: `0x${string}`;
+  protocolSignerAddresses: Array<`0x${string}` | string>;
+  chainId?: number;
+})
+```
+
+Key methods:
+
+- `requireFulfillmentTicket({ headers, expected })`
+  - Verifies ticket signature and request binding.
+- `captureCompletion({ ticketId, serviceSlug, statusCode, latencyMs, ... })`
+  - Sends signed delivery proof to `/api/fulfillment/capture`.
+
+Utilities exported:
+
+- `fulfillmentTicketHeadersToRecord(...)`
+- `parseFulfillmentTicketHeadersFromRecord(...)`
+- debug-safe envelope redaction helpers
+
+### Python fulfillment SDK
+
+Module: `sdks/python/ghost_fulfillment.py`
+
+Classes:
+
+- `GhostFulfillmentConsumer`
+  - `request_ticket(...)`
+  - `execute(...)`
+- `GhostFulfillmentMerchant`
+  - `require_fulfillment_ticket(...)`
+  - `capture_completion(...)`
+
+Header helper functions:
+
+- `build_fulfillment_ticket_headers(...)`
+- `parse_fulfillment_ticket_headers(...)`
+
+### Fulfillment parity artifacts
+
+Shared fixture files used for hash/EIP-712 parity checks:
+
+- `sdks/shared/fulfillment-hash-fixtures.json`
+- `sdks/shared/fulfillment-eip712-fixtures.json`

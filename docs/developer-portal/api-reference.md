@@ -12,6 +12,182 @@ Ghost Gate uses signed headers:
 
 No bearer token is required for gate authorization. Signature validity and credits are the source of truth.
 
+## Phase C API Families
+
+Phase C adds two API groups:
+
+1. `Agent Gateway lifecycle` (`/api/agent-gateway/*`)
+2. `Fulfillment state machine` (`/api/fulfillment/*`)
+
+Admin writes under `/api/agent-gateway/*` are owner-wallet signed operations with nonce replay protection.
+Operator routes under `/api/fulfillment/*` use bearer secret auth.
+
+## `GET/POST /api/agent-gateway/config`
+
+Manage/read merchant endpoint + canary binding for an agent.
+
+- `GET` query:
+  - `agentId` (required)
+  - `includeHistory` (optional: `1/true`)
+  - `historyLimit` (optional)
+- `POST` body (owner-signed admin write):
+  - `agentId`, `ownerAddress`, `actorAddress`, `serviceSlug`, `endpointUrl`, `canaryPath`, `canaryMethod`
+  - `authPayload`, `authSignature`
+
+When configured, readiness resets to `CONFIGURED` until canary verify succeeds.
+
+## `POST /api/agent-gateway/verify`
+
+Runs canary validation for configured gateway and updates readiness (`LIVE` / `DEGRADED` / `CONFIGURED`).
+
+Body:
+- `agentId`, `ownerAddress`, `actorAddress`, `serviceSlug`
+- `authPayload`, `authSignature`
+
+Returns:
+- `200` on pass (`verified=true`, `readinessStatus=LIVE`)
+- `422` on canary failure
+
+## Delegated signer endpoints
+
+### `GET /api/agent-gateway/delegated-signers?agentId=<id>`
+
+Public-read list of active/revoked delegated signers for a gateway.
+
+### `POST /api/agent-gateway/delegated-signers/register`
+
+Owner-signed registration of delegated runtime signer.
+
+Body:
+- `agentId`, `ownerAddress`, `actorAddress`, `serviceSlug`, `signerAddress`
+- `label` (optional)
+- `authPayload`, `authSignature`
+
+Constraints:
+- Maximum active signers: `2`
+- Duplicate active signer registration is idempotent (`alreadyActive=true`)
+
+### `POST /api/agent-gateway/delegated-signers/revoke`
+
+Owner-signed revocation by `delegatedSignerId`.
+
+Body:
+- `agentId`, `ownerAddress`, `actorAddress`, `serviceSlug`, `delegatedSignerId`
+- `authPayload`, `authSignature`
+
+Idempotent:
+- Revoking an already-revoked signer returns `200` with `alreadyRevoked=true`.
+
+## `POST /api/fulfillment/ticket`
+
+Issue a fulfillment hold and signed ticket for a `LIVE` service.
+
+### Request body
+
+```json
+{
+  "serviceSlug": "agent-18755",
+  "method": "POST",
+  "path": "/ask",
+  "cost": 1,
+  "query": "mode=consumer",
+  "clientRequestId": "fx-123",
+  "ticketRequestAuth": {
+    "payload": "<base64url-typed-message>",
+    "signature": "0x..."
+  }
+}
+```
+
+### Success response (`200`)
+
+Returns:
+- `ticketId`
+- `merchantTarget` (`endpointUrl`, `path`)
+- `ticket` envelope (`version`, `payload`, `signature`)
+- hold/balance transitions in `validated` (`creditsBefore/After`, `heldCreditsBefore/After`)
+
+### Common errors
+
+- `423 SERVICE_NOT_LIVE`
+- `409 SERVICE_PRICING_UNAVAILABLE`
+- `400 COST_MISMATCH`
+- `402 INSUFFICIENT_CREDITS`
+- `409 HOLD_CAP_EXCEEDED`
+- `409 REPLAY`
+- `500 FULFILLMENT_SIGNER_NOT_CONFIGURED`
+
+## `POST /api/fulfillment/capture`
+
+Capture a held ticket using merchant delegated signer proof.
+
+### Request body
+
+```json
+{
+  "ticketId": "0x...",
+  "deliveryProof": {
+    "payload": "<base64url-typed-message>",
+    "signature": "0x..."
+  },
+  "completionMeta": {
+    "statusCode": 200,
+    "latencyMs": 12
+  }
+}
+```
+
+### Success semantics
+
+- First capture: `200`, `captureDisposition: "CAPTURED"`
+- Same ticket + same deliveryProofId replay: `200`, `captureDisposition: "IDEMPOTENT_REPLAY"`
+
+### Common errors
+
+- `403 UNAUTHORIZED_DELEGATED_SIGNER`
+- `409 HOLD_EXPIRED`
+- `409 HOLD_NOT_ACTIVE`
+- `409 CAPTURE_CONFLICT`
+
+## `GET/POST /api/fulfillment/expire-sweep`
+
+Operator endpoint to expire due held tickets and release credits.
+
+Auth:
+- `Authorization: Bearer <GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET>`
+- or `x-ghost-fulfillment-expire-secret`
+
+Query/body controls:
+- `dryRun` (`true/false`)
+- `limit` (bounded)
+
+On execute, expired entries return dual-delta balance transitions:
+- `creditsBefore/After`
+- `heldCreditsBefore/After`
+
+## Support endpoints (`/api/fulfillment/support/*`)
+
+Auth:
+- `Authorization: Bearer <GHOST_FULFILLMENT_SUPPORT_SECRET>`
+- or `x-ghost-fulfillment-support-secret`
+
+### `GET /api/fulfillment/support/ticket`
+
+Query:
+- `ticketId` (required, bytes32 hex)
+- `attemptsLimit` (optional)
+- `ledgerLimit` (optional)
+
+Returns hold timeline, capture attempts, related ledger rows, and current wallet balance snapshot.
+
+### `GET /api/fulfillment/support/metrics`
+
+Query:
+- `windowMinutes` (optional, default `60`)
+- `serviceSlug` (optional)
+
+Returns aggregate hold/capture/ledger transition metrics for operations/support.
+
 ## `POST /api/gate/[service]`
 
 Authorize access for a service slug and consume credits.

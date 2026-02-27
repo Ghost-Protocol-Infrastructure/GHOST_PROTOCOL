@@ -2,6 +2,11 @@
 
 Use this guide to send your first authorized request through Ghost Gate.
 
+> [!NOTE]
+> This page is Gate-path quickstart. For Phase C fulfillment onboarding/configuration, use:
+> - `docs/developer-portal/onboarding-and-configuration.md`
+> - `docs/fulfillment-operator-runbook.md`
+
 ## 1. Install
 
 ```bash

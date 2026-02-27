@@ -2,6 +2,11 @@
 
 Use this guide to implement robust client-side behavior and safe key management.
 
+This page now covers both:
+
+- Gate path (`/api/gate/*`)
+- Phase C fulfillment path (`/api/fulfillment/*`)
+
 ## Error handling model
 
 Ghost endpoints currently return:
@@ -27,6 +32,31 @@ Example:
 | `402` | `402` | Insufficient credits | Deposit and sync credits. |
 | `409` | `409` | Replay detected (nonce reuse) | Generate a fresh nonce and re-sign payload. |
 | `500` | `500` | Internal server issue (for example sync failure) | Retry with backoff; inspect logs. |
+
+## Fulfillment error model (Phase C)
+
+Fulfillment routes return:
+
+- HTTP status
+- JSON `{ code, error, errorCode, details? }`
+
+### Common fulfillment errors
+
+| HTTP | `errorCode` | Meaning | Typical fix |
+|---|---|---|---|
+| `400` | `INVALID_TICKET_REQUEST` / `INVALID_CAPTURE_REQUEST` | malformed request shape | Rebuild request payload. |
+| `400` | `COST_MISMATCH` | requested cost differs from signed/authoritative pricing | Use authoritative cost and regenerate signature. |
+| `401` | `INVALID_CONSUMER_SIGNATURE` / `INVALID_MERCHANT_SIGNATURE` | invalid EIP-712 signature | Re-sign with correct key/domain. |
+| `401` | `UNAUTHORIZED` | support/sweep secret missing or incorrect | Set proper bearer secret. |
+| `402` | `INSUFFICIENT_CREDITS` | wallet lacks available credits | Deposit/sync credits and retry. |
+| `403` | `UNAUTHORIZED_DELEGATED_SIGNER` | capture signer is not active for gateway | Register signer or update runtime key. |
+| `409` | `REPLAY` | ticket auth nonce replay | Generate fresh nonce and re-sign. |
+| `409` | `HOLD_CAP_EXCEEDED` | active hold already exists or wallet cap reached | capture/release existing hold, then retry. |
+| `409` | `HOLD_EXPIRED` | capture arrived after hold expiry | request new ticket and complete within TTL. |
+| `409` | `CAPTURE_CONFLICT` | captured already with different delivery proof ID | treat as terminal conflict, do not retry same path. |
+| `423` | `SERVICE_NOT_LIVE` | gateway not verified/live | pass canary verification and reach `LIVE`. |
+| `429` | `RATE_LIMITED` | route-level rate limit triggered | honor `Retry-After` and backoff. |
+| `500` | `FULFILLMENT_SIGNER_NOT_CONFIGURED` | protocol signer key missing in runtime | set `GHOST_FULFILLMENT_PROTOCOL_SIGNER_PRIVATE_KEY`. |
 
 ## Normalized client error codes (recommended)
 
@@ -63,6 +93,15 @@ For SDKs and dashboards, use a stable normalized map:
 > [!IMPORTANT]
 > Never expose `GHOST_SIGNER_PRIVATE_KEY` in browser code. Sign server-side or in trusted runtime only.
 
+### Additional Phase C secrets
+
+- `GHOST_FULFILLMENT_PROTOCOL_SIGNER_PRIVATE_KEY`
+- `GHOST_FULFILLMENT_MERCHANT_DELEGATED_PRIVATE_KEY`
+- `GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET`
+- `GHOST_FULFILLMENT_SUPPORT_SECRET`
+
+Treat all four as runtime secrets. Do not expose them in frontend bundles or commit history.
+
 ## `.env` example
 
 ```bash
@@ -78,6 +117,10 @@ Use bounded retries for network and `5xx` only:
 1. Retry up to 3 times.
 2. Use exponential backoff (250ms, 500ms, 1000ms).
 3. Do not retry `401`, `402`, or `409` blindly.
+
+For fulfillment:
+- Retry `429` only after `Retry-After`.
+- Do not retry terminal state conflicts (`CAPTURE_CONFLICT`, `HOLD_NOT_ACTIVE`) as transient errors.
 
 ## Signature troubleshooting checklist
 
