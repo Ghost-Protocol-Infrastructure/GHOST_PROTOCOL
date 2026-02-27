@@ -42,13 +42,13 @@ const normalizeSecret = (value: string | undefined): string | null => {
   return trimmed ? trimmed : null;
 };
 
-const getProvidedExpireSweepSecret = (request: NextRequest): string | null => {
+const getProvidedSecret = (request: NextRequest, customHeaderName: string): string | null => {
   const authHeader = request.headers.get("authorization");
   if (authHeader?.startsWith("Bearer ")) {
     const token = authHeader.slice("Bearer ".length).trim();
     if (token) return token;
   }
-  const headerSecret = request.headers.get("x-ghost-fulfillment-expire-secret")?.trim();
+  const headerSecret = request.headers.get(customHeaderName)?.trim();
   if (headerSecret) return headerSecret;
   const querySecret = request.nextUrl.searchParams.get("secret")?.trim();
   if (querySecret) return querySecret;
@@ -58,7 +58,13 @@ const getProvidedExpireSweepSecret = (request: NextRequest): string | null => {
 export const isFulfillmentExpireSweepAuthorized = (request: NextRequest): boolean => {
   const expected = normalizeSecret(process.env.GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET);
   if (!expected) return false;
-  const provided = getProvidedExpireSweepSecret(request);
+  const provided = getProvidedSecret(request, "x-ghost-fulfillment-expire-secret");
   return provided === expected;
 };
 
+export const isFulfillmentSupportAuthorized = (request: NextRequest): boolean => {
+  const expected = normalizeSecret(process.env.GHOST_FULFILLMENT_SUPPORT_SECRET);
+  if (!expected) return false;
+  const provided = getProvidedSecret(request, "x-ghost-fulfillment-support-secret");
+  return provided === expected;
+};

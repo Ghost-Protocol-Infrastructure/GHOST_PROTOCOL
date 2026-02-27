@@ -137,3 +137,55 @@ Alert controls:
 
 Critical alerts are raised automatically for 5xx and critical fulfillment error codes.
 
+## 5) Support Lookup APIs (Beta Tooling)
+
+Support endpoints are protected by:
+
+- `GHOST_FULFILLMENT_SUPPORT_SECRET`
+
+Auth methods:
+
+- `Authorization: Bearer <secret>`
+- `x-ghost-fulfillment-support-secret: <secret>`
+
+### Ticket timeline lookup
+
+Endpoint:
+
+- `GET /api/fulfillment/support/ticket?ticketId=<0x...>&attemptsLimit=50&ledgerLimit=50`
+
+Returns:
+
+- hold lifecycle state/details
+- wallet balance snapshot
+- capture attempts (with disposition and error summaries)
+- ledger rows bound to `ticketId` (dual-delta visibility)
+
+Example:
+
+```bash
+curl -sS -H "Authorization: Bearer $GHOST_FULFILLMENT_SUPPORT_SECRET" \
+  "https://www.ghostprotocol.cc/api/fulfillment/support/ticket?ticketId=0x...&attemptsLimit=100&ledgerLimit=100"
+```
+
+### Windowed fulfillment metrics
+
+Endpoint:
+
+- `GET /api/fulfillment/support/metrics?windowMinutes=60&serviceSlug=agent-18755`
+
+Returns:
+
+- hold counts by state
+- issued/captured/expired activity in window
+- overdue held count
+- capture attempt success/failure + disposition/status/error distributions
+- capture latency p50/p95/max
+- ledger transition counts (`HOLD_CREATED`, `HOLD_EXPIRED`, `CAPTURE_FINALIZED`)
+
+Example:
+
+```bash
+curl -sS -H "Authorization: Bearer $GHOST_FULFILLMENT_SUPPORT_SECRET" \
+  "https://www.ghostprotocol.cc/api/fulfillment/support/metrics?windowMinutes=120&serviceSlug=agent-18755"
+```
