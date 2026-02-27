@@ -141,6 +141,39 @@ model GateAccessEvent {
   @@index([signer, createdAt])
 }
 
+model TelemetryPulseEvent {
+  id           String   @id @default(cuid())
+  apiKeyHash   String?
+  apiKeyPrefix String?
+  agentId      String?
+  serviceSlug  String?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([agentId, createdAt])
+  @@index([serviceSlug, createdAt])
+  @@index([apiKeyHash, createdAt])
+}
+
+model TelemetryOutcomeEvent {
+  id           String   @id @default(cuid())
+  apiKeyHash   String?
+  apiKeyPrefix String?
+  agentId      String?
+  serviceSlug  String?
+  success      Boolean
+  statusCode   Int?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([success, createdAt])
+  @@index([agentId, createdAt])
+  @@index([serviceSlug, createdAt])
+  @@index([apiKeyHash, createdAt])
+}
+
 model Agent {
   address     String    @id
   agentId     String    @unique

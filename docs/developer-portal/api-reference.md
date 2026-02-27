@@ -300,7 +300,7 @@ curl -X POST "https://ghostprotocol.cc/api/gate/agent-2212" \
 
 ## `GET /api/telemetry/pulse`
 
-Heartbeat endpoint (currently lightweight/stubbed).
+Heartbeat liveness endpoint.
 
 ### Success response (`200`)
 
@@ -313,11 +313,17 @@ Heartbeat endpoint (currently lightweight/stubbed).
 
 ## `POST /api/telemetry/pulse`
 
-Heartbeat payload endpoint (currently lightweight/stubbed).
+Heartbeat payload endpoint.
 
 ### Request body
 
-No strict schema is currently enforced.
+```json
+{
+  "apiKey": "sk_live_...",
+  "agentId": "18755",
+  "serviceSlug": "agent-18755"
+}
+```
 
 ### Success response (`200`)
 
@@ -330,17 +336,26 @@ No strict schema is currently enforced.
 
 ## `POST /api/telemetry/outcome`
 
-Consumer outcome endpoint (currently stubbed).
+Consumer outcome endpoint.
 
 ### Request body
 
-No strict schema is currently enforced.
+```json
+{
+  "apiKey": "sk_live_...",
+  "agentId": "18755",
+  "serviceSlug": "agent-18755",
+  "success": true,
+  "statusCode": 200
+}
+```
 
 ### Success response (`200`)
 
 ```json
 {
-  "status": "ok"
+  "status": "ok",
+  "timestamp": 1739722000000
 }
 ```
 

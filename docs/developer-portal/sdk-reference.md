@@ -119,7 +119,7 @@ Decorator that verifies access with Ghost Gate before running your handler.
 #### `send_pulse(agent_id: Optional[str] = None) -> bool`
 
 Sends best-effort heartbeat payload to `/api/telemetry/pulse`.
-Current server telemetry behavior is lightweight/stubbed.
+Server stores pulse events and uses telemetry ingestion jobs for ranking signals.
 
 #### `report_consumer_outcome(*, success: bool, status_code: Optional[int] = None, agent_id: Optional[str] = None) -> bool`
 

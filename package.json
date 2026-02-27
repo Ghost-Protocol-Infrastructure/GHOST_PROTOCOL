@@ -10,6 +10,7 @@
     "index:db:olas": "npx tsx scripts/index-db.ts --mode=olas",
     "index:db:full-reindex": "npx tsx scripts/index-db.ts --reset-indexer",
     "index:db:refresh-metadata": "npx tsx scripts/index-db.ts --force-refresh-metadata",
+    "ingest:telemetry": "npx tsx scripts/ingest-telemetry-signals.ts",
     "score": "npx tsx scripts/score-leads.ts",
     "score:v2": "npx tsx scripts/score-v2.ts",
     "reconcile:credits": "npx tsx scripts/reconcile-credits.ts",
