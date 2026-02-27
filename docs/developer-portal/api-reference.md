@@ -188,6 +188,21 @@ Query:
 
 Returns aggregate hold/capture/ledger transition metrics for operations/support.
 
+## Agent Runtime Semantics (Phase C)
+
+When integrating autonomous agents, these semantics are critical:
+
+1. Capture replay with same `ticketId` + same `deliveryProofId`:
+   - `200` + `captureDisposition: "IDEMPOTENT_REPLAY"`
+2. Capture replay with same `ticketId` + different `deliveryProofId` after capture:
+   - `409 CAPTURE_CONFLICT`
+3. Expired hold at capture:
+   - `409 HOLD_EXPIRED`
+4. Non-live service at ticket issuance:
+   - `423 SERVICE_NOT_LIVE`
+
+Design agent policies around these deterministic state transitions rather than generic retries.
+
 ## `POST /api/gate/[service]`
 
 Authorize access for a service slug and consume credits.

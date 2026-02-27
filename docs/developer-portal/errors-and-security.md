@@ -7,6 +7,9 @@ This page now covers both:
 - Gate path (`/api/gate/*`)
 - Phase C fulfillment path (`/api/fulfillment/*`)
 
+For agent-specific retry/state policy, use:
+- `docs/developer-portal/agent-integration-playbook.md`
+
 ## Error handling model
 
 Ghost endpoints currently return:

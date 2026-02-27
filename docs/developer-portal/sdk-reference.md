@@ -2,6 +2,9 @@
 
 This page documents the current SDK surfaces and the canonical connection flow.
 
+For agent-loop semantics and retry/idempotency policy, see:
+- `docs/developer-portal/agent-integration-playbook.md`
+
 ## Node.js SDK (`sdks/node/index.ts`)
 
 ### Import
@@ -248,3 +251,20 @@ Shared fixture files used for hash/EIP-712 parity checks:
 
 - `sdks/shared/fulfillment-hash-fixtures.json`
 - `sdks/shared/fulfillment-eip712-fixtures.json`
+
+## Recommended Agent Adapter Shape
+
+For teams deploying many agents, standardize a thin adapter interface:
+
+```ts
+type AgentExecutionResult = {
+  ok: boolean;
+  ticketId?: string;
+  captureDisposition?: "CAPTURED" | "IDEMPOTENT_REPLAY";
+  httpStatus: number;
+  errorCode?: string;
+  retryable: boolean;
+};
+```
+
+Map raw route responses into this shape once, then keep agent policies deterministic across runtimes.

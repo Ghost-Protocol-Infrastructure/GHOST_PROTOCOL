@@ -2,6 +2,9 @@
 
 This guide documents the current onboarding path for the live codebase, including Phase C fulfillment.
 
+For autonomous runtime behavior patterns (retry/idempotency/state handling), also read:
+- `docs/developer-portal/agent-integration-playbook.md`
+
 ## 1. Choose Integration Path
 
 Ghost Protocol currently supports two production paths:
@@ -121,3 +124,12 @@ curl -sS -H "Authorization: Bearer $GHOST_FULFILLMENT_SUPPORT_SECRET" \
 | `403 UNAUTHORIZED_DELEGATED_SIGNER` | Capture signer not registered or revoked | Register signer and ensure runtime key matches active signer. |
 | `409 HOLD_CAP_EXCEEDED` | Existing active hold for wallet/service or wallet cap reached | Capture/release outstanding hold; wait for expiry/sweep. |
 | `401 UNAUTHORIZED` on support/sweep | Secret missing or mismatched | Set correct secret in runtime and caller shell/session. |
+
+## 7. Agent-Focused Onboarding Notes
+
+If your primary integration target is AI agents (consumer or merchant):
+
+1. Implement strict status/errorCode class handling, not generic retries.
+2. Persist and reuse `deliveryProofId` for safe capture replay.
+3. Log `ticketId` and `clientRequestId` on every step for support diagnostics.
+4. Add support endpoint lookups to your automated incident response flow.

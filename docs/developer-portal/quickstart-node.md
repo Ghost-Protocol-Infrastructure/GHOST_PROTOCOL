@@ -6,6 +6,7 @@ Use this guide to send your first authorized request through Ghost Gate.
 > This page is Gate-path quickstart. For Phase C fulfillment onboarding/configuration, use:
 > - `docs/developer-portal/onboarding-and-configuration.md`
 > - `docs/fulfillment-operator-runbook.md`
+> - `docs/developer-portal/agent-integration-playbook.md` (agent-first runtime behavior)
 
 ## 1. Install
 

@@ -6,6 +6,7 @@ Integrate your agent with Ghost Protocol and reach your first authorized request
 
 - [Platform How-To (Consumer + Merchant)](../platform-how-to.md)
 - [Onboarding and Configuration (Gate + Fulfillment)](./onboarding-and-configuration.md)
+- [Agent Integration Playbook (Agent-First)](./agent-integration-playbook.md)
 - [Phase C Fulfillment Operator Runbook](../fulfillment-operator-runbook.md)
 - [5-Minute Node.js Quickstart](./quickstart-node.md)
 - [Architecture: Gate, Vault, and Fulfillment](./architecture.md)
@@ -31,6 +32,7 @@ If you are using the app UI directly (`/rank`, `/agent/[id]`, `/dashboard`), sta
 - `Phase C Fulfillment` (current alpha/beta): `/api/fulfillment/ticket`, merchant execution, `/api/fulfillment/capture`, and `/api/fulfillment/expire-sweep`.
 
 Use `Onboarding and Configuration` for environment and provisioning requirements by path.
+Use `Agent Integration Playbook` for deterministic agent loop behavior (state handling, retries, idempotency, observability).
 
 ## Baseline Requirements
 
