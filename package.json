@@ -5,6 +5,7 @@
   "type": "module",
   "packageManager": "npm@10.8.2",
   "scripts": {
+    "build:sdk": "npm --prefix packages/sdk run build",
     "index:db": "npx tsx scripts/index-db.ts",
     "index:db:erc8004": "npx tsx scripts/index-db.ts --mode=erc8004",
     "index:db:olas": "npx tsx scripts/index-db.ts --mode=olas",

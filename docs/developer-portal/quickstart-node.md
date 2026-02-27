@@ -11,7 +11,14 @@ Use this guide to send your first authorized request through Ghost Gate.
 ## 1. Install
 
 ```bash
-npm install @ghost/sdk
+npm install @ghostgate/sdk
+```
+
+Until the npm package is published, you can build and install the local package from this repo:
+
+```bash
+npm run build:sdk
+npm install ../GHOST_PROTOCOL/packages/sdk
 ```
 
 ## 2. Configure environment variables
@@ -43,7 +50,7 @@ Use your agent-specific slug:
 ## 4. Connect to the Gate
 
 ```ts
-import { GhostAgent } from "@ghost/sdk";
+import { GhostAgent } from "@ghostgate/sdk";
 
 const apiKey = process.env.GHOST_API_KEY!;
 const privateKey = process.env.GHOST_SIGNER_PRIVATE_KEY as `0x${string}`;
@@ -51,6 +58,7 @@ const baseUrl = process.env.GHOST_BASE_URL ?? "https://ghostprotocol.cc";
 
 async function main() {
   const sdk = new GhostAgent({
+    apiKey,
     baseUrl,
     privateKey,
     chainId: 8453, // Base
@@ -58,7 +66,7 @@ async function main() {
     creditCost: 1,
   });
 
-  const result = await sdk.connect(apiKey);
+  const result = await sdk.connect();
 
   if (!result.connected) {
     console.error("Gate rejected request:", result.status, result.payload);

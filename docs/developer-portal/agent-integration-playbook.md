@@ -58,7 +58,7 @@ Minimum identity/log fields:
 Use `GhostFulfillmentConsumer.execute(...)` for most flows.
 
 ```ts
-import { GhostFulfillmentConsumer } from "@/sdks/node/fulfillment";
+import { GhostFulfillmentConsumer } from "@ghostgate/sdk";
 
 const consumer = new GhostFulfillmentConsumer({
   baseUrl: process.env.FULFILLMENT_BASE_URL!,

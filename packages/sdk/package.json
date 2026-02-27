@@ -1,0 +1,40 @@
+{
+  "name": "@ghostgate/sdk",
+  "version": "0.1.0",
+  "description": "Ghost Protocol Node.js SDK for gate access, fulfillment, telemetry, and canary helpers.",
+  "license": "MIT",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./fulfillment": {
+      "types": "./dist/fulfillment.d.ts",
+      "import": "./dist/fulfillment.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "viem": "^2.21.0"
+  },
+  "scripts": {
+    "clean": "node -e \"import('node:fs').then(fs => fs.rmSync('dist', { recursive: true, force: true }))\"",
+    "build": "npm run clean && node ../../node_modules/typescript/bin/tsc -p tsconfig.build.json",
+    "prepack": "npm run build"
+  }
+}

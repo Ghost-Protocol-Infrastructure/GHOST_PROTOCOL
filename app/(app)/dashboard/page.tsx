@@ -758,7 +758,7 @@ function DashboardPageContent() {
 
   const nodeConsumerUsageExample = useMemo(
     () =>
-      `import { GhostAgent } from "@ghost/sdk";
+      `import { GhostAgent } from "@ghostgate/sdk";
 
 const sdk = new GhostAgent({
   baseUrl: "${APP_BASE_URL}",

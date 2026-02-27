@@ -5,18 +5,20 @@ This page documents the current SDK surfaces and the canonical connection flow.
 For agent-loop semantics and retry/idempotency policy, see:
 - `docs/developer-portal/agent-integration-playbook.md`
 
-## Node.js SDK (`sdks/node/index.ts`)
+## Node.js SDK (`@ghostgate/sdk`)
 
 ### Import
 
 ```ts
-import { GhostAgent } from "@ghost/sdk";
+import { GhostAgent } from "@ghostgate/sdk";
 ```
 
 ### Constructor
 
 ```ts
 new GhostAgent(config?: {
+  apiKey?: string;
+  agentId?: string;
   baseUrl?: string;
   privateKey?: `0x${string}`;
   chainId?: number;
@@ -29,6 +31,8 @@ new GhostAgent(config?: {
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
+| `apiKey` | string | No | `null` | Stored client API key used by `connect()`, `pulse()`, and `outcome()`. |
+| `agentId` | string | No | `null` | Optional explicit agent ID for telemetry calls. |
 | `baseUrl` | string | No | `https://ghostprotocol.cc` | Root URL for Ghost API. |
 | `privateKey` | `0x...` string | Yes (for connect) | `null` | Signer for EIP-712 authorization. |
 | `chainId` | number | No | `8453` | EIP-712 domain chain ID. |
@@ -40,10 +44,10 @@ new GhostAgent(config?: {
 
 ### Methods
 
-#### `connect(apiKey: string): Promise<ConnectResult>`
+#### `connect(apiKey?: string): Promise<ConnectResult>`
 
 Sends signed request to `/api/gate/[serviceSlug]`.
-`apiKey` is used by the SDK for client context/prefix reporting; Gate authorization itself is signature + credits based.
+`apiKey` can be passed per call or provided once in constructor config.
 
 ```ts
 type ConnectResult = {
@@ -54,6 +58,27 @@ type ConnectResult = {
   payload: unknown;
 };
 ```
+
+#### `pulse(input?): Promise<TelemetryResult>`
+
+Sends heartbeat telemetry to `/api/telemetry/pulse`.
+
+```ts
+type TelemetryResult = {
+  ok: boolean;
+  endpoint: string;
+  status: number;
+  payload: unknown;
+};
+```
+
+#### `outcome(input): Promise<TelemetryResult>`
+
+Sends consumer success/failure telemetry to `/api/telemetry/outcome`.
+
+#### `startHeartbeat(options?): { stop(): void }`
+
+Starts best-effort recurring `pulse()` calls. Default interval is `60000ms`.
 
 #### `isConnected: boolean` (getter)
 
@@ -67,13 +92,16 @@ Returns `"{baseUrl}/api/gate"`.
 
 ```ts
 const sdk = new GhostAgent({
+  apiKey: process.env.GHOST_API_KEY,
   baseUrl: process.env.GHOST_BASE_URL,
   privateKey: process.env.GHOST_SIGNER_PRIVATE_KEY as `0x${string}`,
   serviceSlug: "agent-2212",
   creditCost: 1,
 });
 
-const result = await sdk.connect(process.env.GHOST_API_KEY!);
+const result = await sdk.connect();
+await sdk.pulse();
+await sdk.outcome({ success: true, statusCode: 200 });
 ```
 
 ## Python SDK (`sdks/python/ghostgate.py`)
@@ -155,17 +183,17 @@ Current SDK names:
 
 | Canonical action | Node SDK | Python SDK |
 |---|---|---|
-| `connect()` | `connect(apiKey)` | `guard(...)/_verify_access(...)` |
-| `pulse()` | HTTP call to `/api/telemetry/pulse` | `send_pulse(...)` |
-| `outcome()` | HTTP call to `/api/telemetry/outcome` | `report_consumer_outcome(...)` |
+| `connect()` | `connect(apiKey?)` | `guard(...)/_verify_access(...)` |
+| `pulse()` | `pulse(...)` | `send_pulse(...)` |
+| `outcome()` | `outcome(...)` | `report_consumer_outcome(...)` |
 
 ---
 
 ## Fulfillment SDK (Phase C)
 
-Phase C fulfillment helpers are implemented as additive modules:
+Phase C fulfillment helpers are exported by the Node package and remain available internally for the app runtime:
 
-- Node: `sdks/node/fulfillment.ts`
+- Node package source: `packages/sdk/src/fulfillment.ts`
 - Python: `sdks/python/ghost_fulfillment.py`
 
 ### Node fulfillment SDK
@@ -226,6 +254,18 @@ Utilities exported:
 - `fulfillmentTicketHeadersToRecord(...)`
 - `parseFulfillmentTicketHeadersFromRecord(...)`
 - debug-safe envelope redaction helpers
+
+#### `GhostMerchant`
+
+Ergonomic merchant runtime wrapper that extends `GhostFulfillmentMerchant` and adds:
+
+- `canaryPayload()`
+- `canaryHandler()`
+
+Standalone canary helpers are also exported:
+
+- `buildCanaryPayload(serviceSlug)`
+- `createCanaryHandler(serviceSlug)`
 
 ### Python fulfillment SDK
 
