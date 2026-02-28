@@ -1995,7 +1995,7 @@ def my_agent():
                           <input
                             value={merchantDelegatedSignerLabelInput}
                             onChange={(event) => setMerchantDelegatedSignerLabelInput(event.target.value)}
-                            placeholder="booski-prod-1"
+                            placeholder="merchant-signer-1"
                             maxLength={64}
                             disabled={merchantDelegatedSignerAtCapacity}
                             className="mt-2 w-full border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-red-600 rounded-none font-mono"

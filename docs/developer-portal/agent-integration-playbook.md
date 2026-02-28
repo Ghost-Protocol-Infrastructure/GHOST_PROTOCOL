@@ -189,7 +189,6 @@ Use metrics for agent fleet health checks and alert routing.
 6. Retry policy implemented by status/errorCode class.
 7. Correlation IDs persisted in agent logs.
 8. Support secrets configured for incident tooling.
-9. Alpha smoke scripts passing:
-   - `npm run test:fulfillment:alpha`
-   - `npm run test:fulfillment:alpha:negatives`
+9. Gateway/API negative-path checks passing:
    - `npm run test:fulfillment:api:negatives`
+10. Merchant runtime smoke tests maintained and passing in the merchant-owned repository/deployment pipeline.

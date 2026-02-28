@@ -103,8 +103,8 @@
     },
     {
       "name": "question_prefix",
-      "input": "?name=Booski&mode=consumer",
-      "canonical": "mode=consumer&name=Booski",
+      "input": "?name=MerchantAgent&mode=consumer",
+      "canonical": "mode=consumer&name=MerchantAgent",
       "parsedPairs": [
         {
           "key": "mode",
@@ -112,10 +112,10 @@
         },
         {
           "key": "name",
-          "value": "Booski"
+          "value": "MerchantAgent"
         }
       ],
-      "sha256": "0xb2942df43f3f9be7176f82696287edd1eafa54fbd6d38a7921eef733c598ec4d"
+      "sha256": "0xba12bf9927eec5504075d6b1bd5f79a740c49cde8d7ec0b421790eedb9146418"
     }
   ],
   "queryRejectCases": [

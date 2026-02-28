@@ -61,7 +61,7 @@ const main = async (): Promise<void> => {
     { name: "key_only", input: "debug" },
     { name: "plus_space_and_sorting", input: "b=two+words&a=%2fapi%2fv1&z=last" },
     { name: "utf8_and_reserved", input: "q=%E2%9C%93+ok&msg=a%2Bb%26c&path=%2fapi%2fv1" },
-    { name: "question_prefix", input: "?name=Booski&mode=consumer" },
+    { name: "question_prefix", input: "?name=MerchantAgent&mode=consumer" },
   ] as const;
 
   const queryRejectCases = [

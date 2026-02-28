@@ -17,8 +17,6 @@
     "reconcile:credits": "npx tsx scripts/reconcile-credits.ts",
     "generate:fulfillment:fixtures": "npx tsx scripts/generate-fulfillment-fixtures.ts",
     "test:fulfillment:fixtures": "npx tsx scripts/verify-fulfillment-fixtures.ts",
-    "test:fulfillment:alpha": "npx tsx scripts/test-fulfillment-alpha-booski.ts",
-    "test:fulfillment:alpha:negatives": "npx tsx scripts/test-fulfillment-alpha-booski-negatives.ts",
     "test:fulfillment:api:negatives": "npx tsx scripts/test-fulfillment-api-negatives.ts",
     "monitor:credits": "npx tsx scripts/monitor-credit-alerts.ts",
     "test:credits:regression": "npx tsx scripts/test-credit-regression.ts",

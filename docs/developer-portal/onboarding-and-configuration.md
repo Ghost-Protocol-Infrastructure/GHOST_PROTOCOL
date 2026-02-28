@@ -24,7 +24,7 @@ Complete these steps in order for each merchant agent.
    - Dashboard (`/dashboard?mode=merchant&agentId=<id>&owner=<ownerAddress>`) or API:
      - `POST /api/agent-gateway/config`
    - Set:
-     - `endpointUrl` to merchant base endpoint (for alpha pilot: `https://www.ghostprotocol.cc/api/fulfillment-alpha/booski`)
+     - `endpointUrl` to the merchant-owned base endpoint (for example: `https://merchant.example.com`)
      - `canaryPath` as relative path (recommended: `/canary`)
 2. Verify canary and set readiness to `LIVE`
    - Dashboard `Verify Gateway` or API:
@@ -52,7 +52,7 @@ Complete these steps in order for each merchant agent.
 3. Set ticket request bindings:
    - `FULFILLMENT_BASE_URL`
    - `FULFILLMENT_SERVICE_SLUG` (`agent-<agentId>`)
-   - `FULFILLMENT_PATH` (for Booski alpha: `/ask`)
+   - `FULFILLMENT_PATH` (merchant-bound request path, commonly `/ask`)
    - `FULFILLMENT_COST`
 
 ## 4. Environment Variable Matrix
@@ -88,10 +88,10 @@ Complete these steps in order for each merchant agent.
 curl -sS "https://www.ghostprotocol.cc/api/agent-gateway/config?agentId=<agentId>&includeHistory=1&historyLimit=5"
 ```
 
-2. Confirm canary contract endpoint:
+2. Confirm canary contract endpoint on the merchant runtime:
 
 ```bash
-curl -sS "https://www.ghostprotocol.cc/api/fulfillment-alpha/booski/canary"
+curl -sS "https://merchant.example.com/canary"
 ```
 
 Expected shape:
@@ -100,15 +100,15 @@ Expected shape:
 {"ghostgate":"ready","service":"agent-18755"}
 ```
 
-3. Run fulfillment smoke tests:
+3. Run gateway/API smoke tests from this repo:
 
 ```bash
-npm run test:fulfillment:alpha
-npm run test:fulfillment:alpha:negatives
 npm run test:fulfillment:api:negatives
 ```
 
-4. Validate support endpoints with a real ticket ID:
+4. Run merchant-runtime smoke tests from the merchant runtime repository or deployment pipeline.
+
+5. Validate support endpoints with a real ticket ID:
 
 ```bash
 curl -sS -H "Authorization: Bearer $GHOST_FULFILLMENT_SUPPORT_SECRET" \

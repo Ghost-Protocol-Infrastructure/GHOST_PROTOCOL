@@ -1,13 +1,13 @@
 # Phase C Fulfillment Operator Runbook
 
-This runbook is for merchant operators running Phase C alpha/beta fulfillment in local and production environments.
+This runbook is for merchant operators running Phase C fulfillment in local and production environments.
 
 ## 0) Gateway Configuration Preflight
 
 Before delegated signer setup, ensure gateway config is correct for the target agent:
 
 1. Set `MERCHANT ENDPOINT URL` to merchant base URL.
-   - Example alpha pilot: `https://www.ghostprotocol.cc/api/fulfillment-alpha/booski`
+   - Example: `https://merchant.example.com`
 2. Set `CANARY PATH` as relative path (recommended): `/canary`
 3. Save config, then verify canary and confirm readiness is `LIVE`.
 
@@ -39,16 +39,12 @@ Canary path behavior:
 4. Revoke old signer.
 5. Confirm old signer can no longer capture (`403 UNAUTHORIZED_DELEGATED_SIGNER`).
 
-## 2) Fulfillment Alpha Local/Prod Test Scripts
+## 2) Fulfillment Local/Prod Test Coverage
 
-All scripts use environment variables. Set `FULFILLMENT_BASE_URL` to local or production target.
+Ghost Protocol only ships gateway/API-side smoke coverage in this repo. Merchant runtime smoke tests should live in the merchant-owned repository or deployment pipeline.
 
-### Core scripts
+### Ghost Protocol repo script
 
-- Happy-path alpha:
-  - `npm run test:fulfillment:alpha`
-- Merchant-route negatives (missing headers, invalid signature, binding mismatch, expiry path):
-  - `npm run test:fulfillment:alpha:negatives`
 - API negatives (unauthorized signer, replay, capture conflict):
   - `npm run test:fulfillment:api:negatives`
 
@@ -58,8 +54,8 @@ Required:
 
 - `FULFILLMENT_BASE_URL`
 - `FULFILLMENT_CONSUMER_PRIVATE_KEY`
-- `FULFILLMENT_SERVICE_SLUG` (for Booski: `agent-18755`)
-- `FULFILLMENT_PATH` (for alpha route: `/ask`)
+- `FULFILLMENT_SERVICE_SLUG` (`agent-<agentId>`)
+- `FULFILLMENT_PATH` (merchant-bound path, commonly `/ask`)
 - `FULFILLMENT_COST` (default `1`)
 
 Required for merchant capture/replay checks:
@@ -87,7 +83,7 @@ Meaning:
 Typical surfaces:
 
 - Direct capture route: `409 HOLD_EXPIRED`
-- Through merchant alpha helper: `502 FULFILLMENT_CAPTURE_REJECTED` with nested capture payload error code `HOLD_EXPIRED`
+- Merchant runtime capture helper should surface or log nested `HOLD_EXPIRED` from `/api/fulfillment/capture`
 
 ### Ticket TTL (`FULFILLMENT_TICKET_EXPIRED`)
 
