@@ -43,3 +43,11 @@ const sdk = new GhostAgent({
 await sdk.connect();
 await sdk.pulse();
 ```
+
+## Fulfillment Merchant Default Signer
+
+`GhostFulfillmentMerchant` and `GhostMerchant` default `protocolSignerAddresses` to the current Ghost production fulfillment signer set:
+
+- `0xf879f5e26aa52663887f97a51d3444afef8df3fc`
+
+Override that allowlist for local/staging environments or if Ghost rotates signers.

@@ -1,6 +1,6 @@
 # Onboarding and Configuration (Gate + Fulfillment)
 
-This guide documents the current onboarding path for the live codebase, including Phase C fulfillment.
+This guide documents the current onboarding path for the live codebase, including fulfillment.
 
 For autonomous runtime behavior patterns (retry/idempotency/state handling), also read:
 - `docs/developer-portal/agent-integration-playbook.md`
@@ -12,11 +12,11 @@ Ghost Protocol currently supports two production paths:
 1. `Gate path` (signature-gated API access)
    - Endpoint family: `/api/gate/[service]`
    - Use this when you only need authorization + credit debit.
-2. `Phase C fulfillment path` (ticket -> merchant runtime -> capture)
+2. `Fulfillment path` (ticket -> merchant runtime -> capture)
    - Endpoint family: `/api/fulfillment/*`
    - Use this when consumers execute merchant-owned runtimes through Ghost Protocol settlement.
 
-## 2. Merchant Onboarding (Phase C)
+## 2. Merchant Onboarding (Fulfillment)
 
 Complete these steps in order for each merchant agent.
 
@@ -44,7 +44,7 @@ Complete these steps in order for each merchant agent.
    - `GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET`
    - `GHOST_FULFILLMENT_SUPPORT_SECRET`
 
-## 3. Consumer Onboarding (Phase C)
+## 3. Consumer Onboarding (Fulfillment)
 
 1. Fund credits (consumer wallet must have spendable credits).
 2. Set consumer runtime signer:
@@ -57,13 +57,13 @@ Complete these steps in order for each merchant agent.
 
 ## 4. Environment Variable Matrix
 
-### 4.1 Required for Phase C core flow
+### 4.1 Required for fulfillment core flow
 
 | Variable | Used by | Required | Notes |
 |---|---|---|---|
 | `GHOST_FULFILLMENT_PROTOCOL_SIGNER_PRIVATE_KEY` | `/api/fulfillment/ticket` | Yes (ticket issuance) | If missing, ticket route returns `500 FULFILLMENT_SIGNER_NOT_CONFIGURED`. |
 | `GHOST_FULFILLMENT_MERCHANT_DELEGATED_PRIVATE_KEY` | Merchant runtime capture helper | Yes (merchant capture) | Merchant delegated signer must also be registered as `ACTIVE`. |
-| `GHOST_FULFILLMENT_PROTOCOL_SIGNER_ADDRESSES` | Merchant ticket verification | Optional | Comma-separated allowlist. If unset, merchant alpha route derives address from protocol signer private key. |
+| `GHOST_FULFILLMENT_PROTOCOL_SIGNER_ADDRESSES` | Merchant ticket verification | Optional | Comma-separated allowlist. Ghost SDK defaults to the current production protocol signer set (`0xf879f5e26aa52663887f97a51d3444afef8df3fc`). Override for local/staging or signer rotation. |
 | `GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET` | `/api/fulfillment/expire-sweep` | Yes (operator sweep) | Supports bearer auth (`Authorization: Bearer ...`). |
 | `GHOST_FULFILLMENT_SUPPORT_SECRET` | `/api/fulfillment/support/*` | Yes (support tooling) | Supports bearer auth or `x-ghost-fulfillment-support-secret`. |
 
@@ -124,6 +124,11 @@ curl -sS -H "Authorization: Bearer $GHOST_FULFILLMENT_SUPPORT_SECRET" \
 | `403 UNAUTHORIZED_DELEGATED_SIGNER` | Capture signer not registered or revoked | Register signer and ensure runtime key matches active signer. |
 | `409 HOLD_CAP_EXCEEDED` | Existing active hold for wallet/service or wallet cap reached | Capture/release outstanding hold; wait for expiry/sweep. |
 | `401 UNAUTHORIZED` on support/sweep | Secret missing or mismatched | Set correct secret in runtime and caller shell/session. |
+
+Signer note:
+- The current Ghost production fulfillment signer address is `0xf879f5e26aa52663887f97a51d3444afef8df3fc`.
+- Treat it as a public verification allowlist entry, not as a secret.
+- Do not substitute unrelated treasury/owner addresses unless they are explicitly the active ticket signer for your environment.
 
 ## 7. Agent-Focused Onboarding Notes
 

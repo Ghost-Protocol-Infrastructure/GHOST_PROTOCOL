@@ -18,6 +18,7 @@
     "generate:fulfillment:fixtures": "npx tsx scripts/generate-fulfillment-fixtures.ts",
     "test:fulfillment:fixtures": "npx tsx scripts/verify-fulfillment-fixtures.ts",
     "test:fulfillment:api:negatives": "npx tsx scripts/test-fulfillment-api-negatives.ts",
+    "test:fulfillment:regression": "npx tsx scripts/test-fulfillment-regression.ts",
     "monitor:credits": "npx tsx scripts/monitor-credit-alerts.ts",
     "test:credits:regression": "npx tsx scripts/test-credit-regression.ts",
     "typecheck": "tsc --noEmit",

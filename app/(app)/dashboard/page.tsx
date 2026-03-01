@@ -124,13 +124,14 @@ const NODE_QUICKSTART_DOC_URL = `${GITHUB_DOCS_BASE_URL}/quickstart-node.md`;
 const SDK_REFERENCE_DOC_URL = `${GITHUB_DOCS_BASE_URL}/sdk-reference.md`;
 const SDK_CONTEXT_KEY_PREVIEW_PLACEHOLDER = "sk_live_your_sdk_context_key";
 const SDK_SECURITY_NOTICE =
-  "Security Notice: Ghost Protocol gate access is authenticated with Web3 wallet signatures (EIP-712). Configure SDKs with a signer private key in a trusted backend/server/CLI environment only. Never expose private keys in frontend code or commit them to version control.";
+  "Security Notice: Ghost Gate access is authenticated with Web3 wallet signatures (EIP-712). Configure SDKs with a signer private key in a trusted backend/server/CLI environment only. Never expose private keys in frontend code or commit them to version control.";
 
 const DEFAULT_CANARY_PATH = "/ghostgate/canary";
 const DEFAULT_MERCHANT_CANARY_HISTORY_LIMIT = 8;
 const DEFAULT_MERCHANT_DELEGATED_SIGNER_MAX_ACTIVE = 2;
 const DEFAULT_MERCHANT_REVOKED_SIGNER_HISTORY_VISIBLE = false;
 const GATEWAY_READINESS_POLL_INTERVAL_MS = 10_000;
+const CREDIT_BALANCE_POLL_INTERVAL_MS = 10_000;
 const MAX_DEPOSIT_CREDIT_SYNC_CATCHUP_ATTEMPTS = 12;
 const DEPOSIT_CREDIT_SYNC_CATCHUP_DELAY_MS = 200;
 const MAX_WITHDRAW_BALANCE_REFETCH_ATTEMPTS = 8;
@@ -723,16 +724,44 @@ function DashboardPageContent() {
       return;
     }
 
-    const hydrateCredits = async () => {
+    let active = true;
+    let inFlight = false;
+
+    const refreshCreditsInBackground = async () => {
+      if (!active || inFlight) return;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+
+      inFlight = true;
       try {
         const credits = await readCreditsFromLedger(address);
+        if (!active) return;
         setSyncedCredits(credits);
       } catch {
-        // Keep current value; tx-driven sync surface handles user-facing errors.
+        // Keep the last known credit snapshot during background refresh failures.
+      } finally {
+        inFlight = false;
       }
     };
 
-    void hydrateCredits();
+    void refreshCreditsInBackground();
+
+    const intervalHandle = window.setInterval(() => {
+      void refreshCreditsInBackground();
+    }, CREDIT_BALANCE_POLL_INTERVAL_MS);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshCreditsInBackground();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalHandle);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [address, readCreditsFromLedger]);
 
   useEffect(() => {

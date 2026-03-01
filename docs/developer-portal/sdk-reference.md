@@ -189,9 +189,9 @@ Current SDK names:
 
 ---
 
-## Fulfillment SDK (Phase C)
+## Fulfillment SDK
 
-Phase C fulfillment helpers are exported by the Node package and remain available internally for the app runtime:
+Fulfillment helpers are exported by the Node package and remain available internally for the app runtime:
 
 - Node package source: `packages/sdk/src/fulfillment.ts`
 - Python: `sdks/python/ghost_fulfillment.py`
@@ -237,10 +237,16 @@ Constructor:
 new GhostFulfillmentMerchant({
   baseUrl?: string;
   delegatedPrivateKey?: `0x${string}`;
-  protocolSignerAddresses: Array<`0x${string}` | string>;
+  protocolSignerAddresses?: Array<`0x${string}` | string>;
   chainId?: number;
 })
 ```
+
+Default signer allowlist:
+
+- If `protocolSignerAddresses` is omitted, the SDK trusts the current Ghost production protocol signer set:
+  - `0xf879f5e26aa52663887f97a51d3444afef8df3fc`
+- Override this in local/staging environments or after signer rotation.
 
 Key methods:
 

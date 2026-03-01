@@ -1,6 +1,6 @@
-# Phase C Fulfillment Operator Runbook
+# Fulfillment Operator Runbook
 
-This runbook is for merchant operators running Phase C fulfillment in local and production environments.
+This runbook is for merchant operators running fulfillment in local and production environments.
 
 ## 0) Gateway Configuration Preflight
 
@@ -71,6 +71,7 @@ Optional for explicit unauthorized signer case:
 Ticket issuance requires protocol signing in the deployed runtime:
 
 - `GHOST_FULFILLMENT_PROTOCOL_SIGNER_PRIVATE_KEY` must be configured in production.
+- Merchant ticket verification should allow the current Ghost production protocol signer address `0xf879f5e26aa52663887f97a51d3444afef8df3fc` by default. Override it for local/staging runtimes or if Ghost rotates signers.
 
 ## 3) Failure Mode Reference
 

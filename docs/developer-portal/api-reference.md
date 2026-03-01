@@ -12,9 +12,9 @@ Ghost Gate uses signed headers:
 
 No bearer token is required for gate authorization. Signature validity and credits are the source of truth.
 
-## Phase C API Families
+## Fulfillment API Families
 
-Phase C adds two API groups:
+Fulfillment adds two API groups:
 
 1. `Agent Gateway lifecycle` (`/api/agent-gateway/*`)
 2. `Fulfillment state machine` (`/api/fulfillment/*`)
@@ -188,7 +188,7 @@ Query:
 
 Returns aggregate hold/capture/ledger transition metrics for operations/support.
 
-## Agent Runtime Semantics (Phase C)
+## Agent Runtime Semantics (Fulfillment)
 
 When integrating autonomous agents, these semantics are critical:
 

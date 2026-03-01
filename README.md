@@ -12,7 +12,7 @@ Building the Shadow Infrastructure for the Machine Economy.
 
 - Agent ranking and indexing pipeline
 - GhostGate access control and SDKs
-- Phase C merchant fulfillment routes and operator tooling
+- Merchant fulfillment routes and operator tooling
 - Merchant dashboard and developer onboarding surfaces
 
 ## Quick Start

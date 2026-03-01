@@ -5,7 +5,7 @@ Use this guide to implement robust client-side behavior and safe key management.
 This page now covers both:
 
 - Gate path (`/api/gate/*`)
-- Phase C fulfillment path (`/api/fulfillment/*`)
+- fulfillment path (`/api/fulfillment/*`)
 
 For agent-specific retry/state policy, use:
 - `docs/developer-portal/agent-integration-playbook.md`
@@ -36,7 +36,7 @@ Example:
 | `409` | `409` | Replay detected (nonce reuse) | Generate a fresh nonce and re-sign payload. |
 | `500` | `500` | Internal server issue (for example sync failure) | Retry with backoff; inspect logs. |
 
-## Fulfillment error model (Phase C)
+## Fulfillment error model
 
 Fulfillment routes return:
 
@@ -96,7 +96,7 @@ For SDKs and dashboards, use a stable normalized map:
 > [!IMPORTANT]
 > Never expose `GHOST_SIGNER_PRIVATE_KEY` in browser code. Sign server-side or in trusted runtime only.
 
-### Additional Phase C secrets
+### Additional fulfillment secrets
 
 - `GHOST_FULFILLMENT_PROTOCOL_SIGNER_PRIVATE_KEY`
 - `GHOST_FULFILLMENT_MERCHANT_DELEGATED_PRIVATE_KEY`

@@ -621,6 +621,93 @@ export const syncDeposits = async (
   });
 };
 
+const expireOverdueHeldFulfillmentHoldsForWallet = async (input: {
+  tx: Prisma.TransactionClient;
+  walletAddress: string;
+  now: Date;
+  creditsBefore: bigint;
+  heldCreditsBefore: bigint;
+}): Promise<{ credits: bigint; heldCredits: bigint }> => {
+  const overdueHolds = await input.tx.$queryRaw<
+    Array<{
+      id: string;
+      ticketId: string;
+      walletAddress: string;
+      serviceSlug: string;
+      cost: number;
+      state: "HELD" | "CAPTURED" | "RELEASED" | "EXPIRED";
+      expiresAt: Date;
+    }>
+  >(Prisma.sql`
+    SELECT "id", "ticketId", "walletAddress", "serviceSlug", "cost", "state", "expiresAt"
+    FROM "FulfillmentHold"
+    WHERE "walletAddress" = ${input.walletAddress}
+      AND "state" = 'HELD'
+      AND "expiresAt" <= ${input.now}
+    ORDER BY "expiresAt" ASC, "createdAt" ASC
+    FOR UPDATE
+  `);
+
+  let credits = input.creditsBefore;
+  let heldCredits = input.heldCreditsBefore;
+
+  for (const hold of overdueHolds) {
+    const cost = BigInt(hold.cost);
+    if (heldCredits < cost) {
+      throw new Error(
+        `heldCredits invariant violation for wallet ${hold.walletAddress}: held=${heldCredits} cost=${cost}`,
+      );
+    }
+
+    await input.tx.fulfillmentHold.update({
+      where: { id: hold.id },
+      data: {
+        state: "EXPIRED",
+        releasedAt: input.now,
+        releaseReason: "TTL_EXPIRED",
+        lastError: null,
+      },
+    });
+
+    const updatedBalance = await input.tx.creditBalance.update({
+      where: { walletAddress: input.walletAddress },
+      data: {
+        credits: { increment: hold.cost },
+        heldCredits: { decrement: hold.cost },
+      },
+    });
+
+    const creditsAfter = BigInt(updatedBalance.credits);
+    const heldCreditsAfter = BigInt(updatedBalance.heldCredits);
+
+    await writeCreditLedger(input.tx, {
+      walletAddress: hold.walletAddress,
+      direction: "CREDIT",
+      amount: cost,
+      availableCreditsDelta: cost,
+      heldCreditsDelta: -cost,
+      balanceBefore: credits,
+      balanceAfter: creditsAfter,
+      reason: "FULFILLMENT_HOLD_EXPIRED",
+      service: hold.serviceSlug,
+      requestId: `${hold.ticketId}:expire`,
+      metadata: {
+        ticketId: hold.ticketId,
+        holdId: hold.id,
+        serviceSlug: hold.serviceSlug,
+        releaseReason: "TTL_EXPIRED",
+        expiredAt: input.now.toISOString(),
+        expiredDuringTicketIssuance: true,
+      },
+    });
+
+    credits = creditsAfter;
+    heldCredits = heldCreditsAfter;
+  }
+
+  return { credits, heldCredits };
+};
+
 export const createFulfillmentHold = async (
   input: CreateFulfillmentHoldInput,
 ): Promise<CreateFulfillmentHoldResult> => {
@@ -653,8 +740,8 @@ export const createFulfillmentHold = async (
       );
 
       const lockedBalance = lockedBalanceRows[0];
-      const creditsBefore = BigInt(lockedBalance?.credits ?? 0);
-      if (!lockedBalance || creditsBefore < input.cost) {
+      let creditsBefore = BigInt(lockedBalance?.credits ?? 0);
+      if (!lockedBalance) {
         return {
           status: "insufficient_credits",
           balance: creditsBefore,
@@ -662,7 +749,24 @@ export const createFulfillmentHold = async (
         } satisfies CreateFulfillmentHoldResult;
       }
 
-      const heldCreditsBefore = BigInt(lockedBalance.heldCredits);
+      let heldCreditsBefore = BigInt(lockedBalance.heldCredits);
+      const sweptBalance = await expireOverdueHeldFulfillmentHoldsForWallet({
+        tx,
+        walletAddress: walletKey,
+        now: new Date(),
+        creditsBefore,
+        heldCreditsBefore,
+      });
+      creditsBefore = sweptBalance.credits;
+      heldCreditsBefore = sweptBalance.heldCredits;
+
+      if (creditsBefore < input.cost) {
+        return {
+          status: "insufficient_credits",
+          balance: creditsBefore,
+          required: input.cost,
+        } satisfies CreateFulfillmentHoldResult;
+      }
 
       const activeWalletHolds = await tx.fulfillmentHold.count({
         where: {
@@ -773,9 +877,11 @@ export const createFulfillmentHold = async (
         if (Array.isArray(meta?.target)) return meta?.target.join(",");
         return typeof meta?.target === "string" ? meta.target : "";
       })();
+      const normalizedTarget = target.toLowerCase();
       if (
-        target.includes("FulfillmentHold_wallet_service_active_held_idx") ||
-        error.message.includes("FulfillmentHold_wallet_service_active_held_idx")
+        normalizedTarget.includes("fulfillmenthold_wallet_service_active_held_idx") ||
+        error.message.includes("FulfillmentHold_wallet_service_active_held_idx") ||
+        (normalizedTarget.includes("walletaddress") && normalizedTarget.includes("serviceslug"))
       ) {
         return { status: "wallet_service_hold_exists" };
       }

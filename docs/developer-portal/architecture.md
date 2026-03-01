@@ -80,9 +80,9 @@ This reduces external-call risk on deposit and isolates treasury failure from us
 3. User can top up by depositing ETH into GhostVault.
 4. `/api/sync-credits` reads `Deposited` logs and converts deposits into credits.
 
-## Phase C Fulfillment
+## Fulfillment
 
-Phase C introduces a bounded hold/capture lifecycle for direct merchant calls:
+Fulfillment introduces a bounded hold/capture lifecycle for direct merchant calls:
 
 1. Consumer requests ticket (`/api/fulfillment/ticket`)
    - Checks `LIVE` readiness and authoritative pricing.

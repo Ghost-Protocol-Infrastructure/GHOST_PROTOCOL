@@ -32,6 +32,9 @@ import {
 
 const DEFAULT_BASE_URL = "https://ghostprotocol.cc";
 const DEFAULT_TICKET_COST = 1;
+export const DEFAULT_FULFILLMENT_PROTOCOL_SIGNER_ADDRESSES = [
+  "0xf879f5e26aa52663887f97a51d3444afef8df3fc",
+] as const satisfies readonly `0x${string}`[];
 
 type QueryInput =
   | string
@@ -48,7 +51,7 @@ export type GhostFulfillmentConsumerConfig = {
 export type GhostFulfillmentMerchantConfig = {
   baseUrl?: string;
   delegatedPrivateKey?: `0x${string}`;
-  protocolSignerAddresses: Array<`0x${string}` | string>;
+  protocolSignerAddresses?: Array<`0x${string}` | string>;
   chainId?: number;
 };
 
@@ -406,9 +409,10 @@ export class GhostFulfillmentConsumer {
   }
 }
 
-const normalizeProtocolSignerAddressSet = (addresses: Array<string>): Set<`0x${string}`> => {
+const normalizeProtocolSignerAddressSet = (addresses?: ReadonlyArray<string>): Set<`0x${string}`> => {
+  const source = addresses ?? DEFAULT_FULFILLMENT_PROTOCOL_SIGNER_ADDRESSES;
   const normalized = new Set<`0x${string}`>();
-  for (const raw of addresses) {
+  for (const raw of source) {
     const trimmed = raw.trim().toLowerCase();
     if (/^0x[a-f0-9]{40}$/.test(trimmed)) {
       normalized.add(trimmed as `0x${string}`);

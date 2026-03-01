@@ -1,4 +1,4 @@
-"""Ghost Protocol Phase C fulfillment helpers (Python SDK parity module).
+"""Ghost Protocol fulfillment helpers (Python SDK parity module).
 
 This is an additive MVP helper module for local/server integrations.
 It supports:
@@ -36,6 +36,9 @@ HEADER_TICKET_PAYLOAD = "x-ghost-fulfillment-ticket"
 HEADER_TICKET_SIGNATURE = "x-ghost-fulfillment-ticket-sig"
 HEADER_TICKET_ID = "x-ghost-fulfillment-ticket-id"
 HEADER_CLIENT_REQUEST_ID = "x-ghost-fulfillment-client-request-id"
+DEFAULT_FULFILLMENT_PROTOCOL_SIGNER_ADDRESSES = [
+    "0xf879f5e26aa52663887f97a51d3444afef8df3fc",
+]
 
 
 def _normalize_base_url(value: str) -> str:
@@ -448,14 +451,15 @@ class GhostFulfillmentConsumer:
 
 @dataclass
 class GhostFulfillmentMerchant:
-    protocol_signer_addresses: list[str]
+    protocol_signer_addresses: Optional[list[str]] = None
     delegated_private_key: Optional[str] = None
     base_url: str = os.getenv("GHOST_GATE_BASE_URL", "https://ghostprotocol.cc")
     chain_id: int = FULFILLMENT_DEFAULT_CHAIN_ID
 
     def __post_init__(self) -> None:
         self.base_url = _normalize_base_url(self.base_url)
-        self.protocol_signer_addresses = [_normalize_address(addr) for addr in self.protocol_signer_addresses]
+        signer_addresses = self.protocol_signer_addresses or list(DEFAULT_FULFILLMENT_PROTOCOL_SIGNER_ADDRESSES)
+        self.protocol_signer_addresses = [_normalize_address(addr) for addr in signer_addresses]
         if not self.protocol_signer_addresses:
             raise ValueError("At least one protocol signer address is required")
         if self.delegated_private_key:

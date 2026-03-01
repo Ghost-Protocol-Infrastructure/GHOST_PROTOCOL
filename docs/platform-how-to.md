@@ -45,11 +45,12 @@ You must provide:
 - Signer private key
 - Correct `serviceSlug` (`agent-<agentId>`)
 
-For Phase C fulfillment, also complete:
+For fulfillment, also complete:
 - Configure `MERCHANT ENDPOINT URL` and `CANARY PATH`, then run `VERIFY GATEWAY` until status is `SERVICE LIVE`.
 - Register delegated runtime signer in `Delegated Runtime Signers`.
 - Set merchant runtime signer key (`GHOST_FULFILLMENT_MERCHANT_DELEGATED_PRIVATE_KEY`) in backend runtime only.
 - Ensure Ghost runtime protocol signer is configured (`GHOST_FULFILLMENT_PROTOCOL_SIGNER_PRIVATE_KEY`) so ticket issuance can succeed.
+- Merchant ticket verification should trust the current Ghost production protocol signer address `0xf879f5e26aa52663887f97a51d3444afef8df3fc` unless you have an explicit non-production override.
 
 Important:
 - Python snippet uses placeholders by design; replace values before running.

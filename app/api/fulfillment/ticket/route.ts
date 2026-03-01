@@ -474,7 +474,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         503,
       );
     }
-    throw error;
+    console.error("Fulfillment ticket issuance failed during hold creation.", {
+      serviceSlug: parsed.serviceSlug,
+      consumer: toLowerAddress(consumerSigner),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return ticketResponse(
+      {
+        code: 500,
+        error: "Fulfillment ticket issuance failed.",
+        errorCode: "FULFILLMENT_TICKET_FAILED",
+      },
+      500,
+    );
   }
 
   if (holdResult.status === "replay") {
