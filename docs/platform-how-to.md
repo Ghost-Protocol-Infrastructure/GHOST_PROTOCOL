@@ -50,7 +50,8 @@ For fulfillment, also complete:
 - Register delegated runtime signer in `Delegated Runtime Signers`.
 - Set merchant runtime signer key (`GHOST_FULFILLMENT_MERCHANT_DELEGATED_PRIVATE_KEY`) in backend runtime only.
 - Ensure Ghost runtime protocol signer is configured (`GHOST_FULFILLMENT_PROTOCOL_SIGNER_PRIVATE_KEY`) so ticket issuance can succeed.
-- Merchant ticket verification should trust the current Ghost production protocol signer address `0xf879f5e26aa52663887f97a51d3444afef8df3fc` unless you have an explicit non-production override.
+- Merchant ticket verification should trust the current Ghost production protocol signer address `0xf879f5e26aa52663887f97a51d3444afef8df3fc`.
+- On Ghost-hosted production, do not replace that signer with your own address.
 
 Important:
 - Python snippet uses placeholders by design; replace values before running.

@@ -63,7 +63,7 @@ Complete these steps in order for each merchant agent.
 |---|---|---|---|
 | `GHOST_FULFILLMENT_PROTOCOL_SIGNER_PRIVATE_KEY` | `/api/fulfillment/ticket` | Yes (ticket issuance) | If missing, ticket route returns `500 FULFILLMENT_SIGNER_NOT_CONFIGURED`. |
 | `GHOST_FULFILLMENT_MERCHANT_DELEGATED_PRIVATE_KEY` | Merchant runtime capture helper | Yes (merchant capture) | Merchant delegated signer must also be registered as `ACTIVE`. |
-| `GHOST_FULFILLMENT_PROTOCOL_SIGNER_ADDRESSES` | Merchant ticket verification | Optional | Comma-separated allowlist. Ghost SDK defaults to the current production protocol signer set (`0xf879f5e26aa52663887f97a51d3444afef8df3fc`). Override for local/staging or signer rotation. |
+| `GHOST_FULFILLMENT_PROTOCOL_SIGNER_ADDRESSES` | Merchant ticket verification | Optional | Advanced/self-hosted override only. On Ghost-hosted production, leave this unset and use the Ghost SDK default signer set (`0xf879f5e26aa52663887f97a51d3444afef8df3fc`). Only set it if you run a custom ticket issuer or Ghost explicitly instructs you during signer rotation. |
 | `GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET` | `/api/fulfillment/expire-sweep` | Yes (operator sweep) | Supports bearer auth (`Authorization: Bearer ...`). |
 | `GHOST_FULFILLMENT_SUPPORT_SECRET` | `/api/fulfillment/support/*` | Yes (support tooling) | Supports bearer auth or `x-ghost-fulfillment-support-secret`. |
 
@@ -128,7 +128,8 @@ curl -sS -H "Authorization: Bearer $GHOST_FULFILLMENT_SUPPORT_SECRET" \
 Signer note:
 - The current Ghost production fulfillment signer address is `0xf879f5e26aa52663887f97a51d3444afef8df3fc`.
 - Treat it as a public verification allowlist entry, not as a secret.
-- Do not substitute unrelated treasury/owner addresses unless they are explicitly the active ticket signer for your environment.
+- On Ghost-hosted production, normal merchants should not replace it with their own signer.
+- Only set your own protocol signer allowlist if you run a self-hosted/custom ticket issuer for your own environment.
 
 ## 7. Agent-Focused Onboarding Notes
 

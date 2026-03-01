@@ -71,7 +71,9 @@ Optional for explicit unauthorized signer case:
 Ticket issuance requires protocol signing in the deployed runtime:
 
 - `GHOST_FULFILLMENT_PROTOCOL_SIGNER_PRIVATE_KEY` must be configured in production.
-- Merchant ticket verification should allow the current Ghost production protocol signer address `0xf879f5e26aa52663887f97a51d3444afef8df3fc` by default. Override it for local/staging runtimes or if Ghost rotates signers.
+- Merchant ticket verification should allow the current Ghost production protocol signer address `0xf879f5e26aa52663887f97a51d3444afef8df3fc` by default.
+- On Ghost-hosted production, merchants should not replace that signer with their own value.
+- Only override the signer allowlist for self-hosted/custom ticket issuers or when Ghost explicitly instructs you during signer rotation.
 
 ## 3) Failure Mode Reference
 

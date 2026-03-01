@@ -88,7 +88,7 @@ if (!run.merchant.attempted || run.merchant.status !== 200) {
 
 Use `GhostFulfillmentMerchant.requireFulfillmentTicket(...)` and `captureCompletion(...)`.
 
-If you use the Ghost SDKs and omit `protocolSignerAddresses`, merchant verification defaults to the current Ghost production protocol signer address `0xf879f5e26aa52663887f97a51d3444afef8df3fc`. Override that allowlist in local/staging or after signer rotation.
+If you use the Ghost SDKs and omit `protocolSignerAddresses`, merchant verification defaults to the current Ghost production protocol signer address `0xf879f5e26aa52663887f97a51d3444afef8df3fc`. That is the normal Ghost-hosted production path. Only override that allowlist for self-hosted/custom ticket issuers or when Ghost explicitly instructs you during signer rotation.
 
 ```ts
 const verified = await merchant.requireFulfillmentTicket({

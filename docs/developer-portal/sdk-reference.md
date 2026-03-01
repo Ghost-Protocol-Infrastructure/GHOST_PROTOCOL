@@ -246,7 +246,8 @@ Default signer allowlist:
 
 - If `protocolSignerAddresses` is omitted, the SDK trusts the current Ghost production protocol signer set:
   - `0xf879f5e26aa52663887f97a51d3444afef8df3fc`
-- Override this in local/staging environments or after signer rotation.
+- For normal Ghost-hosted production merchants, leave `protocolSignerAddresses` unset.
+- Only override it for self-hosted/custom ticket issuers or when Ghost explicitly instructs you during signer rotation.
 
 Key methods:
 

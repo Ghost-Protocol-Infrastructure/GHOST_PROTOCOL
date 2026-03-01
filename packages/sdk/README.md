@@ -50,4 +50,5 @@ await sdk.pulse();
 
 - `0xf879f5e26aa52663887f97a51d3444afef8df3fc`
 
-Override that allowlist for local/staging environments or if Ghost rotates signers.
+For normal Ghost-hosted production merchants, leave that allowlist unset.
+Only override it for self-hosted/custom ticket issuers or when Ghost explicitly instructs you during signer rotation.
