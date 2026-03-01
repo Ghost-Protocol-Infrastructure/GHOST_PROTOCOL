@@ -1,6 +1,6 @@
 {
   "name": "@ghostgate/sdk",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Ghost Protocol Node.js SDK for gate access, fulfillment, telemetry, and canary helpers.",
   "author": "Ghost Protocol",
   "license": "MIT",
