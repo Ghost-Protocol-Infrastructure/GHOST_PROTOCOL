@@ -49,7 +49,7 @@ Ghost Gate is a signed access layer that validates:
 
 GhostVault is the ETH credit rail. It tracks:
 
-- `totalLiability`: sum of user-withdrawable balances
+- `totalLiability`: sum of merchant-attributed balances pending owner withdrawal
 - `accruedFees`: protocol fees pending owner claim
 - `maxTVL`: global liability cap (initialized to `5 ETH`)
 
@@ -76,9 +76,18 @@ This reduces external-call risk on deposit and isolates treasury failure from us
 ## Data flow summary
 
 1. User signs Gate payload in SDK.
-2. Gate verifies signature and deducts credits in Postgres.
-3. User can top up by depositing ETH into GhostVault.
-4. `/api/sync-credits` reads `Deposited` logs and converts deposits into credits.
+2. User can top up by depositing ETH into GhostVault for a specific agent owner.
+3. `/api/sync-credits` reads `Deposited` logs and converts deposit history into a wallet-level off-chain credit balance.
+4. Gate and fulfillment flows verify signatures and deduct credits in Postgres.
+
+## Current settlement attribution model
+
+- Consumer spend is tracked off-chain by wallet in `CreditBalance`.
+- Usage is attributed per service in off-chain rows such as `CreditLedger.service` and `FulfillmentHold.serviceSlug`.
+- Merchant payout is currently attributed at deposit time through `GhostVault.depositCredit(agent)`, which credits `balances[agent]` on-chain.
+- Ghost Credits are currently prepaid and non-refundable once converted into off-chain credits.
+
+This means usage tracking and payout attribution are both present, but they are not currently reconciled by a post-spend revenue share process. Merchant payout follows the agent selected at deposit time.
 
 ## Fulfillment
 

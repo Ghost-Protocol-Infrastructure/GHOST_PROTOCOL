@@ -208,7 +208,7 @@ const HomePage = () => {
               <br />
               All systems nominal. No warranties implied.
               <br />
-              © 2026 Ghost Protocol.
+              © 2026 Ghost Protocol
             </div>
           </div>
 

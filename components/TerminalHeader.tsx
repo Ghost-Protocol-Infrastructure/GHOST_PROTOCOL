@@ -25,15 +25,15 @@ export default function TerminalHeader({ title, className = "" }: TerminalHeader
         <nav className="flex items-center gap-5 pl-8 -mt-0.5">
           <Link
             href="/"
-            className="text-[10px] font-bold tracking-[0.2em] text-white lowercase transition hover:text-red-500"
+            className="text-[10px] font-regular tracking-[0.2em] text-neutral-500 transition hover:text-red-500"
           >
-            home
+            /home
           </Link>
           <Link
             href="/rank"
-            className="text-[10px] font-bold tracking-[0.2em] text-white lowercase transition hover:text-red-500"
+            className="text-[10px] font-regular tracking-[0.2em] text-neutral-500 transition hover:text-red-500"
           >
-            rank
+            /rank
           </Link>
         </nav>
       </div>

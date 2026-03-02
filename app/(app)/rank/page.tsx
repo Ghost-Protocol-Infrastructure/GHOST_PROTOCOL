@@ -1131,7 +1131,7 @@ export default function Home() {
               <br />
               All systems nominal. No warranties implied.
               <br />
-              &copy; 2026 Ghost Protocol.
+              &copy; 2026 Ghost Protocol
             </div>
           </div>
 

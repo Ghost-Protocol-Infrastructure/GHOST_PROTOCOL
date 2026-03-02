@@ -2386,6 +2386,9 @@ def my_agent():
                 <div className="mb-5 border border-neutral-900 bg-neutral-900 p-4">
                   <p className="mb-1 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Your Available Credits</p>
                   <p className="text-2xl text-neutral-200 font-mono">{isConnected ? syncedCredits ?? "0" : "0"}</p>
+                  <p className="mt-2 text-xs text-neutral-500">
+                    Ghost Credits are prepaid and non-refundable once purchased.
+                  </p>
                 </div>
 
                 <div className="mb-5 border border-neutral-900 bg-neutral-900 p-3">
@@ -2459,6 +2462,9 @@ def my_agent():
                     <p className="mt-1 text-xs text-neutral-600">
                       Price per credit: {formatEther(CREDIT_PRICE_WEI)} ETH
                     </p>
+                    <p className="mt-2 text-xs text-neutral-500">
+                      Ghost Credits are prepaid and non-refundable once purchased.
+                    </p>
                   </div>
 
                   {isConnected && !isOnSupportedChain && (
@@ -2527,7 +2533,7 @@ def my_agent():
                     type="button"
                     onClick={() => setConsumerSdk("node")}
                     className={`border px-3 py-2 text-xs uppercase tracking-[0.14em] transition font-bold ${consumerSdk === "node"
-                      ? "border-neutral-700 bg-neutral-800 text-neutral-200"
+                      ? "border-red-600 bg-red-600 text-white"
                       : "border-neutral-800 bg-neutral-950 text-neutral-500 hover:border-neutral-600 hover:text-neutral-300"
                       }`}
                   >
@@ -2537,7 +2543,7 @@ def my_agent():
                     type="button"
                     onClick={() => setConsumerSdk("python")}
                     className={`border px-3 py-2 text-xs uppercase tracking-[0.14em] transition font-bold ${consumerSdk === "python"
-                      ? "border-neutral-700 bg-neutral-800 text-neutral-200"
+                      ? "border-red-600 bg-red-600 text-white"
                       : "border-neutral-800 bg-neutral-950 text-neutral-500 hover:border-neutral-600 hover:text-neutral-300"
                       }`}
                   >

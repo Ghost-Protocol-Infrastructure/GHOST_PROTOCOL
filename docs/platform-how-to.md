@@ -32,6 +32,8 @@ Routing behavior:
 Notes:
 - Credits are consumed by gate-protected requests.
 - Current default pricing is `1 request = 1 credit` unless service pricing is changed.
+- Ghost Credits are prepaid and non-refundable once purchased and synced.
+- Credits are wallet-level across agents, but deposits from a specific agent console currently attribute merchant payout to that agent owner.
 
 ## 5. Merchant Flow
 
