@@ -11,12 +11,17 @@ const DEFAULT_INITIAL_MAX_TVL_WEI = ethers.parseEther("5");
 const DEFAULT_CREDIT_PRICE_WEI = 10_000_000_000_000n;
 const NETWORKS = {
   "base-mainnet": {
-    rpcUrl: process.env.BASE_RPC_URL?.trim() || "https://mainnet.base.org",
+    rpcUrl:
+      process.env.BASE_MAINNET_RPC_URL?.trim() ||
+      process.env.BASE_RPC_URL?.trim() ||
+      "https://mainnet.base.org",
     chainId: 8453n,
     label: "Base Mainnet",
   },
   "base-sepolia": {
-    rpcUrl: process.env.BASE_SEPOLIA_RPC_URL?.trim() || "https://sepolia.base.org",
+    rpcUrl:
+      process.env.BASE_SEPOLIA_RPC_URL?.trim() ||
+      "https://sepolia.base.org",
     chainId: 84532n,
     label: "Base Sepolia",
   },

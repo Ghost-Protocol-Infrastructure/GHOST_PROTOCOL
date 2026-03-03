@@ -6,7 +6,10 @@ import hardhatVerify from "@nomicfoundation/hardhat-verify";
 
 loadEnv();
 
-const BASE_RPC_URL = process.env.BASE_RPC_URL?.trim() || "https://mainnet.base.org";
+const BASE_MAINNET_RPC_URL =
+  process.env.BASE_MAINNET_RPC_URL?.trim() ||
+  process.env.BASE_RPC_URL?.trim() ||
+  "https://mainnet.base.org";
 const BASE_SEPOLIA_RPC_URL = process.env.BASE_SEPOLIA_RPC_URL?.trim() || "https://sepolia.base.org";
 
 const rawPrivateKey = process.env.PRIVATE_KEY?.trim();
@@ -31,7 +34,7 @@ export default defineConfig({
     baseMainnet: {
       type: "http",
       chainType: "l1",
-      url: BASE_RPC_URL,
+      url: BASE_MAINNET_RPC_URL,
       chainId: 8453,
       accounts: normalizedPrivateKey ? [normalizedPrivateKey] : [],
     },
