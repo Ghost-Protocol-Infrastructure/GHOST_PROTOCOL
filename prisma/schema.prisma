@@ -66,6 +66,25 @@ enum AgentGatewayDelegatedSignerStatus {
   REVOKED
 }
 
+enum MerchantEarningSourceType {
+  GATE_DEBIT
+  FULFILLMENT_CAPTURE
+}
+
+enum MerchantEarningStatus {
+  PENDING
+  SUBMITTED
+  CONFIRMED
+  FAILED
+}
+
+enum MerchantSettlementBatchStatus {
+  OPEN
+  SUBMITTED
+  CONFIRMED
+  FAILED
+}
+
 model CreditBalance {
   walletAddress   String   @id
   credits         Int      @default(0)
@@ -75,6 +94,7 @@ model CreditBalance {
 
   ledgerEntries    CreditLedger[]
   fulfillmentHolds FulfillmentHold[]
+  merchantEarnings MerchantEarning[]
 }
 
 model AccessNonce {
@@ -327,6 +347,57 @@ model AgentGatewayDelegatedSigner {
   @@index([ownerAddress, status])
   @@index([gatewayConfigId, signerAddress])
   @@index([signerAddress, status])
+}
+
+model MerchantSettlementBatch {
+  id             String                      @id @default(cuid())
+  status         MerchantSettlementBatchStatus @default(OPEN)
+  txHash         String?
+  submittedAt    DateTime?
+  confirmedAt    DateTime?
+  failureMessage String?
+  createdAt      DateTime                    @default(now())
+  updatedAt      DateTime                    @updatedAt
+
+  earnings MerchantEarning[]
+
+  @@index([status, createdAt])
+  @@index([submittedAt])
+  @@index([confirmedAt])
+  @@index([txHash])
+}
+
+model MerchantEarning {
+  id                   String                   @id @default(cuid())
+  settlementId         String                   @unique
+  walletAddress        String
+  merchantOwnerAddress String
+  agentId              String?
+  serviceSlug          String
+  sourceType           MerchantEarningSourceType
+  sourceId             String
+  grossCredits         Int
+  grossWei             BigInt
+  feeWei               BigInt
+  netWei               BigInt
+  status               MerchantEarningStatus    @default(PENDING)
+  allocatorBatchId     String?
+  txHash               String?
+  failureCode          String?
+  failureMessage       String?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  wallet         CreditBalance            @relation(fields: [walletAddress], references: [walletAddress], onDelete: Cascade)
+  allocatorBatch MerchantSettlementBatch? @relation(fields: [allocatorBatchId], references: [id], onDelete: SetNull)
+
+  @@unique([sourceType, sourceId])
+  @@index([status, createdAt])
+  @@index([merchantOwnerAddress, status, createdAt])
+  @@index([serviceSlug, createdAt])
+  @@index([agentId, createdAt])
+  @@index([allocatorBatchId, status])
+  @@index([txHash])
 }
 
 model SystemState {

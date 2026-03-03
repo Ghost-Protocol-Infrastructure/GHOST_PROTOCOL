@@ -23,7 +23,8 @@
     "test:credits:regression": "npx tsx scripts/test-credit-regression.ts",
     "typecheck": "tsc --noEmit",
     "contracts:compile": "hardhat compile",
-    "contracts:deploy:vault:base-mainnet": "node scripts/deploy-vault.js",
+    "contracts:deploy:vault:base-mainnet": "node scripts/deploy-vault.js --network=base-mainnet",
+    "contracts:deploy:vault:base-sepolia": "node scripts/deploy-vault.js --network=base-sepolia",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -50,6 +51,7 @@
     "wagmi": "^2.19.5"
   },
   "devDependencies": {
+    "@nomicfoundation/hardhat-node-test-runner": "^3.0.9",
     "@nomicfoundation/hardhat-verify": "^3.0.10",
     "@nomicfoundation/hardhat-viem": "^3.0.2",
     "@tailwindcss/postcss": "^4",

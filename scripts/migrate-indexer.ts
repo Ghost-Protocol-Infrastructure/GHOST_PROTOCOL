@@ -56,6 +56,10 @@ const CONNECT_TIMEOUT_SECONDS = parsePositiveInt(
   DEFAULT_CONNECT_TIMEOUT_SECONDS,
   120,
 );
+const PRISMA_DB_PUSH_COMMAND =
+  process.platform === "win32"
+    ? { command: "cmd.exe", args: ["/d", "/s", "/c", "npx prisma db push"] }
+    : { command: "npx", args: ["prisma", "db", "push"] };
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
@@ -118,7 +122,7 @@ const runPrismaDbPush = async (): Promise<void> => {
         `Running prisma db push (${mode} connection, attempt ${attempt}/${DB_PUSH_RETRY_ATTEMPTS}).`,
       );
 
-      const result = spawnSync("npx", ["prisma", "db", "push"], {
+      const result = spawnSync(PRISMA_DB_PUSH_COMMAND.command, PRISMA_DB_PUSH_COMMAND.args, {
         env: process.env,
         encoding: "utf8",
         stdio: "pipe",
@@ -126,6 +130,10 @@ const runPrismaDbPush = async (): Promise<void> => {
 
       if (result.stdout) process.stdout.write(result.stdout);
       if (result.stderr) process.stderr.write(result.stderr);
+
+      if (result.error) {
+        throw result.error;
+      }
 
       if (result.status === 0) {
         return;

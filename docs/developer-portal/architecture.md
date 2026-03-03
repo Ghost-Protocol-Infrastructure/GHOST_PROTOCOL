@@ -57,8 +57,8 @@ GhostVault is the ETH credit rail. It tracks:
 
 GhostVault uses pull over push:
 
-1. `depositCredit(agent)` records fee in `accruedFees` and net in `balances[agent]`.
-2. No external transfer to treasury occurs during user deposit.
+1. `depositCredit()` increases pooled credit backing and does not credit any merchant directly.
+2. Merchant earnings are allocated later from successful spend events and create withdrawable owner balances.
 3. Owner later claims fees with `claimFees(recipient)`.
 
 This reduces external-call risk on deposit and isolates treasury failure from user crediting.
@@ -76,7 +76,7 @@ This reduces external-call risk on deposit and isolates treasury failure from us
 ## Data flow summary
 
 1. User signs Gate payload in SDK.
-2. User can top up by depositing ETH into GhostVault for a specific agent owner.
+2. User can top up by depositing ETH into GhostVault as pooled backing for universal credits.
 3. `/api/sync-credits` reads `Deposited` logs and converts deposit history into a wallet-level off-chain credit balance.
 4. Gate and fulfillment flows verify signatures and deduct credits in Postgres.
 
@@ -84,10 +84,10 @@ This reduces external-call risk on deposit and isolates treasury failure from us
 
 - Consumer spend is tracked off-chain by wallet in `CreditBalance`.
 - Usage is attributed per service in off-chain rows such as `CreditLedger.service` and `FulfillmentHold.serviceSlug`.
-- Merchant payout is currently attributed at deposit time through `GhostVault.depositCredit(agent)`, which credits `balances[agent]` on-chain.
+- Merchant payout is now attributed from successful gate debits and fulfillment captures, then allocated on-chain through settlement batches.
 - Ghost Credits are currently prepaid and non-refundable once converted into off-chain credits.
 
-This means usage tracking and payout attribution are both present, but they are not currently reconciled by a post-spend revenue share process. Merchant payout follows the agent selected at deposit time.
+This means usage tracking and payout attribution are reconciled by post-spend settlement. Consumer deposits fund universal credits, while merchant payout follows actual successful usage.
 
 ## Fulfillment
 

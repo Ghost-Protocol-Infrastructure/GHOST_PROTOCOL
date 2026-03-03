@@ -5,10 +5,50 @@
         "internalType": "address",
         "name": "treasuryWallet",
         "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "initialMaxTVL",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "fixedCreditPriceWei",
+        "type": "uint256"
       }
     ],
     "stateMutability": "nonpayable",
     "type": "constructor"
+  },
+  {
+    "inputs": [],
+    "name": "AllocationExceedsBacking",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "AllocationsPaused",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ArrayLengthMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "DepositNotExactCreditMultiple",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "DepositsPaused",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "GlobalCapReached",
+    "type": "error"
   },
   {
     "inputs": [],
@@ -18,6 +58,16 @@
   {
     "inputs": [],
     "name": "InvalidAmount",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidFeeAmount",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidSettlementId",
     "type": "error"
   },
   {
@@ -59,18 +109,35 @@
   },
   {
     "inputs": [],
+    "name": "SettlementAlreadyProcessed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "TransferFailed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "UnauthorizedOperator",
     "type": "error"
   },
   {
     "anonymous": false,
     "inputs": [
       {
-        "indexed": true,
-        "internalType": "address",
-        "name": "agent",
-        "type": "address"
-      },
+        "indexed": false,
+        "internalType": "bool",
+        "name": "paused",
+        "type": "bool"
+      }
+    ],
+    "name": "AllocationsPauseUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
       {
         "indexed": true,
         "internalType": "address",
@@ -86,11 +153,24 @@
       {
         "indexed": false,
         "internalType": "uint256",
-        "name": "fee",
+        "name": "creditsPurchased",
         "type": "uint256"
       }
     ],
     "name": "Deposited",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "paused",
+        "type": "bool"
+      }
+    ],
+    "name": "DepositsPauseUpdated",
     "type": "event"
   },
   {
@@ -137,6 +217,43 @@
       {
         "indexed": true,
         "internalType": "address",
+        "name": "merchant",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "settlementId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "grossAmount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "feeAmount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "netAmount",
+        "type": "uint256"
+      }
+    ],
+    "name": "MerchantEarningsAllocated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
         "name": "previousOwner",
         "type": "address"
       },
@@ -148,6 +265,25 @@
       }
     ],
     "name": "OwnershipTransferred",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "operator",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "allowed",
+        "type": "bool"
+      }
+    ],
+    "name": "SettlementOperatorUpdated",
     "type": "event"
   },
   {
@@ -175,7 +311,13 @@
       {
         "indexed": true,
         "internalType": "address",
-        "name": "agent",
+        "name": "merchant",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "recipient",
         "type": "address"
       },
       {
@@ -190,7 +332,7 @@
   },
   {
     "inputs": [],
-    "name": "FEE_BASIS_POINTS",
+    "name": "accruedFees",
     "outputs": [
       {
         "internalType": "uint256",
@@ -202,13 +344,69 @@
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "accruedFees",
-    "outputs": [
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "merchant",
+        "type": "address"
+      },
       {
         "internalType": "uint256",
-        "name": "",
+        "name": "grossAmount",
         "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "feeAmount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "settlementId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "allocateMerchantEarnings",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address[]",
+        "name": "merchants",
+        "type": "address[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "grossAmounts",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "feeAmounts",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "bytes32[]",
+        "name": "settlementIds",
+        "type": "bytes32[]"
+      }
+    ],
+    "name": "allocateMerchantEarningsBatch",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "allocationsPaused",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
       }
     ],
     "stateMutability": "view",
@@ -247,13 +445,20 @@
     "type": "function"
   },
   {
-    "inputs": [
+    "inputs": [],
+    "name": "creditPriceWei",
+    "outputs": [
       {
-        "internalType": "address",
-        "name": "agent",
-        "type": "address"
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
       }
     ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "depositCredit",
     "outputs": [],
     "stateMutability": "payable",
@@ -261,7 +466,39 @@
   },
   {
     "inputs": [],
+    "name": "depositsPaused",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "maxTVL",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "merchant",
+        "type": "address"
+      }
+    ],
+    "name": "merchantBalances",
     "outputs": [
       {
         "internalType": "uint256",
@@ -286,6 +523,51 @@
     "type": "function"
   },
   {
+    "inputs": [
+      {
+        "internalType": "bool",
+        "name": "paused",
+        "type": "bool"
+      }
+    ],
+    "name": "pauseAllocations",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bool",
+        "name": "paused",
+        "type": "bool"
+      }
+    ],
+    "name": "pauseDeposits",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "name": "processedSettlementIds",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [],
     "name": "renounceOwnership",
     "outputs": [],
@@ -296,11 +578,29 @@
     "inputs": [
       {
         "internalType": "uint256",
-        "name": "_newCap",
+        "name": "newCap",
         "type": "uint256"
       }
     ],
     "name": "setMaxTVL",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "operator",
+        "type": "address"
+      },
+      {
+        "internalType": "bool",
+        "name": "allowed",
+        "type": "bool"
+      }
+    ],
+    "name": "setSettlementOperator",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -319,8 +619,53 @@
     "type": "function"
   },
   {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "settlementOperators",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "totalCreditBacking",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [],
     "name": "totalLiability",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "totalMerchantLiability",
     "outputs": [
       {
         "internalType": "uint256",

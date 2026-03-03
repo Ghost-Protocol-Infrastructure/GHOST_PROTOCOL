@@ -1,35 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createPublicClient, getAddress, http, parseEther, type AbiEvent, type Address, type Hash } from "viem";
-import { base } from "viem/chains";
-import { GHOST_VAULT_ABI, GHOST_VAULT_ADDRESS } from "@/lib/constants";
+import { createPublicClient, getAddress, http, type AbiEvent, type Address, type Hash } from "viem";
+import { base, baseSepolia } from "viem/chains";
+import { GHOST_CREDIT_PRICE_WEI, GHOST_PREFERRED_CHAIN_ID, GHOST_VAULT_ABI, GHOST_VAULT_ADDRESS } from "@/lib/constants";
 import { getCreditBalance, syncDeposits } from "@/lib/db";
 
 export const runtime = "nodejs";
 
-const DEFAULT_CREDIT_PRICE_WEI = 10_000_000_000_000n; // 0.00001 ETH
 const DEFAULT_MAX_BLOCKS_PER_SYNC_REQUEST = 500n;
 const DEFAULT_LOG_CHUNK_SIZE = 500n;
 const MIN_LOG_CHUNK_SIZE = 10n;
 const DEFAULT_MAX_TX_AWARE_CATCHUP_STEPS_PER_REQUEST = 96;
 const DEFAULT_SYNC_DEPOSIT_WRITE_CONFLICT_RETRIES = 3;
-
-const getCreditPriceWei = (): bigint => {
-  const rawWei = process.env.GHOST_CREDIT_PRICE_WEI?.trim();
-  if (rawWei && /^\d+$/.test(rawWei)) return BigInt(rawWei);
-
-  const rawEth = process.env.GHOST_CREDIT_PRICE_ETH?.trim();
-  if (rawEth) {
-    try {
-      return parseEther(rawEth);
-    } catch {
-      // Fall back to default below.
-    }
-  }
-
-  return DEFAULT_CREDIT_PRICE_WEI;
-};
-
-const CREDIT_PRICE_WEI = getCreditPriceWei();
+const CREDIT_PRICE_WEI = GHOST_CREDIT_PRICE_WEI;
 
 const START_BLOCK = (() => {
   const raw = process.env.GHOST_VAULT_DEPLOYMENT_BLOCK?.trim();
@@ -94,7 +76,7 @@ const json = (body: unknown, status = 200): NextResponse =>
   });
 
 const publicClient = createPublicClient({
-  chain: base,
+  chain: GHOST_PREFERRED_CHAIN_ID === 84532 ? baseSepolia : base,
   transport: http(process.env.BASE_RPC_URL?.trim() || "https://mainnet.base.org"),
 });
 
@@ -330,9 +312,23 @@ const syncCreditsSingleStepForUser = async (
         : latestBlock;
 
     const existingBalance = await getCreditBalance(userAddress);
-    const lastSyncedBlockBefore = existingBalance?.lastSyncedBlock ?? 0n;
+    const persistedLastSyncedBlock = existingBalance?.lastSyncedBlock ?? 0n;
+    const chainCursorAheadOfHead = persistedLastSyncedBlock > effectiveLatestBlock;
+    const lastSyncedBlockBefore = chainCursorAheadOfHead ? 0n : persistedLastSyncedBlock;
+    const fallbackResetFromBlock = (() => {
+      const anchor = options?.targetToBlock ?? effectiveLatestBlock;
+      if (anchor <= START_BLOCK) return START_BLOCK;
+      const windowStart = anchor >= MAX_BLOCKS_PER_SYNC_REQUEST - 1n
+        ? anchor - (MAX_BLOCKS_PER_SYNC_REQUEST - 1n)
+        : 0n;
+      return windowStart > START_BLOCK ? windowStart : START_BLOCK;
+    })();
     const fromBlockCandidate = lastSyncedBlockBefore + 1n;
-    const fromBlock = fromBlockCandidate > START_BLOCK ? fromBlockCandidate : START_BLOCK;
+    const fromBlock = chainCursorAheadOfHead
+      ? fallbackResetFromBlock
+      : fromBlockCandidate > START_BLOCK
+        ? fromBlockCandidate
+        : START_BLOCK;
     const cappedToBlock =
       fromBlock <= effectiveLatestBlock
         ? (() => {
@@ -357,7 +353,10 @@ const syncCreditsSingleStepForUser = async (
       scan.depositedWei,
       CREDIT_PRICE_WEI,
       syncedToBlock,
-      { expectedLastSyncedBlock: lastSyncedBlockBefore },
+      {
+        expectedLastSyncedBlock: persistedLastSyncedBlock,
+        allowLastSyncedBlockRollback: chainCursorAheadOfHead,
+      },
     );
 
     if (synced.conflict) {

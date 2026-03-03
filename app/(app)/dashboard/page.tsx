@@ -12,8 +12,10 @@ import {
   useWriteContract,
 } from "wagmi";
 import { formatEther, getAddress, parseEther, type Address } from "viem";
-import { base } from "viem/chains";
+import { base, baseSepolia } from "viem/chains";
 import {
+  GHOST_CREDIT_PRICE_WEI,
+  GHOST_PREFERRED_CHAIN_ID,
   GHOST_VAULT_ABI,
   GHOST_VAULT_ADDRESS,
   PROTOCOL_TREASURY_FALLBACK_ADDRESS,
@@ -24,9 +26,15 @@ import {
 } from "@/lib/agent-gateway-auth";
 import TerminalHeader from "@/components/TerminalHeader";
 
-const CREDIT_PRICE_WEI = parseEther("0.00001");
-const SUPPORTED_CHAIN_IDS = new Set<number>([base.id]);
-const PREFERRED_CHAIN_ID = base.id;
+const CHAIN_METADATA = {
+  [base.id]: { id: base.id, name: "Base Mainnet" },
+  [baseSepolia.id]: { id: baseSepolia.id, name: "Base Sepolia" },
+} as const;
+
+const PREFERRED_CHAIN_ID = GHOST_PREFERRED_CHAIN_ID in CHAIN_METADATA ? GHOST_PREFERRED_CHAIN_ID : base.id;
+const SUPPORTED_CHAIN_IDS = new Set<number>([PREFERRED_CHAIN_ID]);
+const PREFERRED_CHAIN_NAME =
+  PREFERRED_CHAIN_ID === baseSepolia.id ? CHAIN_METADATA[baseSepolia.id].name : CHAIN_METADATA[base.id].name;
 
 type CopyState = "idle" | "copied" | "error";
 type CreditSyncState = "idle" | "syncing" | "synced" | "error";
@@ -78,7 +86,28 @@ type AgentGatewayConfigRecord = {
   lastCanaryStatusCode: number | null;
   lastCanaryLatencyMs: number | null;
   lastCanaryError: string | null;
+  settlementSummary: MerchantSettlementSummaryRecord;
   canaryHistory: AgentGatewayCanaryHistoryEntry[];
+};
+
+type MerchantSettlementSummaryBucketRecord = {
+  count: number;
+  grossWei: bigint;
+  feeWei: bigint;
+  netWei: bigint;
+  oldestCreatedAt: string | null;
+};
+
+type MerchantSettlementSummaryRecord = {
+  scope: {
+    ownerAddress: string | null;
+    agentId: string | null;
+    serviceSlug: string | null;
+  };
+  pending: MerchantSettlementSummaryBucketRecord;
+  submitted: MerchantSettlementSummaryBucketRecord;
+  confirmed: MerchantSettlementSummaryBucketRecord;
+  failed: MerchantSettlementSummaryBucketRecord;
 };
 
 type AgentGatewayCanaryHistoryEntry = {
@@ -93,6 +122,42 @@ type AgentGatewayCanaryHistoryEntry = {
 type AgentGatewayConfigResponse = {
   configured: boolean;
   config: AgentGatewayConfigRecord;
+};
+
+const EMPTY_SETTLEMENT_SUMMARY: MerchantSettlementSummaryRecord = {
+  scope: {
+    ownerAddress: null,
+    agentId: null,
+    serviceSlug: null,
+  },
+  pending: {
+    count: 0,
+    grossWei: 0n,
+    feeWei: 0n,
+    netWei: 0n,
+    oldestCreatedAt: null,
+  },
+  submitted: {
+    count: 0,
+    grossWei: 0n,
+    feeWei: 0n,
+    netWei: 0n,
+    oldestCreatedAt: null,
+  },
+  confirmed: {
+    count: 0,
+    grossWei: 0n,
+    feeWei: 0n,
+    netWei: 0n,
+    oldestCreatedAt: null,
+  },
+  failed: {
+    count: 0,
+    grossWei: 0n,
+    feeWei: 0n,
+    netWei: 0n,
+    oldestCreatedAt: null,
+  },
 };
 
 type AgentGatewayDelegatedSignerEntry = {
@@ -118,7 +183,10 @@ type AgentGatewayDelegatedSignersResponse = {
 
 const isHexAddress = (value: string): boolean => /^0x[a-fA-F0-9]{40}$/.test(value);
 const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/, "");
-const APP_BASE_URL = normalizeBaseUrl(process.env.NEXT_PUBLIC_BASE_URL?.trim() || "https://ghostprotocol.cc");
+const APP_BASE_URL = normalizeBaseUrl(
+  process.env.NEXT_PUBLIC_BASE_URL?.trim() ||
+    (typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:3000"),
+);
 const GITHUB_DOCS_BASE_URL = "https://github.com/Ghost-Protocol-Infrastructure/GHOST_PROTOCOL/blob/main/docs/developer-portal";
 const NODE_QUICKSTART_DOC_URL = `${GITHUB_DOCS_BASE_URL}/quickstart-node.md`;
 const SDK_REFERENCE_DOC_URL = `${GITHUB_DOCS_BASE_URL}/sdk-reference.md`;
@@ -315,6 +383,18 @@ const formatRelativeTimeFromIso = (value: string): string => {
   return `${Math.max(1, Math.round(absMs / dayMs))}d ${suffix}`;
 };
 
+const formatWeiToFixedEth = (value: bigint): string => {
+  const ethValue = Number.parseFloat(formatEther(value));
+  if (!Number.isFinite(ethValue)) return "0.0000 ETH";
+
+  const decimals =
+    ethValue >= 0.01 ? 4 :
+      ethValue >= 0.0001 ? 6 :
+        ethValue > 0 ? 8 : 4;
+
+  return `${ethValue.toFixed(decimals)} ETH`;
+};
+
 type SyncCreditsResponse = {
   userAddress: string;
   credits: string;
@@ -445,7 +525,7 @@ function DashboardPageContent() {
   const amountWei = useMemo(() => parseInputWei(ethAmount), [ethAmount]);
   const estimatedCredits = useMemo(() => {
     if (amountWei == null) return null;
-    return amountWei / CREDIT_PRICE_WEI;
+    return amountWei / GHOST_CREDIT_PRICE_WEI;
   }, [amountWei]);
   const activeMerchantDelegatedSigners = useMemo(
     () => merchantDelegatedSigners.filter((signer) => signer.status === "ACTIVE"),
@@ -471,7 +551,6 @@ function DashboardPageContent() {
     () => normalizeAddress(requestedOwner),
     [requestedOwner],
   );
-  const targetAgentAddress = requestedAgentAddress ?? PROTOCOL_TREASURY_FALLBACK_ADDRESS;
   const usesFallbackAgentAddress = requestedAgentAddress == null;
 
   const isOnSupportedChain = chainId != null && SUPPORTED_CHAIN_IDS.has(chainId);
@@ -486,10 +565,10 @@ function DashboardPageContent() {
     address: GHOST_VAULT_ADDRESS,
     chainId: readChainId,
     abi: GHOST_VAULT_ABI,
-    functionName: "balances",
-    args: [targetAgentAddress],
+    functionName: "merchantBalances",
+    args: [requestedAgentAddress ?? PROTOCOL_TREASURY_FALLBACK_ADDRESS],
     query: {
-      enabled: isOnSupportedChain,
+      enabled: isOnSupportedChain && Boolean(requestedAgentAddress),
     },
   });
 
@@ -583,6 +662,57 @@ function DashboardPageContent() {
       lastCanaryLatencyMs:
         typeof config.lastCanaryLatencyMs === "number" ? config.lastCanaryLatencyMs : null,
       lastCanaryError: typeof config.lastCanaryError === "string" ? config.lastCanaryError : null,
+      settlementSummary: (() => {
+        const rawSummary =
+          typeof (config as { settlementSummary?: unknown }).settlementSummary === "object" &&
+          (config as { settlementSummary?: unknown }).settlementSummary !== null
+            ? (config as { settlementSummary: Record<string, unknown> }).settlementSummary
+            : null;
+
+        if (!rawSummary) {
+          return EMPTY_SETTLEMENT_SUMMARY;
+        }
+
+        const parseBucket = (value: unknown): MerchantSettlementSummaryBucketRecord => {
+          const row = typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+          return {
+            count: typeof row.count === "number" ? row.count : 0,
+            grossWei: parseNullableDecimalBigInt(row.grossWei) ?? 0n,
+            feeWei: parseNullableDecimalBigInt(row.feeWei) ?? 0n,
+            netWei: parseNullableDecimalBigInt(row.netWei) ?? 0n,
+            oldestCreatedAt:
+              typeof row.oldestCreatedAt === "string" || row.oldestCreatedAt === null
+                ? (row.oldestCreatedAt ?? null)
+                : null,
+          };
+        };
+
+        const scope =
+          typeof rawSummary.scope === "object" && rawSummary.scope !== null
+            ? (rawSummary.scope as Record<string, unknown>)
+            : {};
+
+        return {
+          scope: {
+            ownerAddress:
+              typeof scope.ownerAddress === "string" || scope.ownerAddress === null
+                ? (scope.ownerAddress ?? null)
+                : null,
+            agentId:
+              typeof scope.agentId === "string" || scope.agentId === null
+                ? (scope.agentId ?? null)
+                : null,
+            serviceSlug:
+              typeof scope.serviceSlug === "string" || scope.serviceSlug === null
+                ? (scope.serviceSlug ?? null)
+                : null,
+          },
+          pending: parseBucket(rawSummary.pending),
+          submitted: parseBucket(rawSummary.submitted),
+          confirmed: parseBucket(rawSummary.confirmed),
+          failed: parseBucket(rawSummary.failed),
+        };
+      })(),
       canaryHistory: Array.isArray((config as { canaryHistory?: unknown[] }).canaryHistory)
         ? (config as { canaryHistory: unknown[] }).canaryHistory
           .map((entry): AgentGatewayCanaryHistoryEntry | null => {
@@ -818,7 +948,7 @@ private_key = os.environ["GHOST_SIGNER_PRIVATE_KEY"]
 base_url = os.getenv("GHOST_GATE_BASE_URL", "${APP_BASE_URL}").rstrip("/")
 service = "${consumerServiceSlug}"  # replace dynamically
 credit_cost = 1
-chain_id = 8453  # Base
+chain_id = ${PREFERRED_CHAIN_ID}  # ${PREFERRED_CHAIN_NAME}
 
 payload = {
     "service": service,
@@ -999,7 +1129,7 @@ print("body:", response.text)`,
     address: GHOST_VAULT_ADDRESS,
     chainId: readChainId,
     abi: GHOST_VAULT_ABI,
-    functionName: "balances",
+    functionName: "merchantBalances",
     args: [selectedOwnedAgentAddress ?? PROTOCOL_TREASURY_FALLBACK_ADDRESS],
     query: {
       enabled: isOnSupportedChain && Boolean(selectedOwnedAgentAddress),
@@ -1310,7 +1440,7 @@ print("body:", response.text)`,
     merchantGatewayConfig?.lastCanaryPassedAt ?? selectedOwnedAgent?.gatewayLastCanaryPassedAt ?? null;
   const merchantGatewayCanaryHistory = merchantGatewayConfig?.canaryHistory ?? [];
 
-  const consumerHasExplicitAgentTarget = Boolean(normalizedRequestedAgentId && !usesFallbackAgentAddress);
+  const consumerHasExplicitAgentTarget = Boolean(normalizedRequestedAgentId);
   const consumerEffectiveGatewayReadinessStatus = consumerHasExplicitAgentTarget
     ? normalizeGatewayReadinessStatus(consumerGatewayReadinessStatus)
     : null;
@@ -1650,8 +1780,25 @@ def my_agent():
 
   const merchantVaultBalanceWei = typeof merchantVaultBalance === "bigint" ? merchantVaultBalance : 0n;
   const formattedMerchantVaultBalance = useMemo(() => {
-    return `${Number.parseFloat(formatEther(merchantVaultBalanceWei)).toFixed(4)} ETH`;
+    return formatWeiToFixedEth(merchantVaultBalanceWei);
   }, [merchantVaultBalanceWei]);
+  const merchantSettlementSummary = merchantGatewayConfig?.settlementSummary ?? EMPTY_SETTLEMENT_SUMMARY;
+  const formattedPendingEarnings = useMemo(
+    () => formatWeiToFixedEth(merchantSettlementSummary.pending.netWei),
+    [merchantSettlementSummary.pending.netWei],
+  );
+  const formattedSubmittedEarnings = useMemo(
+    () => formatWeiToFixedEth(merchantSettlementSummary.submitted.netWei),
+    [merchantSettlementSummary.submitted.netWei],
+  );
+  const formattedConfirmedEarnings = useMemo(
+    () => formatWeiToFixedEth(merchantSettlementSummary.confirmed.netWei),
+    [merchantSettlementSummary.confirmed.netWei],
+  );
+  const formattedSettledAvailableEarnings = useMemo(
+    () => formatWeiToFixedEth(merchantVaultBalanceWei),
+    [merchantVaultBalanceWei],
+  );
 
   const merchantOwnsSelectedAgent = Boolean(
     address &&
@@ -1692,6 +1839,14 @@ def my_agent():
 
         await waitMs(WITHDRAW_BALANCE_REFETCH_DELAY_MS);
       }
+
+      if (cancelled || !selectedOwnedAgentId) return;
+
+      try {
+        await refreshMerchantGatewayReadinessSnapshot(selectedOwnedAgentId);
+      } catch {
+        // Keep the existing settlement snapshot if the post-withdraw refresh fails.
+      }
     };
 
     void refreshMerchantBalanceAfterWithdraw();
@@ -1699,7 +1854,12 @@ def my_agent():
     return () => {
       cancelled = true;
     };
-  }, [isWithdrawConfirmedForSelectedAgent, refetchMerchantVaultBalance]);
+  }, [
+    isWithdrawConfirmedForSelectedAgent,
+    refetchMerchantVaultBalance,
+    refreshMerchantGatewayReadinessSnapshot,
+    selectedOwnedAgentId,
+  ]);
 
   const handleSwitchToPreferredChain = async () => {
     setSwitchError(null);
@@ -1728,7 +1888,7 @@ def my_agent():
       address: GHOST_VAULT_ADDRESS,
       abi: GHOST_VAULT_ABI,
       functionName: "depositCredit",
-      args: [targetAgentAddress],
+      args: [],
       value: amountWei,
     });
   };
@@ -2213,6 +2373,54 @@ def my_agent():
                   </p>
                 </div>
 
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <div className="border border-neutral-900 bg-neutral-900 p-4">
+                    <p className="mb-1 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Pending Earnings</p>
+                    <p className={`text-2xl font-mono ${merchantSettlementSummary.pending.netWei > 0n ? "text-neutral-200" : "text-neutral-500"}`}>
+                      {formattedPendingEarnings}
+                    </p>
+                    <p className="mt-2 text-xs text-neutral-600">
+                      {merchantSettlementSummary.pending.count} unsettled spend events waiting for allocation.
+                    </p>
+                    {merchantSettlementSummary.pending.oldestCreatedAt && (
+                      <p className="mt-1 text-[11px] text-neutral-600">
+                        Oldest pending event: {formatRelativeTimeFromIso(merchantSettlementSummary.pending.oldestCreatedAt)}
+                      </p>
+                    )}
+                  </div>
+                  <div className="border border-neutral-900 bg-neutral-900 p-4">
+                    <p className="mb-1 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">In-Flight Earnings</p>
+                    <p className={`text-2xl font-mono ${merchantSettlementSummary.submitted.netWei > 0n ? "text-neutral-200" : "text-neutral-500"}`}>
+                      {formattedSubmittedEarnings}
+                    </p>
+                    <p className="mt-2 text-xs text-neutral-600">
+                      {merchantSettlementSummary.submitted.count} submitted spend events awaiting on-chain confirmation.
+                    </p>
+                    {merchantSettlementSummary.submitted.oldestCreatedAt && (
+                      <p className="mt-1 text-[11px] text-neutral-600">
+                        Oldest submitted event: {formatRelativeTimeFromIso(merchantSettlementSummary.submitted.oldestCreatedAt)}
+                      </p>
+                    )}
+                  </div>
+                  <div className="border border-neutral-900 bg-neutral-900 p-4">
+                    <p className="mb-1 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Settled Available</p>
+                    <p className={`text-2xl font-mono ${merchantVaultBalanceWei > 0n ? "text-neutral-200" : "text-neutral-500"}`}>
+                      {formattedSettledAvailableEarnings}
+                    </p>
+                    <p className="mt-2 text-xs text-neutral-600">
+                      Current on-chain merchant balance available to withdraw.
+                    </p>
+                    <p className="mt-1 text-[11px] text-neutral-600">
+                      Lifetime settled total: {formattedConfirmedEarnings} across {merchantSettlementSummary.confirmed.count} confirmed events.
+                    </p>
+                    {merchantSettlementSummary.confirmed.oldestCreatedAt && (
+                      <p className="mt-1 text-[11px] text-neutral-600">
+                        Oldest confirmed event: {formatRelativeTimeFromIso(merchantSettlementSummary.confirmed.oldestCreatedAt)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
                 <div className="mt-4 border border-neutral-900 bg-neutral-900 p-3">
                   <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Vault Owner (Selected Agent)</p>
                   <p className="mt-1 break-all text-sm text-neutral-400 font-mono">
@@ -2298,10 +2506,10 @@ def my_agent():
                       : !merchantOwnsSelectedAgent
                         ? "Connected wallet does not match selected agent owner."
                         : !isOnSupportedChain
-                          ? "Switch to Base Mainnet to withdraw."
+                          ? `Switch to ${PREFERRED_CHAIN_NAME} to withdraw.`
                           : merchantVaultBalanceWei <= 0n
                             ? "No withdrawable GhostVault balance for the selected agent owner."
-                            : "Withdraws the selected owner balance from GhostVault to the connected owner wallet."}
+                            : "Withdraws the selected owner balance from GhostVault to the connected owner wallet. Pending and in-flight earnings settle first."}
                 </p>
                 {withdrawWriteError && (
                   <p className="mt-1 text-xs text-red-500">
@@ -2373,7 +2581,9 @@ def my_agent():
                 )}
 
                 <div className="mb-5 border border-neutral-900 bg-neutral-900 p-4">
-                  <p className="mb-1 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Vault Revenue (ETH)</p>
+                  <p className="mb-1 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
+                    Selected Merchant Withdrawable (ETH)
+                  </p>
                   <p className="text-3xl text-neutral-200 font-mono">
                     {isConnected
                       ? isBalancePending
@@ -2392,11 +2602,13 @@ def my_agent():
                 </div>
 
                 <div className="mb-5 border border-neutral-900 bg-neutral-900 p-3">
-                  <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Target Agent Wallet</p>
-                  <p className="mt-1 break-all text-sm text-neutral-400 font-mono">{targetAgentAddress}</p>
+                  <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Selected Owner Context</p>
+                  <p className="mt-1 break-all text-sm text-neutral-400 font-mono">
+                    {requestedAgentAddress ?? "UNSET"}
+                  </p>
                   {usesFallbackAgentAddress && (
                     <p className="mt-1 text-xs text-neutral-600">
-                      No agent wallet found in page context. Using protocol treasury fallback for testing.
+                      No owner wallet found in page context. Ghost Credits top up universally and are not routed by owner address.
                     </p>
                   )}
                 </div>
@@ -2460,7 +2672,7 @@ def my_agent():
                     <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Estimated Access Credits</p>
                     <p className="text-lg text-neutral-200 font-mono">{estimatedCredits == null ? "--" : estimatedCredits.toString()}</p>
                     <p className="mt-1 text-xs text-neutral-600">
-                      Price per credit: {formatEther(CREDIT_PRICE_WEI)} ETH
+                      Price per credit: {formatEther(GHOST_CREDIT_PRICE_WEI)} ETH
                     </p>
                     <p className="mt-2 text-xs text-neutral-500">
                       Ghost Credits are prepaid and non-refundable once purchased.
@@ -2479,7 +2691,7 @@ def my_agent():
                         disabled={isSwitchingChain}
                         className="mt-3 inline-flex items-center gap-2 border border-red-900/40 bg-neutral-900 px-4 py-2 text-xs uppercase tracking-wider text-red-400 transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {isSwitchingChain ? "Switching..." : "Switch to Base Mainnet"}
+                        {isSwitchingChain ? "Switching..." : `Switch to ${PREFERRED_CHAIN_NAME}`}
                       </button>
                     </div>
                   )}

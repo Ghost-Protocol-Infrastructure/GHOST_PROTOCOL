@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { type AgentGatewayCanaryMethod, type AgentGatewayReadinessStatus } from "@prisma/client";
-import { prisma } from "@/lib/db";
+import { getMerchantSettlementSummary, prisma, type MerchantSettlementSummary } from "@/lib/db";
 import {
   deriveAgentServiceSlug,
   normalizeAgentId,
@@ -36,7 +36,28 @@ type GatewayConfigResponse = {
   lastCanaryStatusCode: number | null;
   lastCanaryLatencyMs: number | null;
   lastCanaryError: string | null;
+  settlementSummary: GatewaySettlementSummaryResponse;
   canaryHistory?: GatewayCanaryHistoryEntryResponse[];
+};
+
+type GatewaySettlementSummaryBucketResponse = {
+  count: number;
+  grossWei: string;
+  feeWei: string;
+  netWei: string;
+  oldestCreatedAt: string | null;
+};
+
+type GatewaySettlementSummaryResponse = {
+  scope: {
+    ownerAddress: string | null;
+    agentId: string | null;
+    serviceSlug: string | null;
+  };
+  pending: GatewaySettlementSummaryBucketResponse;
+  submitted: GatewaySettlementSummaryBucketResponse;
+  confirmed: GatewaySettlementSummaryBucketResponse;
+  failed: GatewaySettlementSummaryBucketResponse;
 };
 
 type GatewayCanaryHistoryEntryResponse = {
@@ -70,6 +91,7 @@ const toGatewayConfigResponse = (config: {
   lastCanaryStatusCode: number | null;
   lastCanaryLatencyMs: number | null;
   lastCanaryError: string | null;
+  settlementSummary: MerchantSettlementSummary;
 }): GatewayConfigResponse => ({
   agentId: config.agentId,
   ownerAddress: config.ownerAddress,
@@ -83,6 +105,41 @@ const toGatewayConfigResponse = (config: {
   lastCanaryStatusCode: config.lastCanaryStatusCode,
   lastCanaryLatencyMs: config.lastCanaryLatencyMs,
   lastCanaryError: config.lastCanaryError,
+  settlementSummary: {
+    scope: {
+      ownerAddress: config.settlementSummary.scope.merchantOwnerAddress,
+      agentId: config.settlementSummary.scope.agentId,
+      serviceSlug: config.settlementSummary.scope.serviceSlug,
+    },
+    pending: {
+      count: config.settlementSummary.pending.count,
+      grossWei: config.settlementSummary.pending.grossWei.toString(),
+      feeWei: config.settlementSummary.pending.feeWei.toString(),
+      netWei: config.settlementSummary.pending.netWei.toString(),
+      oldestCreatedAt: config.settlementSummary.pending.oldestCreatedAt?.toISOString() ?? null,
+    },
+    submitted: {
+      count: config.settlementSummary.submitted.count,
+      grossWei: config.settlementSummary.submitted.grossWei.toString(),
+      feeWei: config.settlementSummary.submitted.feeWei.toString(),
+      netWei: config.settlementSummary.submitted.netWei.toString(),
+      oldestCreatedAt: config.settlementSummary.submitted.oldestCreatedAt?.toISOString() ?? null,
+    },
+    confirmed: {
+      count: config.settlementSummary.confirmed.count,
+      grossWei: config.settlementSummary.confirmed.grossWei.toString(),
+      feeWei: config.settlementSummary.confirmed.feeWei.toString(),
+      netWei: config.settlementSummary.confirmed.netWei.toString(),
+      oldestCreatedAt: config.settlementSummary.confirmed.oldestCreatedAt?.toISOString() ?? null,
+    },
+    failed: {
+      count: config.settlementSummary.failed.count,
+      grossWei: config.settlementSummary.failed.grossWei.toString(),
+      feeWei: config.settlementSummary.failed.feeWei.toString(),
+      netWei: config.settlementSummary.failed.netWei.toString(),
+      oldestCreatedAt: config.settlementSummary.failed.oldestCreatedAt?.toISOString() ?? null,
+    },
+  },
 });
 
 const parseActorAddress = (value: unknown): string | null => {
@@ -118,6 +175,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     if (!agent) {
       return json({ code: 404, error: "Agent not found." }, 404);
     }
+
+    const settlementSummary = await getMerchantSettlementSummary({
+      merchantOwnerAddress: agent.owner,
+      agentId: agent.agentId,
+      serviceSlug: deriveAgentServiceSlug(agent.agentId),
+    });
 
     const config = includeHistory
       ? await prisma.agentGatewayConfig.findUnique({
@@ -158,6 +221,41 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             lastCanaryStatusCode: null,
             lastCanaryLatencyMs: null,
             lastCanaryError: null,
+            settlementSummary: {
+              scope: {
+                ownerAddress: settlementSummary.scope.merchantOwnerAddress,
+                agentId: settlementSummary.scope.agentId,
+                serviceSlug: settlementSummary.scope.serviceSlug,
+              },
+              pending: {
+                count: settlementSummary.pending.count,
+                grossWei: settlementSummary.pending.grossWei.toString(),
+                feeWei: settlementSummary.pending.feeWei.toString(),
+                netWei: settlementSummary.pending.netWei.toString(),
+                oldestCreatedAt: settlementSummary.pending.oldestCreatedAt?.toISOString() ?? null,
+              },
+              submitted: {
+                count: settlementSummary.submitted.count,
+                grossWei: settlementSummary.submitted.grossWei.toString(),
+                feeWei: settlementSummary.submitted.feeWei.toString(),
+                netWei: settlementSummary.submitted.netWei.toString(),
+                oldestCreatedAt: settlementSummary.submitted.oldestCreatedAt?.toISOString() ?? null,
+              },
+              confirmed: {
+                count: settlementSummary.confirmed.count,
+                grossWei: settlementSummary.confirmed.grossWei.toString(),
+                feeWei: settlementSummary.confirmed.feeWei.toString(),
+                netWei: settlementSummary.confirmed.netWei.toString(),
+                oldestCreatedAt: settlementSummary.confirmed.oldestCreatedAt?.toISOString() ?? null,
+              },
+              failed: {
+                count: settlementSummary.failed.count,
+                grossWei: settlementSummary.failed.grossWei.toString(),
+                feeWei: settlementSummary.failed.feeWei.toString(),
+                netWei: settlementSummary.failed.netWei.toString(),
+                oldestCreatedAt: settlementSummary.failed.oldestCreatedAt?.toISOString() ?? null,
+              },
+            },
           } satisfies GatewayConfigResponse,
         },
         200,
@@ -168,7 +266,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       {
         configured: true,
         config: ({
-          ...toGatewayConfigResponse(config),
+          ...toGatewayConfigResponse({
+            ...config,
+            settlementSummary,
+          }),
           ...(includeHistory && "canaryChecks" in config
             ? {
                 canaryHistory: (config.canaryChecks as GatewayCanaryHistoryRow[]).map((row) => ({
@@ -365,13 +466,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         lastCanaryError: null,
       },
     });
+    const settlementSummary = await getMerchantSettlementSummary({
+      merchantOwnerAddress: canonicalOwner,
+      agentId,
+      serviceSlug,
+    });
 
     return json(
       {
         ok: true,
         nextAction: "VERIFY_GW_CANARY",
         authMode: "wallet-signature",
-        config: toGatewayConfigResponse(config),
+        config: toGatewayConfigResponse({
+          ...config,
+          settlementSummary,
+        }),
       },
       200,
     );

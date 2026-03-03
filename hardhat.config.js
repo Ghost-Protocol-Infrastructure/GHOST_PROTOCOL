@@ -1,5 +1,6 @@
 import { config as loadEnv } from "dotenv";
 import { defineConfig } from "hardhat/config";
+import hardhatNodeTestRunner from "@nomicfoundation/hardhat-node-test-runner";
 import hardhatViem from "@nomicfoundation/hardhat-viem";
 import hardhatVerify from "@nomicfoundation/hardhat-verify";
 
@@ -18,9 +19,9 @@ const normalizedPrivateKey = rawPrivateKey
 const basescanApiKey = process.env.BASESCAN_API_KEY?.trim() ?? "";
 
 export default defineConfig({
-  plugins: [hardhatViem, hardhatVerify],
+  plugins: [hardhatNodeTestRunner, hardhatViem, hardhatVerify],
   solidity: {
-    version: "0.8.20",
+    version: "0.8.34",
   },
   networks: {
     hardhatMainnet: {

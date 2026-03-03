@@ -4,7 +4,24 @@ export const FULFILLMENT_EIP712_DOMAIN_NAME = "GhostGateFulfillment" as const;
 export const FULFILLMENT_EIP712_DOMAIN_VERSION = "1" as const;
 export const FULFILLMENT_EIP712_VERIFIYING_CONTRACT_SENTINEL =
   "0x0000000000000000000000000000000000000000" as const;
-export const FULFILLMENT_DEFAULT_CHAIN_ID = 8453 as const;
+const FALLBACK_FULFILLMENT_CHAIN_ID = 8453;
+
+const resolveDefaultFulfillmentChainId = (): number => {
+  const rawChainId = process.env.NEXT_PUBLIC_GHOST_PREFERRED_CHAIN_ID ?? process.env.GHOST_PREFERRED_CHAIN_ID;
+  const trimmed = rawChainId?.trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) {
+    return FALLBACK_FULFILLMENT_CHAIN_ID;
+  }
+
+  const parsed = Number.parseInt(trimmed, 10);
+  if (parsed !== 8453 && parsed !== 84532) {
+    return FALLBACK_FULFILLMENT_CHAIN_ID;
+  }
+
+  return parsed;
+};
+
+export const FULFILLMENT_DEFAULT_CHAIN_ID = resolveDefaultFulfillmentChainId();
 
 export const FULFILLMENT_TICKET_HEADER_VERSION = "x-ghost-fulfillment-ticket-version" as const;
 export const FULFILLMENT_TICKET_HEADER_PAYLOAD = "x-ghost-fulfillment-ticket" as const;

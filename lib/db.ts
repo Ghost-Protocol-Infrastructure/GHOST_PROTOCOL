@@ -1,6 +1,11 @@
 import { config as loadEnv } from "dotenv";
 import { PrismaClient, type GateAccessOutcome, Prisma } from "@prisma/client";
 import { getAddress, type Address } from "viem";
+import {
+  buildFulfillmentCaptureSettlementId,
+  buildGateSettlementId,
+  calculateSettlementAmounts,
+} from "./merchant-settlement";
 
 if (!process.env.POSTGRES_PRISMA_URL) {
   loadEnv({ path: ".env", quiet: true });
@@ -13,6 +18,18 @@ const CREDIT_LEDGER_ENABLED = process.env.GHOST_CREDIT_LEDGER_ENABLED === "true"
 const GATE_NONCE_STORE_ENABLED = process.env.GHOST_GATE_NONCE_STORE_ENABLED === "true";
 const GATE_ACCESS_EVENT_LOG_ENABLED = process.env.GHOST_GATE_ACCESS_EVENT_LOG_ENABLED !== "false";
 let gateAccessEventTableAvailable: boolean | null = null;
+
+const parsePositiveIntEnv = (raw: string | undefined, fallback: number): number => {
+  const trimmed = raw?.trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) return fallback;
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const getInteractiveTransactionOptions = () => ({
+  maxWait: parsePositiveIntEnv(process.env.GHOST_DB_INTERACTIVE_TX_MAX_WAIT_MS, 5_000),
+  timeout: parsePositiveIntEnv(process.env.GHOST_DB_INTERACTIVE_TX_TIMEOUT_MS, 15_000),
+});
 
 declare global {
   var prismaGlobal: PrismaClient | undefined;
@@ -129,12 +146,85 @@ type AccessNoncePersistenceResult = {
   accepted: boolean;
 };
 
+export type MerchantEarningSource = "GATE_DEBIT" | "FULFILLMENT_CAPTURE";
+export type MerchantEarningLifecycleStatus = "PENDING" | "SUBMITTED" | "CONFIRMED" | "FAILED";
+
+export type CreateMerchantEarningInput = {
+  settlementId: string;
+  walletAddress: Address | string;
+  merchantOwnerAddress: Address | string;
+  agentId?: string | null;
+  serviceSlug: string;
+  sourceType: MerchantEarningSource;
+  sourceId: string;
+  grossCredits: bigint;
+  grossWei: bigint;
+  feeWei: bigint;
+  netWei: bigint;
+  status?: MerchantEarningLifecycleStatus;
+  allocatorBatchId?: string | null;
+  txHash?: string | null;
+  failureCode?: string | null;
+  failureMessage?: string | null;
+};
+
+export type MerchantSettlementStatusSummary = {
+  count: number;
+  grossWei: bigint;
+  feeWei: bigint;
+  netWei: bigint;
+  oldestCreatedAt: Date | null;
+};
+
+export type MerchantSettlementSummary = {
+  scope: {
+    merchantOwnerAddress: string | null;
+    agentId: string | null;
+    serviceSlug: string | null;
+  };
+  pending: MerchantSettlementStatusSummary;
+  submitted: MerchantSettlementStatusSummary;
+  confirmed: MerchantSettlementStatusSummary;
+  failed: MerchantSettlementStatusSummary;
+};
+
 class AccessNonceReplayError extends Error {
   constructor() {
     super("Access nonce already used for this signer/service.");
     this.name = "AccessNonceReplayError";
   }
 }
+
+class GateSourceReplayError extends Error {
+  constructor() {
+    super("Gate source event already settled.");
+    this.name = "GateSourceReplayError";
+  }
+}
+
+const uniqueErrorTarget = (error: Prisma.PrismaClientKnownRequestError): string => {
+  const meta = error.meta as { target?: unknown } | undefined;
+  if (Array.isArray(meta?.target)) {
+    return meta.target.join(",").toLowerCase();
+  }
+  return typeof meta?.target === "string" ? meta.target.toLowerCase() : "";
+};
+
+const isGateReplayConflict = (error: unknown): boolean => {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+    return false;
+  }
+
+  const target = uniqueErrorTarget(error);
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("creditledger") ||
+    message.includes("merchantearning") ||
+    target.includes("requestid") ||
+    target.includes("settlementid") ||
+    (target.includes("sourcetype") && target.includes("sourceid"))
+  );
+};
 
 const writeCreditLedger = async (
   tx: Prisma.TransactionClient,
@@ -189,6 +279,178 @@ const persistAccessNonce = async (
   }
 
   return { accepted: created.count > 0 };
+};
+
+export const createMerchantEarning = async (
+  tx: Prisma.TransactionClient,
+  input: CreateMerchantEarningInput,
+) => {
+  const settlementId = input.settlementId.trim().toLowerCase();
+  const sourceId = input.sourceId.trim();
+  const serviceSlug = input.serviceSlug.trim();
+  if (!settlementId) {
+    throw new Error("settlementId is required.");
+  }
+  if (!sourceId) {
+    throw new Error("sourceId is required.");
+  }
+  if (!serviceSlug) {
+    throw new Error("serviceSlug is required.");
+  }
+  if (input.grossCredits <= 0n) {
+    throw new Error("grossCredits must be greater than zero.");
+  }
+  if (input.grossWei <= 0n) {
+    throw new Error("grossWei must be greater than zero.");
+  }
+  if (input.feeWei < 0n || input.netWei < 0n) {
+    throw new Error("feeWei and netWei must be non-negative.");
+  }
+  if (input.feeWei + input.netWei !== input.grossWei) {
+    throw new Error("grossWei must equal feeWei + netWei.");
+  }
+
+  return tx.merchantEarning.create({
+    data: {
+      settlementId,
+      walletAddress: normalizeAddressKey(input.walletAddress as Address),
+      merchantOwnerAddress: normalizeSignerKey(input.merchantOwnerAddress),
+      agentId: input.agentId?.trim() || null,
+      serviceSlug,
+      sourceType: input.sourceType,
+      sourceId,
+      grossCredits: toPrismaInt(input.grossCredits, "grossCredits"),
+      grossWei: input.grossWei,
+      feeWei: input.feeWei,
+      netWei: input.netWei,
+      status: input.status ?? "PENDING",
+      allocatorBatchId: input.allocatorBatchId?.trim() || null,
+      txHash: input.txHash?.trim().toLowerCase() || null,
+      failureCode: input.failureCode?.trim() || null,
+      failureMessage: input.failureMessage?.trim() || null,
+    },
+  });
+};
+
+const emptyMerchantSettlementStatusSummary = (): MerchantSettlementStatusSummary => ({
+  count: 0,
+  grossWei: 0n,
+  feeWei: 0n,
+  netWei: 0n,
+  oldestCreatedAt: null,
+});
+
+const buildMerchantSettlementWhere = (input: {
+  merchantOwnerAddress?: Address | string | null;
+  agentId?: string | null;
+  serviceSlug?: string | null;
+  createdAtGte?: Date | null;
+}): Prisma.MerchantEarningWhereInput => {
+  const where: Prisma.MerchantEarningWhereInput = {};
+  const agentId = input.agentId?.trim() || null;
+  const serviceSlug = input.serviceSlug?.trim() || null;
+
+  if (input.merchantOwnerAddress) {
+    where.merchantOwnerAddress = normalizeSignerKey(input.merchantOwnerAddress);
+  }
+
+  if (agentId && serviceSlug) {
+    where.OR = [
+      { agentId },
+      {
+        AND: [
+          { agentId: null },
+          { serviceSlug },
+        ],
+      },
+    ];
+  } else if (agentId) {
+    where.agentId = agentId;
+  } else if (serviceSlug) {
+    where.serviceSlug = serviceSlug;
+  }
+
+  if (input.createdAtGte) {
+    where.createdAt = { gte: input.createdAtGte };
+  }
+
+  return where;
+};
+
+export const getMerchantSettlementSummary = async (input: {
+  merchantOwnerAddress?: Address | string | null;
+  agentId?: string | null;
+  serviceSlug?: string | null;
+  createdAtGte?: Date | null;
+}): Promise<MerchantSettlementSummary> => {
+  const where = buildMerchantSettlementWhere(input);
+  const [rows, pendingOldest, submittedOldest, confirmedOldest, failedOldest] = await Promise.all([
+    prisma.merchantEarning.groupBy({
+      by: ["status"],
+      where,
+      _count: { _all: true },
+      _sum: {
+        grossWei: true,
+        feeWei: true,
+        netWei: true,
+      },
+    }),
+    prisma.merchantEarning.findFirst({
+      where: { ...where, status: "PENDING" },
+      orderBy: { createdAt: "asc" },
+      select: { createdAt: true },
+    }),
+    prisma.merchantEarning.findFirst({
+      where: { ...where, status: "SUBMITTED" },
+      orderBy: { createdAt: "asc" },
+      select: { createdAt: true },
+    }),
+    prisma.merchantEarning.findFirst({
+      where: { ...where, status: "CONFIRMED" },
+      orderBy: { createdAt: "asc" },
+      select: { createdAt: true },
+    }),
+    prisma.merchantEarning.findFirst({
+      where: { ...where, status: "FAILED" },
+      orderBy: { createdAt: "asc" },
+      select: { createdAt: true },
+    }),
+  ]);
+
+  const summary: MerchantSettlementSummary = {
+    scope: {
+      merchantOwnerAddress: input.merchantOwnerAddress ? normalizeSignerKey(input.merchantOwnerAddress) : null,
+      agentId: input.agentId?.trim() || null,
+      serviceSlug: input.serviceSlug?.trim() || null,
+    },
+    pending: emptyMerchantSettlementStatusSummary(),
+    submitted: emptyMerchantSettlementStatusSummary(),
+    confirmed: emptyMerchantSettlementStatusSummary(),
+    failed: emptyMerchantSettlementStatusSummary(),
+  };
+
+  for (const row of rows) {
+    const bucket =
+      row.status === "PENDING"
+        ? summary.pending
+        : row.status === "SUBMITTED"
+          ? summary.submitted
+          : row.status === "CONFIRMED"
+            ? summary.confirmed
+            : summary.failed;
+
+    bucket.count = row._count._all;
+    bucket.grossWei = row._sum.grossWei ?? 0n;
+    bucket.feeWei = row._sum.feeWei ?? 0n;
+    bucket.netWei = row._sum.netWei ?? 0n;
+  }
+
+  summary.pending.oldestCreatedAt = pendingOldest?.createdAt ?? null;
+  summary.submitted.oldestCreatedAt = submittedOldest?.createdAt ?? null;
+  summary.confirmed.oldestCreatedAt = confirmedOldest?.createdAt ?? null;
+  summary.failed.oldestCreatedAt = failedOldest?.createdAt ?? null;
+
+  return summary;
 };
 
 const resolveGateAccessEventTableAvailability = async (): Promise<boolean> => {
@@ -304,13 +566,14 @@ export const updateUserCredits = async (userAddress: Address, amount: bigint): P
     }
 
     return updated;
-  });
+  }, getInteractiveTransactionOptions());
 
   return mapCreditBalance(record);
 };
 
 export type SyncDepositsOptions = {
   expectedLastSyncedBlock?: bigint | null;
+  allowLastSyncedBlockRollback?: boolean;
 };
 
 export type CreateFulfillmentHoldInput = {
@@ -557,7 +820,11 @@ export const syncDeposits = async (
     const before = BigInt(existing.credits);
     const after = before + addedCredits;
     const nextLastSyncedBlock =
-      syncedToBlock > existing.lastSyncedBlock ? syncedToBlock : existing.lastSyncedBlock;
+      options?.allowLastSyncedBlockRollback === true && syncedToBlock < existing.lastSyncedBlock
+        ? syncedToBlock
+        : syncedToBlock > existing.lastSyncedBlock
+          ? syncedToBlock
+          : existing.lastSyncedBlock;
 
     const casUpdated = await tx.creditBalance.updateMany({
       where: {
@@ -618,7 +885,7 @@ export const syncDeposits = async (
       applied: true,
       conflict: false,
     };
-  });
+  }, getInteractiveTransactionOptions());
 };
 
 const expireOverdueHeldFulfillmentHoldsForWallet = async (input: {
@@ -865,7 +1132,7 @@ export const createFulfillmentHold = async (
         heldCreditsBefore,
         heldCreditsAfter,
       } satisfies CreateFulfillmentHoldResult;
-    });
+    }, getInteractiveTransactionOptions());
   } catch (error) {
     if (error instanceof AccessNonceReplayError) {
       return { status: "replay" };
@@ -916,6 +1183,7 @@ export const captureFulfillmentHold = async (
         ticketId: string;
         walletAddress: string;
         serviceSlug: string;
+        agentId: string | null;
         gatewayConfigId: string | null;
         merchantOwnerAddress: string;
         cost: number;
@@ -930,6 +1198,7 @@ export const captureFulfillmentHold = async (
         "ticketId",
         "walletAddress",
         "serviceSlug",
+        "agentId",
         "gatewayConfigId",
         "merchantOwnerAddress",
         "cost",
@@ -1167,6 +1436,21 @@ export const captureFulfillmentHold = async (
       },
     });
 
+    const settlementAmounts = calculateSettlementAmounts({ grossCredits: cost });
+    await createMerchantEarning(tx, {
+      settlementId: buildFulfillmentCaptureSettlementId({ ticketId: hold.ticketId }),
+      walletAddress: hold.walletAddress,
+      merchantOwnerAddress: hold.merchantOwnerAddress,
+      agentId: hold.agentId,
+      serviceSlug: hold.serviceSlug,
+      sourceType: "FULFILLMENT_CAPTURE",
+      sourceId: hold.ticketId,
+      grossCredits: cost,
+      grossWei: settlementAmounts.grossWei,
+      feeWei: settlementAmounts.feeWei,
+      netWei: settlementAmounts.netWei,
+    });
+
     await createAttempt({
       success: true,
       httpStatus: 200,
@@ -1190,7 +1474,7 @@ export const captureFulfillmentHold = async (
       heldCreditsBefore,
       heldCreditsAfter,
     } satisfies CaptureFulfillmentHoldResult;
-  });
+  }, getInteractiveTransactionOptions());
 };
 
 export const listExpiredFulfillmentHoldCandidates = async (input: {
@@ -1353,7 +1637,7 @@ const expireFulfillmentHoldById = async (input: {
       heldCreditsBefore,
       heldCreditsAfter,
     };
-  });
+  }, getInteractiveTransactionOptions());
 };
 
 export const expireFulfillmentHolds = async (input: {
@@ -1462,7 +1746,7 @@ export const consumeUserCredits = async (
     });
 
     return { before, after };
-  });
+  }, getInteractiveTransactionOptions());
 };
 
 export type ConsumeGateCreditsOptions = {
@@ -1472,6 +1756,8 @@ export type ConsumeGateCreditsOptions = {
   signature?: `0x${string}` | string | null;
   requestId?: string;
   enforceNonceUniqueness?: boolean;
+  merchantOwnerAddress?: Address | string | null;
+  agentId?: string | null;
 };
 
 export type ConsumeGateCreditsResult =
@@ -1534,20 +1820,54 @@ export const consumeUserCreditsForGate = async (
       });
 
       const after = BigInt(updated.credits);
-      await writeCreditLedger(tx, {
-        walletAddress: key,
-        direction: "DEBIT",
-        amount: cost,
-        balanceBefore: before,
-        balanceAfter: after,
-        reason: "gate_debit",
-        service: options.service,
-        nonce: options.nonce,
-        requestId: options.requestId ?? null,
-        metadata: {
-          payloadTimestamp: options.payloadTimestamp.toString(),
-        },
-      });
+      try {
+        await writeCreditLedger(tx, {
+          walletAddress: key,
+          direction: "DEBIT",
+          amount: cost,
+          balanceBefore: before,
+          balanceAfter: after,
+          reason: "gate_debit",
+          service: options.service,
+          nonce: options.nonce,
+          requestId: options.requestId ?? null,
+          metadata: {
+            payloadTimestamp: options.payloadTimestamp.toString(),
+          },
+        });
+
+        if (options.merchantOwnerAddress) {
+          const requestId = options.requestId?.trim();
+          if (!requestId) {
+            throw new Error("requestId is required for gate merchant settlement.");
+          }
+
+          const sourceId = `${key}:${requestId}`;
+          const settlementAmounts = calculateSettlementAmounts({ grossCredits: cost });
+
+          await createMerchantEarning(tx, {
+            settlementId: buildGateSettlementId({
+              walletAddress: key,
+              requestId,
+            }),
+            walletAddress: key,
+            merchantOwnerAddress: options.merchantOwnerAddress,
+            agentId: options.agentId?.trim() || null,
+            serviceSlug: options.service,
+            sourceType: "GATE_DEBIT",
+            sourceId,
+            grossCredits: cost,
+            grossWei: settlementAmounts.grossWei,
+            feeWei: settlementAmounts.feeWei,
+            netWei: settlementAmounts.netWei,
+          });
+        }
+      } catch (error) {
+        if (isGateReplayConflict(error)) {
+          throw new GateSourceReplayError();
+        }
+        throw error;
+      }
 
       return {
         status: "ok",
@@ -1555,9 +1875,9 @@ export const consumeUserCreditsForGate = async (
         after,
         nonceAccepted: nonceResult.accepted,
       } as const;
-    });
+    }, getInteractiveTransactionOptions());
   } catch (error) {
-    if (error instanceof AccessNonceReplayError) {
+    if (error instanceof AccessNonceReplayError || error instanceof GateSourceReplayError) {
       return { status: "replay" };
     }
     throw error;
@@ -1604,5 +1924,5 @@ export const addUserCredits = async (
     });
 
     return { before, after };
-  });
+  }, getInteractiveTransactionOptions());
 };

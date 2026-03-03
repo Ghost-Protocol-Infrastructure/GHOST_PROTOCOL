@@ -4,36 +4,38 @@ Contract: `contracts/GhostVault.sol`
 
 ## Purpose
 
-GhostVault stores consumer deposits, tracks merchant-attributed withdrawal balances, and separates protocol fees.
+GhostVault stores pooled consumer backing, tracks merchant-earned withdrawal balances, and separates protocol fees.
 
 ## Core state variables
 
 | Variable | Type | Description |
 |---|---|---|
 | `maxTVL` | `uint256` | Global liability cap. Initialized to `5 ether`. |
-| `totalLiability` | `uint256` | Total merchant-attributed balances pending owner withdrawal. |
+| `totalCreditBacking` | `uint256` | Total ETH backing universal Ghost Credits and unsettled balances. |
+| `totalLiability` | `uint256` | Total merchant-earned balances pending owner withdrawal. |
 | `accruedFees` | `uint256` | Protocol fees pending claim. |
 | `treasury` | `address` | Stored treasury address (admin-managed). |
-| `balances` | `mapping(address => uint256)` | Per-agent merchant withdrawal balances. |
+| `balances` | `mapping(address => uint256)` | Per-owner merchant withdrawal balances. |
 
 ## Merchant-facing functions
 
-### `depositCredit(address agent) external payable`
+### `depositCredit() external payable`
 
-- Splits deposit into fee + net.
-- Adds fee to `accruedFees`.
-- Adds net to `balances[agent]` and `totalLiability`.
-- Enforces: `totalLiability <= maxTVL`.
+- Requires deposits to be exact multiples of the fixed credit price.
+- Adds deposited ETH to pooled backing only.
+- Does not create merchant balances at deposit time.
+- Enforces the contract-wide backing cap.
+
+### `allocateMerchantEarningsBatch(...) external`
+
+- Accepts spend-attributed merchant earnings in bounded batches.
+- Adds fee amounts to `accruedFees`.
+- Adds net amounts to merchant `balances[owner]` and `totalLiability`.
+- Rejects duplicate `settlementId` values and any batch that would exceed current backing.
 
 Consumer note:
-- This contract records merchant-attributed payout balances.
+- This contract records pooled consumer backing and spend-attributed merchant payout balances.
 - Consumer spendable Ghost Credits are maintained off-chain after sync and are currently non-refundable.
-
-Revert message on cap breach:
-
-```text
-Global Cap Reached
-```
 
 ### `withdraw() external`
 

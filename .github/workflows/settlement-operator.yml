@@ -1,0 +1,90 @@
+name: Settlement Operator
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Base URL to call (defaults to production)"
+        required: false
+        default: "https://www.ghostprotocol.cc"
+        type: string
+      max_batch_size:
+        description: "Optional max merchant earnings to allocate this run"
+        required: false
+        default: "20"
+        type: string
+      reconcile_limit:
+        description: "Optional max submitted settlement rows to reconcile this run"
+        required: false
+        default: "100"
+        type: string
+  schedule:
+    - cron: "* * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: settlement-operator
+  cancel-in-progress: false
+
+jobs:
+  settlement-operator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Run settlement reconcile and allocate
+        env:
+          SETTLEMENT_SECRET: ${{ secrets.GHOST_SETTLEMENT_OPERATOR_SECRET }}
+          BASE_URL_INPUT: ${{ github.event.inputs.base_url }}
+          MAX_BATCH_SIZE_INPUT: ${{ github.event.inputs.max_batch_size }}
+          RECONCILE_LIMIT_INPUT: ${{ github.event.inputs.reconcile_limit }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SETTLEMENT_SECRET:-}" ]; then
+            echo "Missing repo secret GHOST_SETTLEMENT_OPERATOR_SECRET" >&2
+            exit 1
+          fi
+
+          base_url="${BASE_URL_INPUT:-https://www.ghostprotocol.cc}"
+          base_url="${base_url%/}"
+          if [ "${base_url}" = "https://ghostprotocol.cc" ]; then
+            base_url="https://www.ghostprotocol.cc"
+          fi
+
+          max_batch_size="${MAX_BATCH_SIZE_INPUT:-20}"
+          reconcile_limit="${RECONCILE_LIMIT_INPUT:-100}"
+
+          reconcile_url="${base_url}/api/admin/settlement/reconcile?limit=${reconcile_limit}"
+          allocate_url="${base_url}/api/admin/settlement/allocate?maxBatchSize=${max_batch_size}"
+
+          echo "Reconciling submitted settlements via ${reconcile_url}"
+          reconcile_http_code="$(curl -sS -o reconcile-response.json -w '%{http_code}' \
+            -X POST \
+            -H "Authorization: Bearer ${SETTLEMENT_SECRET}" \
+            -H "Accept: application/json" \
+            "${reconcile_url}")"
+
+          cat reconcile-response.json
+          echo
+
+          if [ "${reconcile_http_code}" != "200" ]; then
+            echo "Settlement reconcile endpoint failed with HTTP ${reconcile_http_code}" >&2
+            exit 1
+          fi
+
+          echo "Allocating pending settlements via ${allocate_url}"
+          allocate_http_code="$(curl -sS -o allocate-response.json -w '%{http_code}' \
+            -X POST \
+            -H "Authorization: Bearer ${SETTLEMENT_SECRET}" \
+            -H "Accept: application/json" \
+            "${allocate_url}")"
+
+          cat allocate-response.json
+          echo
+
+          if [ "${allocate_http_code}" != "200" ]; then
+            echo "Settlement allocate endpoint failed with HTTP ${allocate_http_code}" >&2
+            exit 1
+          fi

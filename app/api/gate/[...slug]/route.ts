@@ -12,6 +12,7 @@ import {
   logGateAccessEvent,
   prisma,
 } from "@/lib/db";
+import { GHOST_PREFERRED_CHAIN_ID } from "@/lib/constants";
 
 export const runtime = "nodejs";
 
@@ -20,7 +21,7 @@ const REPLAY_WINDOW_SECONDS = 60n;
 const DOMAIN = {
   name: "GhostGate",
   version: "1",
-  chainId: 8453,
+  chainId: GHOST_PREFERRED_CHAIN_ID,
 } as const;
 
 const TYPES = {
@@ -222,6 +223,8 @@ const buildSignedReceipt = (input: {
 };
 
 type ServiceGatewayReadiness = {
+  agentId: string | null;
+  ownerAddress: string | null;
   readinessStatus: "UNCONFIGURED" | "CONFIGURED" | "LIVE" | "DEGRADED";
   lastCanaryCheckedAt: string | null;
   lastCanaryPassedAt: string | null;
@@ -239,6 +242,8 @@ const resolveServiceGatewayReadiness = async (service: string): Promise<ServiceG
       where: { serviceSlug: service },
       orderBy: [{ updatedAt: "desc" }],
       select: {
+        agentId: true,
+        ownerAddress: true,
         readinessStatus: true,
         lastCanaryCheckedAt: true,
         lastCanaryPassedAt: true,
@@ -247,6 +252,8 @@ const resolveServiceGatewayReadiness = async (service: string): Promise<ServiceG
 
     if (!config) {
       return {
+        agentId: null,
+        ownerAddress: null,
         readinessStatus: "UNCONFIGURED",
         lastCanaryCheckedAt: null,
         lastCanaryPassedAt: null,
@@ -254,6 +261,8 @@ const resolveServiceGatewayReadiness = async (service: string): Promise<ServiceG
     }
 
     return {
+      agentId: config.agentId,
+      ownerAddress: config.ownerAddress.toLowerCase(),
       readinessStatus: config.readinessStatus,
       lastCanaryCheckedAt: config.lastCanaryCheckedAt?.toISOString() ?? null,
       lastCanaryPassedAt: config.lastCanaryPassedAt?.toISOString() ?? null,
@@ -266,6 +275,8 @@ const resolveServiceGatewayReadiness = async (service: string): Promise<ServiceG
       ((error as { code?: string }).code === "P2021" || (error as { code?: string }).code === "P2022")
     ) {
       return {
+        agentId: null,
+        ownerAddress: null,
         readinessStatus: "UNCONFIGURED",
         lastCanaryCheckedAt: null,
         lastCanaryPassedAt: null,
@@ -395,12 +406,20 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
   }
 
   const requestId = buildRequestId(request, requestedService, signer, payload.nonce);
+  const enforceGatewayReadiness = shouldEnforceServiceGatewayReadiness(requestedService);
 
-  if (shouldEnforceServiceGatewayReadiness(requestedService)) {
-    let serviceGatewayReadiness: ServiceGatewayReadiness;
-    try {
-      serviceGatewayReadiness = await resolveServiceGatewayReadiness(requestedService);
-    } catch {
+  let serviceGatewayReadiness: ServiceGatewayReadiness = {
+    agentId: null,
+    ownerAddress: null,
+    readinessStatus: "UNCONFIGURED",
+    lastCanaryCheckedAt: null,
+    lastCanaryPassedAt: null,
+  };
+
+  try {
+    serviceGatewayReadiness = await resolveServiceGatewayReadiness(requestedService);
+  } catch {
+    if (enforceGatewayReadiness) {
       return respondWithOutcome({
         outcome: "SERVICE_MISMATCH",
         status: 500,
@@ -416,7 +435,9 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
         },
       });
     }
+  }
 
+  if (enforceGatewayReadiness) {
     if (serviceGatewayReadiness.readinessStatus !== "LIVE") {
       return respondWithOutcome({
         outcome: "SERVICE_MISMATCH",
@@ -454,6 +475,8 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
     signature,
     requestId,
     enforceNonceUniqueness: ENFORCE_NONCE_UNIQUENESS && NONCE_STORE_ENABLED,
+    merchantOwnerAddress: serviceGatewayReadiness.ownerAddress,
+    agentId: serviceGatewayReadiness.agentId,
   });
 
   if (consumed.status === "replay") {

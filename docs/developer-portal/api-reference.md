@@ -21,6 +21,7 @@ Fulfillment adds two API groups:
 
 Admin writes under `/api/agent-gateway/*` are owner-wallet signed operations with nonce replay protection.
 Operator routes under `/api/fulfillment/*` use bearer secret auth.
+Settlement operator/support routes under `/api/admin/settlement/*` use bearer secret auth.
 
 ## `GET/POST /api/agent-gateway/config`
 
@@ -35,6 +36,12 @@ Manage/read merchant endpoint + canary binding for an agent.
   - `authPayload`, `authSignature`
 
 When configured, readiness resets to `CONFIGURED` until canary verify succeeds.
+
+`GET` responses now also include settlement summary buckets for the selected agent context:
+- `pending`
+- `submitted`
+- `confirmed`
+- `failed`
 
 ## `POST /api/agent-gateway/verify`
 
@@ -118,6 +125,24 @@ Returns:
 - `500 FULFILLMENT_SIGNER_NOT_CONFIGURED`
 
 ## `POST /api/fulfillment/capture`
+
+## Settlement operator endpoints
+
+### `POST /api/admin/settlement/allocate`
+
+Claims the next oldest batch of pending merchant earnings and submits it to GhostVault.
+
+### `POST /api/admin/settlement/reconcile`
+
+Reconciles submitted merchant earnings against on-chain `processedSettlementIds` and tx receipts.
+
+### `GET /api/admin/settlement/metrics`
+
+Returns pending, in-flight, confirmed, and failed settlement totals plus backlog age and drift diagnostics.
+
+### `GET /api/admin/vault/preflight`
+
+Reports legacy GhostVault liability, accrued fees, and balance before direct cutover.
 
 Capture a held ticket using merchant delegated signer proof.
 
