@@ -49,9 +49,11 @@ Ghost Gate is a signed access layer that validates:
 
 GhostVault is the ETH credit rail. It tracks:
 
-- `totalLiability`: sum of merchant-attributed balances pending owner withdrawal
+- live Base mainnet vault: `0x1D66Ae12b5fAe1C61EA81fD5F9550C1C0EB8Db55`
+- `totalLiability()`: read alias for merchant-attributed balances pending owner withdrawal
 - `accruedFees`: protocol fees pending owner claim
-- `maxTVL`: global liability cap (initialized to `5 ETH`)
+- `totalCreditBacking`: pooled ETH backing universal Ghost Credits
+- `maxTVL`: global backing cap (initialized to `5 ETH`)
 
 ## Pull-based fee model
 
@@ -60,18 +62,20 @@ GhostVault uses pull over push:
 1. `depositCredit()` increases pooled credit backing and does not credit any merchant directly.
 2. Merchant earnings are allocated later from successful spend events and create withdrawable owner balances.
 3. Owner later claims fees with `claimFees(recipient)`.
+4. Settlement operators batch merchant earnings on-chain through `allocateMerchantEarningsBatch(...)`.
 
 This reduces external-call risk on deposit and isolates treasury failure from user crediting.
 
 ## Security invariants
 
-1. `totalLiability <= maxTVL` (global cap)
-2. Withdrawals reduce liability before external transfer
-3. Fees are segregated from user balances (`accruedFees` vs `balances`)
-4. Sensitive functions protected with `onlyOwner` and `nonReentrant`
+1. `totalCreditBacking <= maxTVL` (global cap)
+2. `totalMerchantLiability + accruedFees <= totalCreditBacking`
+3. Withdrawals reduce liability before external transfer
+4. Fees are segregated from user balances (`accruedFees` vs `balances`)
+5. Sensitive functions protected with `onlyOwner`, `onlySettlementOperator`, and `nonReentrant`
 
 > [!IMPORTANT]
-> `maxTVL` is enforced against `totalLiability`, not `address(this).balance`, so forced ETH transfers do not bypass cap logic.
+> `maxTVL` is enforced against `totalCreditBacking`, not `address(this).balance`, so forced ETH transfers do not bypass cap logic.
 
 ## Data flow summary
 
@@ -88,6 +92,15 @@ This reduces external-call risk on deposit and isolates treasury failure from us
 - Ghost Credits are currently prepaid and non-refundable once converted into off-chain credits.
 
 This means usage tracking and payout attribution are reconciled by post-spend settlement. Consumer deposits fund universal credits, while merchant payout follows actual successful usage.
+
+## Settlement operator
+
+The hosted Ghost deployment runs the settlement operator, not the merchant:
+
+1. spend creates `MerchantEarning` rows
+2. `/api/admin/settlement/allocate` batches and submits pending earnings
+3. `/api/admin/settlement/reconcile` confirms submitted rows against on-chain state
+4. merchants withdraw only settled balances
 
 ## Fulfillment
 

@@ -142,7 +142,7 @@ Returns pending, in-flight, confirmed, and failed settlement totals plus backlog
 
 ### `GET /api/admin/vault/preflight`
 
-Reports legacy GhostVault liability, accrued fees, and balance before direct cutover.
+Reports legacy GhostVault liability, accrued fees, and balance for legacy-vault verification after cutover.
 
 Capture a held ticket using merchant delegated signer proof.
 
