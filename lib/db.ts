@@ -512,6 +512,41 @@ export const getCreditBalance = async (userAddress: Address): Promise<CreditBala
   return record ? mapCreditBalance(record) : null;
 };
 
+export const getHistoricalCreditSyncCursor = async (userAddress: Address): Promise<bigint> => {
+  const key = normalizeAddressKey(userAddress);
+  const rows = await prisma.$queryRaw<Array<{ cursor: bigint | null }>>(Prisma.sql`
+    SELECT GREATEST(
+      COALESCE(
+        MAX(
+          CASE
+            WHEN jsonb_typeof("metadata") = 'object'
+              AND ("metadata"->>'syncedToBlock') ~ '^[0-9]+$'
+            THEN ("metadata"->>'syncedToBlock')::bigint
+            ELSE NULL
+          END
+        ),
+        0
+      ),
+      COALESCE(
+        MAX(
+          CASE
+            WHEN jsonb_typeof("metadata") = 'object'
+              AND ("metadata"->>'previousLastSyncedBlock') ~ '^[0-9]+$'
+            THEN ("metadata"->>'previousLastSyncedBlock')::bigint
+            ELSE NULL
+          END
+        ),
+        0
+      )
+    ) AS "cursor"
+    FROM "CreditLedger"
+    WHERE "walletAddress" = ${key}
+      AND "reason" = 'vault_sync'
+  `);
+
+  return rows[0]?.cursor ?? 0n;
+};
+
 export const getUserCredits = async (userAddress: Address): Promise<bigint> =>
   (await getCreditBalance(userAddress))?.credits ?? 0n;
 

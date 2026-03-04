@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createPublicClient, getAddress, http, type AbiEvent, type Address, type Hash } from "viem";
 import { base, baseSepolia } from "viem/chains";
 import { GHOST_CREDIT_PRICE_WEI, GHOST_PREFERRED_CHAIN_ID, GHOST_VAULT_ABI, GHOST_VAULT_ADDRESS } from "@/lib/constants";
-import { getCreditBalance, syncDeposits } from "@/lib/db";
+import { getCreditBalance, getHistoricalCreditSyncCursor, syncDeposits } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -313,8 +313,11 @@ const syncCreditsSingleStepForUser = async (
 
     const existingBalance = await getCreditBalance(userAddress);
     const persistedLastSyncedBlock = existingBalance?.lastSyncedBlock ?? 0n;
-    const chainCursorAheadOfHead = persistedLastSyncedBlock > effectiveLatestBlock;
-    const lastSyncedBlockBefore = chainCursorAheadOfHead ? 0n : persistedLastSyncedBlock;
+    const historicalSyncCursor = await getHistoricalCreditSyncCursor(userAddress);
+    const recoveredLastSyncedBlock =
+      historicalSyncCursor > persistedLastSyncedBlock ? historicalSyncCursor : persistedLastSyncedBlock;
+    const chainCursorAheadOfHead = recoveredLastSyncedBlock > effectiveLatestBlock;
+    const lastSyncedBlockBefore = chainCursorAheadOfHead ? 0n : recoveredLastSyncedBlock;
     const fallbackResetFromBlock = (() => {
       const anchor = options?.targetToBlock ?? effectiveLatestBlock;
       if (anchor <= START_BLOCK) return START_BLOCK;
