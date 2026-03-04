@@ -15,6 +15,7 @@ const makeRequest = (url: string, headers?: Record<string, string>) =>
 afterEach(() => {
   delete process.env.GHOST_SETTLEMENT_OPERATOR_SECRET;
   delete process.env.GHOST_SETTLEMENT_SUPPORT_SECRET;
+  delete process.env.GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET;
 });
 
 describe("merchant settlement route auth", () => {
@@ -75,6 +76,30 @@ describe("merchant settlement route auth", () => {
       isSettlementOperatorAuthorized(
         makeRequest("https://ghost.local/api/admin/settlement/allocate", {
           authorization: "Bearer operator-secret-valuf",
+        }),
+      ),
+      false,
+    );
+  });
+
+  it("falls back to the expire sweep secret only when the settlement secret is absent", () => {
+    process.env.GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET = "expire-sweep-secret-value";
+
+    assert.equal(
+      isSettlementOperatorAuthorized(
+        makeRequest("https://ghost.local/api/admin/settlement/allocate", {
+          authorization: "Bearer expire-sweep-secret-value",
+        }),
+      ),
+      true,
+    );
+
+    process.env.GHOST_SETTLEMENT_OPERATOR_SECRET = OPERATOR_SECRET;
+
+    assert.equal(
+      isSettlementOperatorAuthorized(
+        makeRequest("https://ghost.local/api/admin/settlement/allocate", {
+          authorization: "Bearer expire-sweep-secret-value",
         }),
       ),
       false,
