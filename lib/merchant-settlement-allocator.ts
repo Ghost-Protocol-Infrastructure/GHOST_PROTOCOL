@@ -389,7 +389,6 @@ export const submitMerchantSettlementBatch = async (input: {
   }
 
   const publicClient = input.publicClient ?? createSettlementPublicClient();
-  const walletClient = input.walletClient ?? createSettlementWalletClient().walletClient;
 
   const gasPriceWei = await publicClient.getGasPrice();
   if (gasPriceWei > input.config.maxGasPriceWei) {
@@ -409,6 +408,7 @@ export const submitMerchantSettlementBatch = async (input: {
   const batchPayload = buildMerchantAllocationBatch(input.earnings);
 
   try {
+    const walletClient = input.walletClient ?? createSettlementWalletClient().walletClient;
     const txHash = await walletClient.writeContract({
       account: walletClient.account!,
       chain: walletClient.chain,
