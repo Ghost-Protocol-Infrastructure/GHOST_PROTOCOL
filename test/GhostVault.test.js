@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { network } from "hardhat";
-import { zeroAddress } from "viem";
+import { toHex, zeroAddress } from "viem";
 
 const CREDIT_PRICE_WEI = 10_000_000_000_000n;
 const INITIAL_MAX_TVL = 5n * 10n ** 18n;
@@ -10,7 +10,6 @@ const DEPOSIT_AMOUNT = CREDIT_PRICE_WEI * 10n;
 
 const deployVault = async (viem, treasury) =>
   viem.deployContract("GhostVault", [treasury, INITIAL_MAX_TVL, CREDIT_PRICE_WEI]);
-const deployForceSend = async (viem, value) => viem.deployContract("ForceSend", [], { value });
 
 const waitForWrite = async (publicClient, writePromise) => {
   const hash = await writePromise;
@@ -22,9 +21,17 @@ const expectRejection = async (action, pattern) => {
 };
 
 describe("GhostVault", async () => {
-  const { viem } = await network.connect();
+  const { viem, provider } = await network.connect();
   const publicClient = await viem.getPublicClient();
   const [owner, operator, merchant, merchantTwo, recipient, treasury] = await viem.getWalletClients();
+
+  const forceEthIntoVault = async (address, amount) => {
+    const currentBalance = await publicClient.getBalance({ address });
+    await provider.request({
+      method: "hardhat_setBalance",
+      params: [address, toHex(currentBalance + amount)],
+    });
+  };
 
   it("stores the fixed credit price and only accepts exact-multiple pooled deposits", async () => {
     const vault = await deployVault(viem, treasury.account.address);
@@ -458,18 +465,8 @@ describe("GhostVault", async () => {
       }),
     );
 
-    const forceSend = await deployForceSend(viem, forcedAmount);
     const beforeRecipientBalance = await publicClient.getBalance({ address: recipient.account.address });
-
-    await waitForWrite(
-      publicClient,
-      owner.writeContract({
-        address: forceSend.address,
-        abi: forceSend.abi,
-        functionName: "destroy",
-        args: [vault.address],
-      }),
-    );
+    await forceEthIntoVault(vault.address, forcedAmount);
 
     assert.equal(await publicClient.getBalance({ address: vault.address }), DEPOSIT_AMOUNT + forcedAmount);
     assert.equal(await vault.read.totalCreditBacking(), DEPOSIT_AMOUNT);

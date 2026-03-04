@@ -919,14 +919,19 @@ function DashboardPageContent() {
     () =>
       `import { GhostAgent } from "@ghostgate/sdk";
 
+const apiKey = process.env.GHOST_API_KEY!;
+const privateKey = process.env.GHOST_SIGNER_PRIVATE_KEY as \`0x\${string}\`;
+
 const sdk = new GhostAgent({
-  baseUrl: "${APP_BASE_URL}",
-  privateKey: process.env.GHOST_SIGNER_PRIVATE_KEY as \`0x\${string}\`,
+  apiKey,
+  baseUrl: process.env.GHOST_BASE_URL ?? "${APP_BASE_URL}",
+  privateKey,
+  chainId: ${PREFERRED_CHAIN_ID}, // ${PREFERRED_CHAIN_NAME}
   serviceSlug: "${consumerServiceSlug}",
   creditCost: 1,
 });
 
-const result = await sdk.connect(process.env.GHOST_API_KEY!);
+const result = await sdk.connect();
 console.log(result);`,
     [consumerServiceSlug],
   );
@@ -1741,15 +1746,18 @@ print("body:", response.text)`,
   const merchantSdkExample = useMemo(
     () =>
       `import os
+from flask import Flask
 from ghostgate import GhostGate
 
+app = Flask(__name__)
+
 gate = GhostGate(
-    # SDK context/telemetry key placeholder (not the EIP-712 signer secret)
+    # Placeholder only. Ghost dashboard does not issue SDK context keys yet.
     api_key="${merchantApiKey}",
     # Gate authorization is signature-based and requires a signer private key
-    private_key=os.environ.get("GHOST_SIGNER_PRIVATE_KEY"),
-    # For local testing: use http://localhost:3000
-    base_url="https://ghostprotocol.cc",
+    private_key=os.environ.get("GHOST_SIGNER_PRIVATE_KEY") or os.environ.get("PRIVATE_KEY"),
+    chain_id=${PREFERRED_CHAIN_ID},  # ${PREFERRED_CHAIN_NAME}
+    base_url=os.getenv("GHOST_GATE_BASE_URL", "${APP_BASE_URL}"),
 )
 
 # Agent ID: ${selectedOwnedAgent?.agentId ?? "YOUR_AGENT_ID"}
