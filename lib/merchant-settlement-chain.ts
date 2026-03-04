@@ -19,6 +19,14 @@ const normalizePrivateKey = (raw: string | undefined): `0x${string}` | null => {
   return (trimmed.startsWith("0x") ? trimmed : `0x${trimmed}`) as `0x${string}`;
 };
 
+export const resolveSettlementOperatorPrivateKey = (): `0x${string}` | null =>
+  normalizePrivateKey(process.env.GHOST_SETTLEMENT_OPERATOR_PRIVATE_KEY) ?? normalizePrivateKey(process.env.PRIVATE_KEY);
+
+export const getSettlementOperatorAccount = () => {
+  const privateKey = resolveSettlementOperatorPrivateKey();
+  return privateKey ? privateKeyToAccount(privateKey) : null;
+};
+
 export const getSettlementRpcUrl = (): string => process.env.BASE_RPC_URL?.trim() || DEFAULT_BASE_RPC_URL;
 
 export const createSettlementPublicClient = () =>
@@ -32,8 +40,7 @@ export const createSettlementPublicClient = () =>
   });
 
 export const createSettlementWalletClient = () => {
-  const privateKey =
-    normalizePrivateKey(process.env.GHOST_SETTLEMENT_OPERATOR_PRIVATE_KEY) ?? normalizePrivateKey(process.env.PRIVATE_KEY);
+  const privateKey = resolveSettlementOperatorPrivateKey();
   if (!privateKey) {
     throw new Error("GHOST_SETTLEMENT_OPERATOR_PRIVATE_KEY is required for settlement allocation.");
   }

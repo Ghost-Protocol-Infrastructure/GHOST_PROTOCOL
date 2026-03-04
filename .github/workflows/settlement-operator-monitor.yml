@@ -1,0 +1,143 @@
+name: Settlement Operator Monitor
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Base URL to call (defaults to production)"
+        required: false
+        default: "https://www.ghostprotocol.cc"
+        type: string
+      balance_threshold_wei:
+        description: "Optional low-balance threshold override in wei"
+        required: false
+        default: "1000000000000000"
+        type: string
+  schedule:
+    - cron: "11 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: settlement-operator-monitor
+  cancel-in-progress: false
+
+jobs:
+  settlement-operator-monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SETTLEMENT_SECRET: ${{ secrets.GHOST_SETTLEMENT_OPERATOR_SECRET }}
+      EXPIRE_SWEEP_SECRET: ${{ secrets.GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET }}
+      BASE_URL_INPUT: ${{ github.event.inputs.base_url }}
+      BALANCE_THRESHOLD_WEI_INPUT: ${{ github.event.inputs.balance_threshold_wei }}
+      ALERT_SMTP_SERVER: ${{ secrets.ALERT_SMTP_SERVER }}
+      ALERT_SMTP_USERNAME: ${{ secrets.ALERT_SMTP_USERNAME }}
+      ALERT_SMTP_PASSWORD: ${{ secrets.ALERT_SMTP_PASSWORD }}
+      ALERT_FROM_EMAIL: ${{ secrets.ALERT_FROM_EMAIL }}
+      ALERT_SMTP_PORT: ${{ secrets.ALERT_SMTP_PORT || '587' }}
+      ALERT_SMTP_SECURE: ${{ secrets.ALERT_SMTP_SECURE || 'false' }}
+    steps:
+      - name: Check settlement operator health
+        run: |
+          set -euo pipefail
+
+          secrets=()
+          secret_labels=()
+
+          if [ -n "${SETTLEMENT_SECRET:-}" ]; then
+            secrets+=("${SETTLEMENT_SECRET}")
+            secret_labels+=("GHOST_SETTLEMENT_OPERATOR_SECRET")
+          fi
+
+          if [ -n "${EXPIRE_SWEEP_SECRET:-}" ] && [ "${EXPIRE_SWEEP_SECRET}" != "${SETTLEMENT_SECRET:-}" ]; then
+            secrets+=("${EXPIRE_SWEEP_SECRET}")
+            secret_labels+=("GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET")
+          fi
+
+          if [ "${#secrets[@]}" -eq 0 ]; then
+            echo "Missing repo secret GHOST_SETTLEMENT_OPERATOR_SECRET (or fallback GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET)" >&2
+            exit 1
+          fi
+
+          base_url="${BASE_URL_INPUT:-https://www.ghostprotocol.cc}"
+          base_url="${base_url%/}"
+          if [ "${base_url}" = "https://ghostprotocol.cc" ]; then
+            base_url="https://www.ghostprotocol.cc"
+          fi
+
+          threshold="${BALANCE_THRESHOLD_WEI_INPUT:-1000000000000000}"
+          health_url="${base_url}/api/admin/settlement/operator-health?thresholdWei=${threshold}"
+
+          call_with_operator_secret() {
+            local url="$1"
+            local response_file="$2"
+            local http_code=""
+
+            for i in "${!secrets[@]}"; do
+              local secret="${secrets[$i]}"
+              local label="${secret_labels[$i]}"
+
+              echo "Checking settlement operator health via ${url} using ${label}"
+              http_code="$(curl -sS -o "${response_file}" -w '%{http_code}' \
+                -H "Authorization: Bearer ${secret}" \
+                -H "Accept: application/json" \
+                "${url}")"
+
+              cat "${response_file}"
+              echo
+
+              if [ "${http_code}" = "200" ]; then
+                if [ "${i}" -gt 0 ]; then
+                  echo "Succeeded using fallback secret ${label}"
+                fi
+                return 0
+              fi
+
+              if [ "${http_code}" != "401" ]; then
+                echo "Settlement operator health endpoint failed with HTTP ${http_code}" >&2
+                return 1
+              fi
+            done
+
+            echo "All configured operator secrets were rejected with HTTP 401" >&2
+            return 1
+          }
+
+          if ! call_with_operator_secret "${health_url}" operator-health-response.json; then
+            exit 1
+          fi
+
+      - name: Send settlement operator alert email
+        if: ${{ failure() && env.ALERT_SMTP_SERVER != '' && env.ALERT_SMTP_USERNAME != '' && env.ALERT_SMTP_PASSWORD != '' && env.ALERT_FROM_EMAIL != '' }}
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ env.ALERT_SMTP_SERVER }}
+          server_port: ${{ env.ALERT_SMTP_PORT }}
+          secure: ${{ env.ALERT_SMTP_SECURE }}
+          username: ${{ env.ALERT_SMTP_USERNAME }}
+          password: ${{ env.ALERT_SMTP_PASSWORD }}
+          from: ${{ env.ALERT_FROM_EMAIL }}
+          to: ghostprotocol.infra@gmail.com
+          subject: "[Ghost Protocol][Settlement] Operator Health Alert"
+          body: |
+            Settlement operator monitoring failure detected.
+
+            Repository: ${{ github.repository }}
+            Workflow: ${{ github.workflow }}
+            Job: ${{ github.job }}
+            Branch/Ref: ${{ github.ref }}
+            Actor: ${{ github.actor }}
+            Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            This alert triggers on:
+            - Settlement operator key missing in hosted runtime
+            - Settlement operator not registered on-chain
+            - Settlement operator gas balance below threshold
+            - Unexpected settlement operator health endpoint failure
+
+      - name: Warn when settlement alert email secrets are missing
+        if: ${{ failure() && (env.ALERT_SMTP_SERVER == '' || env.ALERT_SMTP_USERNAME == '' || env.ALERT_SMTP_PASSWORD == '' || env.ALERT_FROM_EMAIL == '') }}
+        run: |
+          echo "::warning::Settlement operator monitor failed but SMTP secrets are not fully configured. Set ALERT_SMTP_SERVER, ALERT_SMTP_USERNAME, ALERT_SMTP_PASSWORD, ALERT_FROM_EMAIL (and optional ALERT_SMTP_PORT/ALERT_SMTP_SECURE)."
