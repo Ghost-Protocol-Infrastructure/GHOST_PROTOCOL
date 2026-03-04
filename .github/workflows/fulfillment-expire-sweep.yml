@@ -22,7 +22,10 @@ on:
           - "false"
           - "true"
   schedule:
-    - cron: "* * * * *"
+    # GitHub Actions scheduled workflows are best-effort and support a minimum
+    # interval of once every 5 minutes. Offset away from the top of the hour
+    # to reduce delay during common high-load windows.
+    - cron: "2-57/5 * * * *"
 
 permissions:
   contents: read
@@ -77,4 +80,3 @@ jobs:
             echo "Fulfillment expire-sweep endpoint failed with HTTP ${http_code}" >&2
             exit 1
           fi
-

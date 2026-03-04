@@ -19,7 +19,10 @@ on:
         default: "100"
         type: string
   schedule:
-    - cron: "* * * * *"
+    # GitHub Actions scheduled workflows are best-effort and support a minimum
+    # interval of once every 5 minutes. Offset away from the top of the hour
+    # to reduce delay during common high-load windows.
+    - cron: "4-59/5 * * * *"
 
 permissions:
   contents: read
