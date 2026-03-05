@@ -1129,7 +1129,10 @@ export default function Home() {
             <div className="text-[10px] text-neutral-700 max-w-sm leading-relaxed">
               Indexing ERC-8004 registries on Base. MegaETH expansion coming.
               <br />
-              All systems nominal. No warranties implied.
+              All systems nominal. No warranties implied.{" "}
+              <Link href="/terms" className="text-neutral-600 transition-colors hover:text-red-500">
+                Terms_of_Service
+              </Link>
               <br />
               &copy; 2026 Ghost Protocol
             </div>
