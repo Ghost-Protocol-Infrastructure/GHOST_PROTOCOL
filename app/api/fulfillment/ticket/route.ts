@@ -13,7 +13,7 @@ import {
   parseWireFulfillmentTicketRequestAuthMessage,
 } from "@/lib/fulfillment-eip712";
 import { hashCanonicalFulfillmentQuery, sha256HexUtf8 } from "@/lib/fulfillment-hash";
-import { fulfillmentJson, normalizeHexSignatureLower } from "@/lib/fulfillment-route";
+import { fulfillmentJson, normalizeHexSignatureLower, parseJsonBodyWithLimit } from "@/lib/fulfillment-route";
 import {
   assertFulfillmentPath,
   FULFILLMENT_API_VERSION,
@@ -242,12 +242,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return ticketResponse({ code: 400, error: "Invalid JSON body.", errorCode: "INVALID_TICKET_REQUEST" }, 400);
+  const parsedJson = await parseJsonBodyWithLimit(request, {
+    invalidJsonErrorCode: "INVALID_TICKET_REQUEST",
+    payloadTooLargeErrorCode: "TICKET_REQUEST_TOO_LARGE",
+  });
+  if (!parsedJson.ok) {
+    return ticketResponse({ code: parsedJson.status, error: parsedJson.error, errorCode: parsedJson.errorCode }, parsedJson.status);
   }
+  const body = parsedJson.body;
 
   const parsed = parseTopLevelRequest(body);
   if (!parsed) {

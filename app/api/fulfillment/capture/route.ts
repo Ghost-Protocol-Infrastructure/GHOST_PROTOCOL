@@ -9,7 +9,7 @@ import {
   parseWireFulfillmentDeliveryProofMessage,
 } from "@/lib/fulfillment-eip712";
 import { captureFulfillmentHold } from "@/lib/db";
-import { fulfillmentJson, normalizeHex32Lower, normalizeHexSignatureLower } from "@/lib/fulfillment-route";
+import { fulfillmentJson, normalizeHex32Lower, normalizeHexSignatureLower, parseJsonBodyWithLimit } from "@/lib/fulfillment-route";
 import { consumeFulfillmentRateLimit } from "@/lib/fulfillment-rate-limit";
 import { extractFulfillmentErrorCode, observeFulfillmentResponseEvent } from "@/lib/fulfillment-observability";
 
@@ -120,12 +120,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    let body: unknown;
-    try {
-      body = await request.json();
-    } catch {
-      return captureResponse({ code: 400, error: "Invalid JSON body.", errorCode: "INVALID_CAPTURE_REQUEST" }, 400);
+    const parsedJson = await parseJsonBodyWithLimit(request, {
+      invalidJsonErrorCode: "INVALID_CAPTURE_REQUEST",
+      payloadTooLargeErrorCode: "CAPTURE_REQUEST_TOO_LARGE",
+    });
+    if (!parsedJson.ok) {
+      return captureResponse(
+        { code: parsedJson.status, error: parsedJson.error, errorCode: parsedJson.errorCode },
+        parsedJson.status,
+      );
     }
+    const body = parsedJson.body;
 
     const parsed = parseCaptureRequest(body);
     if (!parsed) {

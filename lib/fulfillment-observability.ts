@@ -1,4 +1,4 @@
-type FulfillmentRouteName = "ticket" | "capture" | "expire_sweep";
+type FulfillmentRouteName = "ticket" | "capture" | "expire_sweep" | "gate";
 
 type FulfillmentAlertSeverity = "warning" | "critical";
 
@@ -141,4 +141,3 @@ export const observeFulfillmentResponseEvent = (input: FulfillmentResponseEventI
     });
   }
 };
-

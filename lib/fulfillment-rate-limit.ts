@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { emitFulfillmentAlert } from "@/lib/fulfillment-observability";
 
-export type FulfillmentRateLimitAction = "ticket" | "capture" | "expire_sweep";
+export type FulfillmentRateLimitAction = "ticket" | "capture" | "expire_sweep" | "gate";
 
 type Bucket = {
   count: number;
@@ -13,6 +13,7 @@ const DEFAULT_LIMITS_PER_WINDOW: Record<FulfillmentRateLimitAction, number> = {
   ticket: 120,
   capture: 180,
   expire_sweep: 30,
+  gate: 240,
 };
 
 const buckets = new Map<string, Bucket>();
@@ -42,6 +43,10 @@ const getLimitsPerWindow = (): Record<FulfillmentRateLimitAction, number> => ({
   expire_sweep: parsePositiveInt(
     process.env.GHOST_FULFILLMENT_RATE_LIMIT_EXPIRE_SWEEP_PER_WINDOW,
     DEFAULT_LIMITS_PER_WINDOW.expire_sweep,
+  ),
+  gate: parsePositiveInt(
+    process.env.GHOST_FULFILLMENT_RATE_LIMIT_GATE_PER_WINDOW,
+    DEFAULT_LIMITS_PER_WINDOW.gate,
   ),
 });
 
@@ -116,4 +121,3 @@ export const consumeFulfillmentRateLimit = (input: {
   buckets.set(key, existing);
   return { ok: true };
 };
-

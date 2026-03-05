@@ -15,7 +15,7 @@ if (!process.env.POSTGRES_PRISMA_URL) {
 const MAX_PRISMA_INT = 2_147_483_647n;
 const MIN_PRISMA_INT = -2_147_483_648n;
 const CREDIT_LEDGER_ENABLED = process.env.GHOST_CREDIT_LEDGER_ENABLED === "true";
-const GATE_NONCE_STORE_ENABLED = process.env.GHOST_GATE_NONCE_STORE_ENABLED === "true";
+const GATE_NONCE_STORE_ENABLED = (process.env.GHOST_GATE_NONCE_STORE_ENABLED?.trim() ?? "true") !== "false";
 const GATE_ACCESS_EVENT_LOG_ENABLED = process.env.GHOST_GATE_ACCESS_EVENT_LOG_ENABLED !== "false";
 let gateAccessEventTableAvailable: boolean | null = null;
 

@@ -13,6 +13,7 @@ import {
   prisma,
 } from "@/lib/db";
 import { GHOST_PREFERRED_CHAIN_ID } from "@/lib/constants";
+import { consumeFulfillmentRateLimit } from "@/lib/fulfillment-rate-limit";
 
 export const runtime = "nodejs";
 
@@ -57,9 +58,9 @@ const DEFAULT_REQUEST_COST = (() => {
   return 1n;
 })();
 
-const ALLOW_CLIENT_COST_OVERRIDE = (process.env.GHOST_GATE_ALLOW_CLIENT_COST_OVERRIDE?.trim() ?? "") !== "false";
-const NONCE_STORE_ENABLED = process.env.GHOST_GATE_NONCE_STORE_ENABLED?.trim() === "true";
-const ENFORCE_NONCE_UNIQUENESS = process.env.GHOST_GATE_ENFORCE_NONCE_UNIQUENESS?.trim() === "true";
+const ALLOW_CLIENT_COST_OVERRIDE = process.env.GHOST_GATE_ALLOW_CLIENT_COST_OVERRIDE?.trim() === "true";
+const NONCE_STORE_ENABLED = (process.env.GHOST_GATE_NONCE_STORE_ENABLED?.trim() ?? "true") !== "false";
+const ENFORCE_NONCE_UNIQUENESS = (process.env.GHOST_GATE_ENFORCE_NONCE_UNIQUENESS?.trim() ?? "true") !== "false";
 const ENABLE_DB_SERVICE_PRICING = process.env.GHOST_GATE_DB_SERVICE_PRICING_ENABLED?.trim() === "true";
 const RECEIPT_SIGNING_SECRET = process.env.GHOST_GATE_RECEIPT_SIGNING_SECRET?.trim() ?? "";
 const ENFORCE_LIVE_GATEWAY_READINESS = process.env.GHOST_GATE_ENFORCE_LIVE_GATEWAY_READINESS?.trim() === "true";
@@ -180,12 +181,7 @@ const resolveRequestCost = async (
   return { cost: DEFAULT_REQUEST_COST, source: "default" };
 };
 
-const buildRequestId = (request: NextRequest, service: string, signer: Address, nonce: string): string => {
-  const explicitRequestId = request.headers.get("x-ghost-request-id")?.trim();
-  if (explicitRequestId && explicitRequestId.length <= 128) {
-    return explicitRequestId;
-  }
-
+const buildRequestId = (service: string, signer: Address, nonce: string): string => {
   return `${service}:${signer.toLowerCase()}:${nonce}`;
 };
 
@@ -290,6 +286,28 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
   const requestedService = await resolveServiceFromSlug(context);
   if (!requestedService) {
     return json({ error: "Missing service slug", code: 400 }, 400);
+  }
+
+  const rateLimit = consumeFulfillmentRateLimit({
+    request,
+    action: "gate",
+    scopeKey: requestedService,
+  });
+  if (!rateLimit.ok) {
+    return NextResponse.json(
+      {
+        error: rateLimit.error,
+        errorCode: rateLimit.errorCode,
+        code: 429,
+      },
+      {
+        status: 429,
+        headers: {
+          "cache-control": "no-store",
+          "retry-after": String(rateLimit.retryAfterSeconds),
+        },
+      },
+    );
   }
 
   const respondWithOutcome = async (input: {
@@ -405,7 +423,7 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
     });
   }
 
-  const requestId = buildRequestId(request, requestedService, signer, payload.nonce);
+  const requestId = buildRequestId(requestedService, signer, payload.nonce);
   const enforceGatewayReadiness = shouldEnforceServiceGatewayReadiness(requestedService);
 
   let serviceGatewayReadiness: ServiceGatewayReadiness = {
