@@ -2,6 +2,10 @@
 
 Use this guide to send your first authorized request through Ghost Gate.
 
+> [!WARNING]
+> By installing or using the GhostGate SDK, you agree to the Ghost Protocol Merchant Terms: `https://ghostprotocol.cc/terms`.
+> The SDK is provided "as is" under MIT License terms. Merchants remain responsible for upstream compute costs, network-layer protection, and key management.
+
 > [!NOTE]
 > This page is Gate-path quickstart. For fulfillment onboarding/configuration, use:
 > - `docs/developer-portal/onboarding-and-configuration.md`
@@ -140,3 +144,4 @@ Always sign a fresh payload with a new nonce.
 - Read [API Reference](./api-reference.md) for endpoint details.
 - Read [SDK Reference](./sdk-reference.md) for constructor and methods.
 - Read [Errors and Security](./errors-and-security.md) before production rollout.
+- Read [Security and Shared Responsibility](./security-and-shared-responsibility.md) before go-live.

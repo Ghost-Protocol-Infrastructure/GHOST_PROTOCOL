@@ -9,6 +9,7 @@ This page now covers both:
 
 For agent-specific retry/state policy, use:
 - `docs/developer-portal/agent-integration-playbook.md`
+- `docs/developer-portal/security-and-shared-responsibility.md`
 
 ## Error handling model
 
@@ -102,6 +103,8 @@ For SDKs and dashboards, use a stable normalized map:
 - `GHOST_FULFILLMENT_MERCHANT_DELEGATED_PRIVATE_KEY`
 - `GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET`
 - `GHOST_FULFILLMENT_SUPPORT_SECRET`
+- `GHOST_SETTLEMENT_OPERATOR_SECRET`
+- `GHOST_SETTLEMENT_SUPPORT_SECRET`
 
 Treat all four as runtime secrets. Do not expose them in frontend bundles or commit history.
 

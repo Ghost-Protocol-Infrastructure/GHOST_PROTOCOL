@@ -131,18 +131,30 @@ Returns:
 ### `POST /api/admin/settlement/allocate`
 
 Claims the next oldest batch of pending merchant earnings and submits it to GhostVault.
+Auth:
+- `Authorization: Bearer <GHOST_SETTLEMENT_OPERATOR_SECRET>`
+- or `x-ghost-settlement-operator-secret`
 
 ### `POST /api/admin/settlement/reconcile`
 
 Reconciles submitted merchant earnings against on-chain `processedSettlementIds` and tx receipts.
+Auth:
+- `Authorization: Bearer <GHOST_SETTLEMENT_OPERATOR_SECRET>`
+- or `x-ghost-settlement-operator-secret`
 
 ### `GET /api/admin/settlement/metrics`
 
 Returns pending, in-flight, confirmed, and failed settlement totals plus backlog age and drift diagnostics.
+Auth:
+- `Authorization: Bearer <GHOST_SETTLEMENT_SUPPORT_SECRET>`
+- or `x-ghost-settlement-support-secret`
 
 ### `GET /api/admin/vault/preflight`
 
 Reports legacy GhostVault liability, accrued fees, and balance for legacy-vault verification after cutover.
+Auth:
+- `Authorization: Bearer <GHOST_SETTLEMENT_OPERATOR_SECRET>`
+- or `x-ghost-settlement-operator-secret`
 
 Capture a held ticket using merchant delegated signer proof.
 
@@ -247,12 +259,12 @@ Authorize access for a service slug and consume credits.
 | `x-ghost-sig` | Yes | Hex EIP-712 signature over payload. |
 | `x-ghost-payload` | Yes | JSON string: `{"service","timestamp","nonce"}`. |
 | `x-ghost-credit-cost` | Optional | Positive integer cost. May be ignored by server policy. |
-| `x-ghost-request-id` | Optional | Caller-provided request ID (max length 128). |
 
 Notes:
 
-- If `GHOST_GATE_ALLOW_CLIENT_COST_OVERRIDE=false`, `x-ghost-credit-cost` is ignored.
+- `x-ghost-credit-cost` is ignored unless `GHOST_GATE_ALLOW_CLIENT_COST_OVERRIDE=true` in runtime env.
 - Server may resolve cost from DB service pricing, env pricing map, or default cost.
+- `requestId` is server-derived from `service:signer:nonce`; client `x-ghost-request-id` override is not used.
 
 ### Request example
 
@@ -320,6 +332,16 @@ curl -X POST "https://ghostprotocol.cc/api/gate/agent-2212" \
 {
   "error": "Replay Detected",
   "code": 409
+}
+```
+
+`429` rate limit hit
+
+```json
+{
+  "error": "Too many fulfillment gate requests. Try again in 60s.",
+  "errorCode": "RATE_LIMITED",
+  "code": 429
 }
 ```
 

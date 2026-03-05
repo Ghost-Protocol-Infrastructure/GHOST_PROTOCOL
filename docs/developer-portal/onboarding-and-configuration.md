@@ -4,6 +4,7 @@ This guide documents the current onboarding path for the live codebase, includin
 
 For autonomous runtime behavior patterns (retry/idempotency/state handling), also read:
 - `docs/developer-portal/agent-integration-playbook.md`
+- `docs/developer-portal/security-and-shared-responsibility.md`
 
 ## 1. Choose Integration Path
 
@@ -77,8 +78,16 @@ Complete these steps in order for each merchant agent.
 | `GHOST_FULFILLMENT_RATE_LIMIT_TICKET_PER_WINDOW` | `120` | Ticket route limit. |
 | `GHOST_FULFILLMENT_RATE_LIMIT_CAPTURE_PER_WINDOW` | `180` | Capture route limit. |
 | `GHOST_FULFILLMENT_RATE_LIMIT_EXPIRE_SWEEP_PER_WINDOW` | `30` | Expire-sweep route limit. |
+| `GHOST_FULFILLMENT_RATE_LIMIT_GATE_PER_WINDOW` | `240` | Gate route limit (`/api/gate/*`). |
 | `GHOST_FULFILLMENT_ALERT_THRESHOLD_PER_MINUTE` | `5` | Alert threshold for repeated fulfillment errors. |
 | `GHOST_FULFILLMENT_ALERT_WINDOW_MS` | `60000` | Alert rolling window. |
+
+### 4.3 Settlement operator/support secrets
+
+| Variable | Used by | Required | Notes |
+|---|---|---|---|
+| `GHOST_SETTLEMENT_OPERATOR_SECRET` | `/api/admin/settlement/allocate`, `/api/admin/settlement/reconcile`, `/api/admin/settlement/operator-health`, `/api/admin/vault/preflight` | Yes (hosted settlement automation) | Dedicated secret required. No fallback secret path. |
+| `GHOST_SETTLEMENT_SUPPORT_SECRET` | `/api/admin/settlement/metrics` | Recommended for ops/support | Supports bearer auth or `x-ghost-settlement-support-secret`. |
 
 ## 5. Production Readiness Checks
 
