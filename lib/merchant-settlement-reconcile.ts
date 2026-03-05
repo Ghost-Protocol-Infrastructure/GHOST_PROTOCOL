@@ -169,6 +169,8 @@ export const reconcileMerchantSettlementRows = async (input: {
   let stillSubmittedCount = 0;
   const touchedBatchIds = new Set<string>();
   const requeuedBatchStateCounts = new Map<string, number>();
+  const confirmedRowIds: string[] = [];
+  const requeuedRowIds: string[] = [];
 
   for (const row of submittedRows) {
     const processedOnChain = await readProcessedSettlementId(client, row.settlementId);
@@ -182,14 +184,7 @@ export const reconcileMerchantSettlementRows = async (input: {
 
     if (outcome === "confirmed") {
       confirmedCount += 1;
-      await prisma.merchantEarning.update({
-        where: { id: row.id },
-        data: {
-          status: "CONFIRMED",
-          failureCode: null,
-          failureMessage: null,
-        },
-      });
+      confirmedRowIds.push(row.id);
       if (row.allocatorBatchId) {
         touchedBatchIds.add(row.allocatorBatchId);
       }
@@ -198,16 +193,7 @@ export const reconcileMerchantSettlementRows = async (input: {
 
     if (outcome === "requeue") {
       requeuedCount += 1;
-      await prisma.merchantEarning.update({
-        where: { id: row.id },
-        data: {
-          status: "PENDING",
-          allocatorBatchId: null,
-          txHash: null,
-          failureCode: "RECONCILE_REQUEUED",
-          failureMessage: "Reconciliation did not find a confirmed on-chain settlement for this earning.",
-        },
-      });
+      requeuedRowIds.push(row.id);
       if (row.allocatorBatchId) {
         touchedBatchIds.add(row.allocatorBatchId);
         requeuedBatchStateCounts.set(
@@ -225,28 +211,66 @@ export const reconcileMerchantSettlementRows = async (input: {
   }
 
   let updatedBatchCount = 0;
-  for (const allocatorBatchId of touchedBatchIds) {
-    const persistedRows = await prisma.merchantEarning.findMany({
-      where: { allocatorBatchId },
-      select: { status: true },
-    });
-    const rows: DerivedBatchRowState[] = persistedRows.map((currentRow) => ({
-      status: currentRow.status,
-    }));
-    const requeuedCountForBatch = requeuedBatchStateCounts.get(allocatorBatchId) ?? 0;
-    for (let index = 0; index < requeuedCountForBatch; index += 1) {
-      rows.push({ status: "PENDING" });
+  await prisma.$transaction(async (tx) => {
+    if (confirmedRowIds.length > 0) {
+      const updated = await tx.merchantEarning.updateMany({
+        where: {
+          id: { in: confirmedRowIds },
+          status: "SUBMITTED",
+        },
+        data: {
+          status: "CONFIRMED",
+          failureCode: null,
+          failureMessage: null,
+        },
+      });
+      if (updated.count !== confirmedRowIds.length) {
+        throw new Error("Reconcile failed to update all confirmed earnings.");
+      }
     }
 
-    const nextBatchState = deriveBatchStatusUpdate(rows);
-    if (!nextBatchState) continue;
+    if (requeuedRowIds.length > 0) {
+      const updated = await tx.merchantEarning.updateMany({
+        where: {
+          id: { in: requeuedRowIds },
+          status: "SUBMITTED",
+        },
+        data: {
+          status: "PENDING",
+          allocatorBatchId: null,
+          txHash: null,
+          failureCode: "RECONCILE_REQUEUED",
+          failureMessage: "Reconciliation did not find a confirmed on-chain settlement for this earning.",
+        },
+      });
+      if (updated.count !== requeuedRowIds.length) {
+        throw new Error("Reconcile failed to requeue all expected earnings.");
+      }
+    }
 
-    await prisma.merchantSettlementBatch.update({
-      where: { id: allocatorBatchId },
-      data: nextBatchState,
-    });
-    updatedBatchCount += 1;
-  }
+    for (const allocatorBatchId of touchedBatchIds) {
+      const persistedRows = await tx.merchantEarning.findMany({
+        where: { allocatorBatchId },
+        select: { status: true },
+      });
+      const rows: DerivedBatchRowState[] = persistedRows.map((currentRow) => ({
+        status: currentRow.status,
+      }));
+      const requeuedCountForBatch = requeuedBatchStateCounts.get(allocatorBatchId) ?? 0;
+      for (let index = 0; index < requeuedCountForBatch; index += 1) {
+        rows.push({ status: "PENDING" });
+      }
+
+      const nextBatchState = deriveBatchStatusUpdate(rows);
+      if (!nextBatchState) continue;
+
+      await tx.merchantSettlementBatch.update({
+        where: { id: allocatorBatchId },
+        data: nextBatchState,
+      });
+      updatedBatchCount += 1;
+    }
+  });
 
   return {
     ok: true,

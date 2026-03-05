@@ -39,28 +39,14 @@ jobs:
       - name: Run settlement reconcile and allocate
         env:
           SETTLEMENT_SECRET: ${{ secrets.GHOST_SETTLEMENT_OPERATOR_SECRET }}
-          EXPIRE_SWEEP_SECRET: ${{ secrets.GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET }}
           BASE_URL_INPUT: ${{ github.event.inputs.base_url }}
           MAX_BATCH_SIZE_INPUT: ${{ github.event.inputs.max_batch_size }}
           RECONCILE_LIMIT_INPUT: ${{ github.event.inputs.reconcile_limit }}
         run: |
           set -euo pipefail
 
-          secrets=()
-          secret_labels=()
-
-          if [ -n "${SETTLEMENT_SECRET:-}" ]; then
-            secrets+=("${SETTLEMENT_SECRET}")
-            secret_labels+=("GHOST_SETTLEMENT_OPERATOR_SECRET")
-          fi
-
-          if [ -n "${EXPIRE_SWEEP_SECRET:-}" ] && [ "${EXPIRE_SWEEP_SECRET}" != "${SETTLEMENT_SECRET:-}" ]; then
-            secrets+=("${EXPIRE_SWEEP_SECRET}")
-            secret_labels+=("GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET")
-          fi
-
-          if [ "${#secrets[@]}" -eq 0 ]; then
-            echo "Missing repo secret GHOST_SETTLEMENT_OPERATOR_SECRET (or fallback GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET)" >&2
+          if [ -z "${SETTLEMENT_SECRET:-}" ]; then
+            echo "Missing repo secret GHOST_SETTLEMENT_OPERATOR_SECRET" >&2
             exit 1
           fi
 
@@ -82,34 +68,23 @@ jobs:
             local response_file="$3"
             local http_code=""
 
-            for i in "${!secrets[@]}"; do
-              local secret="${secrets[$i]}"
-              local label="${secret_labels[$i]}"
+            echo "Attempting ${method} ${url}"
+            http_code="$(curl -sS -o "${response_file}" -w '%{http_code}' \
+              -X "${method}" \
+              -H "Authorization: Bearer ${SETTLEMENT_SECRET}" \
+              -H "Accept: application/json" \
+              "${url}")"
 
-              echo "Attempting ${method} ${url} using ${label}"
-              http_code="$(curl -sS -o "${response_file}" -w '%{http_code}' \
-                -X "${method}" \
-                -H "Authorization: Bearer ${secret}" \
-                -H "Accept: application/json" \
-                "${url}")"
+            if [ "${http_code}" = "200" ]; then
+              return 0
+            fi
 
-              cat "${response_file}"
-              echo
+            if [ "${http_code}" = "401" ]; then
+              echo "Endpoint rejected settlement operator secret with HTTP 401" >&2
+              return 1
+            fi
 
-              if [ "${http_code}" = "200" ]; then
-                if [ "${i}" -gt 0 ]; then
-                  echo "Succeeded using fallback secret ${label}"
-                fi
-                return 0
-              fi
-
-              if [ "${http_code}" != "401" ]; then
-                echo "Endpoint failed with HTTP ${http_code}" >&2
-                return 1
-              fi
-            done
-
-            echo "All configured operator secrets were rejected with HTTP 401" >&2
+            echo "Endpoint failed with HTTP ${http_code}" >&2
             return 1
           }
 

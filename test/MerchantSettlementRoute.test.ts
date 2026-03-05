@@ -82,7 +82,7 @@ describe("merchant settlement route auth", () => {
     );
   });
 
-  it("falls back to the expire sweep secret only when the settlement secret is absent", () => {
+  it("requires a dedicated settlement operator secret", () => {
     process.env.GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET = "expire-sweep-secret-value";
 
     assert.equal(
@@ -91,7 +91,7 @@ describe("merchant settlement route auth", () => {
           authorization: "Bearer expire-sweep-secret-value",
         }),
       ),
-      true,
+      false,
     );
 
     process.env.GHOST_SETTLEMENT_OPERATOR_SECRET = OPERATOR_SECRET;
@@ -99,10 +99,10 @@ describe("merchant settlement route auth", () => {
     assert.equal(
       isSettlementOperatorAuthorized(
         makeRequest("https://ghost.local/api/admin/settlement/allocate", {
-          authorization: "Bearer expire-sweep-secret-value",
+          authorization: `Bearer ${OPERATOR_SECRET}`,
         }),
       ),
-      false,
+      true,
     );
   });
 });

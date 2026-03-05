@@ -35,20 +35,13 @@ const getProvidedSecret = (request: NextRequest, customHeaderName: string): stri
   return null;
 };
 
-const getSettlementOperatorSecrets = (): string[] => {
-  const settlementSecret = normalizeSecret(process.env.GHOST_SETTLEMENT_OPERATOR_SECRET);
-  if (settlementSecret) return [settlementSecret];
-
-  // Temporary rollout fallback: if the dedicated settlement secret is not yet
-  // configured in the deployed app env, allow the existing operator secret that
-  // already protects the fulfillment expire-sweep automation.
-  const expireSweepSecret = normalizeSecret(process.env.GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET);
-  return expireSweepSecret ? [expireSweepSecret] : [];
-};
+const getSettlementOperatorSecret = (): string | null =>
+  normalizeSecret(process.env.GHOST_SETTLEMENT_OPERATOR_SECRET);
 
 export const isSettlementOperatorAuthorized = (request: NextRequest): boolean => {
   const provided = getProvidedSecret(request, "x-ghost-settlement-operator-secret");
-  return getSettlementOperatorSecrets().some((expected) => safeSecretEquals(provided, expected));
+  const expected = getSettlementOperatorSecret();
+  return safeSecretEquals(provided, expected);
 };
 
 export const isSettlementSupportAuthorized = (request: NextRequest): boolean => {

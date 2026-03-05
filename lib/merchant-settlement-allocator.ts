@@ -295,7 +295,7 @@ export const claimNextMerchantSettlementBatch = async (
   const activeBatch = await prisma.merchantSettlementBatch.findFirst({
     where: {
       status: {
-        in: ["OPEN", "SUBMITTED", "FAILED"],
+        in: ["OPEN", "SUBMITTED"],
       },
       updatedAt: {
         gte: cooldownThreshold,
