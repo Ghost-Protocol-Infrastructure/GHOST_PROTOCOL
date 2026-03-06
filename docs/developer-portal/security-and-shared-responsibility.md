@@ -22,6 +22,21 @@ This page is blunt on purpose: Ghost Protocol secures the settlement rail, but i
    - Do not leak delegated signer keys, settlement operator keys, or support secrets.
    - If private keys are compromised, captured settlements are not reversible by Ghost Protocol.
 
+## Why settlement is asynchronous
+
+Ghost Protocol is intentionally split into two phases:
+
+1. Fast fulfillment capture (`HELD -> CAPTURED`) in the backend ledger for low-latency agent responses.
+2. Batched on-chain merchant settlement after capture, processed by the settlement operator.
+
+This architecture exists so merchants are paid for completed work while keeping request latency and gas costs practical:
+
+- A request does not wait for chain confirmation in the hot path.
+- Failed or expired holds can be released cleanly without on-chain clawback logic.
+- Multiple captured spends can be batched into fewer settlement transactions.
+
+Operationally, this means merchant balances can briefly appear as `PENDING`/`IN-FLIGHT` before becoming withdrawable on-chain.
+
 ## Legal boundary
 
 - Ghost SDK packages and repository code are distributed under the MIT License.

@@ -1,6 +1,6 @@
 import { createPublicClient, fallback, getAddress, http, type Address } from "viem";
 import { base } from "viem/chains";
-import { type AgentTier, SnapshotStatus } from "@prisma/client";
+import { Prisma, type AgentTier, SnapshotStatus } from "@prisma/client";
 import { prisma } from "../lib/db";
 
 type AgentIndexMode = "erc8004" | "olas";
@@ -70,6 +70,32 @@ type FetchTxCountsResult = {
   fetched: number;
   total: number;
   budgetReached: boolean;
+};
+
+type GateSybilSignal = {
+  authorizedCount: number;
+  uniqueSignerCount: number;
+  replayCount: number;
+  invalidSignatureCount: number;
+  topSignerAuthorizedCount: number;
+};
+
+type GateSybilSignalSnapshot = {
+  byAgentId: Map<string, GateSybilSignal>;
+  hasCoverage: boolean;
+  servicesTracked: number;
+  totalAuthorizedEvents: number;
+  since: Date;
+  windowMinutes: number;
+};
+
+type GateSybilSignalAggregateRow = {
+  service: string;
+  authorized_count: bigint;
+  replay_count: bigint;
+  invalid_signature_count: bigint;
+  unique_signer_count: bigint;
+  top_signer_authorized_count: bigint;
 };
 
 type SnapshotScoreRow = {
@@ -151,6 +177,14 @@ const SCORE_V2_STATE_PREFIX = process.env.SCORE_V2_STATE_PREFIX?.trim() || "scor
 const SCORE_V2_FORCE_EXIT_ON_FINISH =
   process.env.SCORE_V2_FORCE_EXIT_ON_FINISH?.trim().toLowerCase() === "true" ||
   process.env.CI?.trim().toLowerCase() === "true";
+const SCORE_V2_SYBIL_GUARD_ENABLED =
+  (process.env.SCORE_V2_SYBIL_GUARD_ENABLED?.trim().toLowerCase() ?? "true") !== "false";
+const SCORE_V2_SYBIL_WINDOW_MINUTES = parseBoundedInt(
+  process.env.SCORE_V2_SYBIL_WINDOW_MINUTES,
+  7 * 24 * 60,
+  60,
+  30 * 24 * 60,
+);
 
 const UNCLAIMED_REPUTATION_CAP = 80;
 const REPUTATION_TX_WEIGHT = 0.3;
@@ -160,6 +194,15 @@ const RANK_REPUTATION_WEIGHT = 0.7;
 const RANK_VELOCITY_WEIGHT = 0.3;
 const ZERO_ADDRESS_LOWER = "0x0000000000000000000000000000000000000000";
 const FAILURE_REASON_MAX_LENGTH = 1_000;
+const SYBIL_MIN_SAMPLE_SIZE = 8;
+const SYBIL_UNIQUE_SIGNAL_WEIGHT = 0.6;
+const SYBIL_TX_SIGNAL_WEIGHT = 0.4;
+const SYBIL_CONCENTRATION_THRESHOLD = 0.75;
+const SYBIL_REPLAY_RATE_THRESHOLD = 0.2;
+const SYBIL_INVALID_RATE_THRESHOLD = 0.25;
+const SYBIL_LOW_DIVERSITY_AUTHORIZED_THRESHOLD = 12;
+const SYBIL_LOW_DIVERSITY_SIGNER_THRESHOLD = 2;
+const SYBIL_MAX_PENALTY = 30;
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
@@ -325,6 +368,155 @@ const buildClient = (rpcTimeoutMs: number = SCORE_V2_RPC_TIMEOUT_MS) =>
       }),
     ]),
   });
+
+const parseAgentIdFromServiceSlug = (service: string): string | null => {
+  const match = /^agent-(\d+)$/i.exec(service.trim());
+  return match ? match[1] : null;
+};
+
+const calculateSybilPenalty = (signal: GateSybilSignal): number => {
+  if (signal.authorizedCount < SYBIL_MIN_SAMPLE_SIZE) return 0;
+
+  let penalty = 0;
+
+  const topSignerShare =
+    signal.authorizedCount > 0 ? signal.topSignerAuthorizedCount / signal.authorizedCount : 0;
+  if (topSignerShare > SYBIL_CONCENTRATION_THRESHOLD) {
+    penalty += ((topSignerShare - SYBIL_CONCENTRATION_THRESHOLD) / (1 - SYBIL_CONCENTRATION_THRESHOLD)) * 16;
+  }
+
+  if (
+    signal.uniqueSignerCount <= SYBIL_LOW_DIVERSITY_SIGNER_THRESHOLD &&
+    signal.authorizedCount >= SYBIL_LOW_DIVERSITY_AUTHORIZED_THRESHOLD
+  ) {
+    penalty += 8;
+  }
+
+  const replayDenominator = signal.authorizedCount + signal.replayCount;
+  const replayRate = replayDenominator > 0 ? signal.replayCount / replayDenominator : 0;
+  if (replayRate > SYBIL_REPLAY_RATE_THRESHOLD) {
+    penalty += ((replayRate - SYBIL_REPLAY_RATE_THRESHOLD) / (1 - SYBIL_REPLAY_RATE_THRESHOLD)) * 8;
+  }
+
+  const invalidDenominator = signal.authorizedCount + signal.invalidSignatureCount + signal.replayCount;
+  const invalidRate = invalidDenominator > 0 ? signal.invalidSignatureCount / invalidDenominator : 0;
+  if (invalidRate > SYBIL_INVALID_RATE_THRESHOLD) {
+    penalty += ((invalidRate - SYBIL_INVALID_RATE_THRESHOLD) / (1 - SYBIL_INVALID_RATE_THRESHOLD)) * 6;
+  }
+
+  return clamp(roundToTwo(penalty), 0, SYBIL_MAX_PENALTY);
+};
+
+const emptyGateSybilSignalSnapshot = (windowMinutes: number): GateSybilSignalSnapshot => ({
+  byAgentId: new Map(),
+  hasCoverage: false,
+  servicesTracked: 0,
+  totalAuthorizedEvents: 0,
+  since: new Date(Date.now() - windowMinutes * 60_000),
+  windowMinutes,
+});
+
+const fetchGateSybilSignals = async (): Promise<GateSybilSignalSnapshot> => {
+  const empty = emptyGateSybilSignalSnapshot(SCORE_V2_SYBIL_WINDOW_MINUTES);
+  if (!SCORE_V2_SYBIL_GUARD_ENABLED) return empty;
+
+  try {
+    const tableCheck = await withPrismaRetry("score-v2 check GateAccessEvent table", () =>
+      prisma.$queryRaw<Array<{ relation: string | null }>>(Prisma.sql`
+        SELECT to_regclass('public."GateAccessEvent"')::text AS relation
+      `),
+    );
+
+    if (!tableCheck[0]?.relation) {
+      return empty;
+    }
+  } catch (error) {
+    console.warn("score-v2 sybil telemetry check failed. Continuing without sybil guard.");
+    console.error(error);
+    return empty;
+  }
+
+  const since = new Date(Date.now() - SCORE_V2_SYBIL_WINDOW_MINUTES * 60_000);
+
+  try {
+    const rows = await withPrismaRetry("score-v2 aggregate gate sybil signals", () =>
+      prisma.$queryRaw<GateSybilSignalAggregateRow[]>(Prisma.sql`
+        WITH recent AS (
+          SELECT "service", "signer", "outcome"
+          FROM "GateAccessEvent"
+          WHERE "createdAt" >= ${since}
+            AND "service" LIKE 'agent-%'
+        ),
+        authorized_signer_counts AS (
+          SELECT
+            "service",
+            "signer",
+            COUNT(*)::bigint AS signer_count
+          FROM recent
+          WHERE "outcome" = 'AUTHORIZED'
+            AND "signer" IS NOT NULL
+          GROUP BY "service", "signer"
+        ),
+        top_signers AS (
+          SELECT
+            "service",
+            MAX(signer_count)::bigint AS top_signer_authorized_count
+          FROM authorized_signer_counts
+          GROUP BY "service"
+        )
+        SELECT
+          recent."service" AS service,
+          COUNT(*) FILTER (WHERE recent."outcome" = 'AUTHORIZED')::bigint AS authorized_count,
+          COUNT(*) FILTER (WHERE recent."outcome" = 'REPLAY')::bigint AS replay_count,
+          COUNT(*) FILTER (WHERE recent."outcome" = 'INVALID_SIGNATURE')::bigint AS invalid_signature_count,
+          COUNT(DISTINCT recent."signer") FILTER (
+            WHERE recent."outcome" = 'AUTHORIZED'
+              AND recent."signer" IS NOT NULL
+          )::bigint AS unique_signer_count,
+          COALESCE(top_signers.top_signer_authorized_count, 0)::bigint AS top_signer_authorized_count
+        FROM recent
+        LEFT JOIN top_signers
+          ON top_signers."service" = recent."service"
+        GROUP BY recent."service", top_signers.top_signer_authorized_count
+      `),
+    );
+
+    const byAgentId = new Map<string, GateSybilSignal>();
+    let totalAuthorizedEvents = 0;
+
+    for (const row of rows) {
+      const agentId = parseAgentIdFromServiceSlug(row.service);
+      if (!agentId) continue;
+
+      const signal: GateSybilSignal = {
+        authorizedCount: toSafeInt(row.authorized_count),
+        replayCount: toSafeInt(row.replay_count),
+        invalidSignatureCount: toSafeInt(row.invalid_signature_count),
+        uniqueSignerCount: toSafeInt(row.unique_signer_count),
+        topSignerAuthorizedCount: toSafeInt(row.top_signer_authorized_count),
+      };
+
+      byAgentId.set(agentId, signal);
+      totalAuthorizedEvents += signal.authorizedCount;
+    }
+
+    return {
+      byAgentId,
+      hasCoverage: totalAuthorizedEvents > 0,
+      servicesTracked: byAgentId.size,
+      totalAuthorizedEvents,
+      since,
+      windowMinutes: SCORE_V2_SYBIL_WINDOW_MINUTES,
+    };
+  } catch (error) {
+    console.warn("score-v2 sybil telemetry aggregation failed. Continuing without sybil guard.");
+    console.error(error);
+    return {
+      ...empty,
+      since,
+    };
+  }
+};
 
 const stateKey = (key: string): string => `${SCORE_V2_STATE_PREFIX}:${key}`;
 
@@ -606,34 +798,70 @@ const buildSnapshotRows = (
       updatedAt: Date;
     }
   >,
+  gateSybilSignals: GateSybilSignalSnapshot,
 ): {
   rows: SnapshotScoreRow[];
   maxTxCount: number;
   maxClaimedYield: number;
+  sybilPenalizedAgents: number;
+  sybilMaxPenalty: number;
 } => {
   const txCounts = inputs.map((input) => Math.max(0, input.txCount));
   const maxTxCount = txCounts.length > 0 ? Math.max(...txCounts) : 0;
+  const uniqueSignerCounts = inputs.map((input) =>
+    Math.max(0, gateSybilSignals.byAgentId.get(input.agentId)?.uniqueSignerCount ?? 0),
+  );
+  const maxUniqueSignerCount = uniqueSignerCounts.length > 0 ? Math.max(...uniqueSignerCounts) : 0;
   const claimedYields = inputs
     .map((input) => (input.isClaimed ? Math.max(0, input.yield) : 0))
     .filter((value) => value > 0);
   const maxClaimedYield = claimedYields.length > 0 ? Math.max(...claimedYields) : 0;
+  const totalSignalWeight = SYBIL_UNIQUE_SIGNAL_WEIGHT + SYBIL_TX_SIGNAL_WEIGHT;
+  const normalizedUniqueSignalWeight = totalSignalWeight > 0 ? SYBIL_UNIQUE_SIGNAL_WEIGHT / totalSignalWeight : 0.5;
+  const normalizedTxSignalWeight = totalSignalWeight > 0 ? SYBIL_TX_SIGNAL_WEIGHT / totalSignalWeight : 0.5;
+  let sybilPenalizedAgents = 0;
+  let sybilMaxPenalty = 0;
 
   const scored = inputs.map((input) => {
     const txCount = Math.max(0, input.txCount);
     const txVolumeNorm = normalizeLog100(txCount, maxTxCount);
-    const velocityNorm = normalizeLog100(txCount, maxTxCount);
+    const uniqueSignerCount = Math.max(0, gateSybilSignals.byAgentId.get(input.agentId)?.uniqueSignerCount ?? 0);
+    const uniqueSignerNorm =
+      gateSybilSignals.hasCoverage && maxUniqueSignerCount > 0
+        ? normalizeLog100(uniqueSignerCount, maxUniqueSignerCount)
+        : txVolumeNorm;
+    const velocityNorm = roundToTwo(
+      txVolumeNorm * normalizedTxSignalWeight + uniqueSignerNorm * normalizedUniqueSignalWeight,
+    );
     const yieldValue = input.isClaimed ? Math.max(0, input.yield) : 0;
     const uptime = input.isClaimed ? clamp(input.uptime, 0, 100) : 0;
     const yieldNorm = maxClaimedYield > 0 ? clamp((yieldValue / maxClaimedYield) * 100, 0, 100) : 0;
+    const antiWashPenalty = gateSybilSignals.hasCoverage
+      ? calculateSybilPenalty(
+          gateSybilSignals.byAgentId.get(input.agentId) ?? {
+            authorizedCount: 0,
+            uniqueSignerCount: 0,
+            replayCount: 0,
+            invalidSignatureCount: 0,
+            topSignerAuthorizedCount: 0,
+          },
+        )
+      : 0;
+
+    if (antiWashPenalty > 0) {
+      sybilPenalizedAgents += 1;
+      sybilMaxPenalty = Math.max(sybilMaxPenalty, antiWashPenalty);
+    }
 
     const reputation = input.isClaimed
       ? roundToTwo(
-          txVolumeNorm * REPUTATION_TX_WEIGHT +
+          velocityNorm * REPUTATION_TX_WEIGHT +
             uptime * REPUTATION_UPTIME_WEIGHT +
             yieldNorm * REPUTATION_YIELD_WEIGHT,
         )
-      : roundToTwo(Math.min(txVolumeNorm, UNCLAIMED_REPUTATION_CAP));
-    const rankScore = roundToTwo(reputation * RANK_REPUTATION_WEIGHT + velocityNorm * RANK_VELOCITY_WEIGHT);
+      : roundToTwo(Math.min(velocityNorm, UNCLAIMED_REPUTATION_CAP));
+    const rawRankScore = roundToTwo(reputation * RANK_REPUTATION_WEIGHT + velocityNorm * RANK_VELOCITY_WEIGHT);
+    const rankScore = roundToTwo(clamp(rawRankScore - antiWashPenalty, 0, 100));
     const tier = getTier(txCount, input.isClaimed);
 
     return {
@@ -646,12 +874,14 @@ const buildSnapshotRows = (
       uptime,
       volume: BigInt(txCount),
       score: Math.round(rankScore),
+      antiWashPenalty,
     };
   });
 
   scored.sort((a, b) => {
     if (b.rankScore !== a.rankScore) return b.rankScore - a.rankScore;
     if (b.reputation !== a.reputation) return b.reputation - a.reputation;
+    if (a.antiWashPenalty !== b.antiWashPenalty) return a.antiWashPenalty - b.antiWashPenalty;
     if (b.txCount !== a.txCount) return b.txCount - a.txCount;
     return a.input.agentAddress.localeCompare(b.input.agentAddress);
   });
@@ -681,7 +911,7 @@ const buildSnapshotRows = (
     agentUpdatedAt: row.input.updatedAt,
   }));
 
-  return { rows, maxTxCount, maxClaimedYield };
+  return { rows, maxTxCount, maxClaimedYield, sybilPenalizedAgents, sybilMaxPenalty };
 };
 
 const buildFailureReason = (error: unknown): string => {
@@ -963,6 +1193,11 @@ const runSnapshotRanking = async (): Promise<{
   totalRows: number;
   maxTxCount: number;
   maxClaimedYield: number;
+  sybilPenalizedAgents: number;
+  sybilMaxPenalty: number;
+  sybilCoverage: boolean;
+  sybilServicesTracked: number;
+  sybilAuthorizedEvents: number;
 }> => {
   const inputs = await withPrismaRetry("score-v2 load score inputs for ranking", () =>
     prisma.agentScoreInput.findMany({
@@ -994,7 +1229,11 @@ const runSnapshotRanking = async (): Promise<{
     throw new Error("No score inputs found for v2 snapshot ranking.");
   }
 
-  const { rows, maxTxCount, maxClaimedYield } = buildSnapshotRows(inputs);
+  const gateSybilSignals = await fetchGateSybilSignals();
+  const { rows, maxTxCount, maxClaimedYield, sybilPenalizedAgents, sybilMaxPenalty } = buildSnapshotRows(
+    inputs,
+    gateSybilSignals,
+  );
   const snapshotId = await writeSnapshot(rows, maxTxCount, maxClaimedYield);
 
   if (!SCORE_V2_SHADOW_ONLY) {
@@ -1006,6 +1245,11 @@ const runSnapshotRanking = async (): Promise<{
     totalRows: rows.length,
     maxTxCount,
     maxClaimedYield,
+    sybilPenalizedAgents,
+    sybilMaxPenalty,
+    sybilCoverage: gateSybilSignals.hasCoverage,
+    sybilServicesTracked: gateSybilSignals.servicesTracked,
+    sybilAuthorizedEvents: gateSybilSignals.totalAuthorizedEvents,
   };
 };
 
@@ -1054,10 +1298,15 @@ async function main(): Promise<void> {
     last_snapshot_rows: String(ranking.totalRows),
     last_snapshot_max_tx_count: String(ranking.maxTxCount),
     last_snapshot_max_claimed_yield: String(ranking.maxClaimedYield),
+    last_sybil_coverage: ranking.sybilCoverage ? "true" : "false",
+    last_sybil_services_tracked: String(ranking.sybilServicesTracked),
+    last_sybil_authorized_events: String(ranking.sybilAuthorizedEvents),
+    last_sybil_penalized_agents: String(ranking.sybilPenalizedAgents),
+    last_sybil_max_penalty: String(ranking.sybilMaxPenalty),
   });
 
   console.log(
-    `score-v2 complete: snapshot=${ranking.snapshotId}, rows=${ranking.totalRows}, changed_inputs=${ingest.changedInputs}, tx_sources_refreshed=${ingest.refreshedSources}, tx_failures=${ingest.txFetchFailures}${ingest.budgetReached ? ", budget_reached=true" : ""}, elapsed_ms=${elapsedMs}.`,
+    `score-v2 complete: snapshot=${ranking.snapshotId}, rows=${ranking.totalRows}, changed_inputs=${ingest.changedInputs}, tx_sources_refreshed=${ingest.refreshedSources}, tx_failures=${ingest.txFetchFailures}${ingest.budgetReached ? ", budget_reached=true" : ""}, sybil_coverage=${ranking.sybilCoverage}, sybil_services=${ranking.sybilServicesTracked}, sybil_authorized_events=${ranking.sybilAuthorizedEvents}, sybil_penalized_agents=${ranking.sybilPenalizedAgents}, sybil_max_penalty=${ranking.sybilMaxPenalty}, elapsed_ms=${elapsedMs}.`,
   );
 }
 

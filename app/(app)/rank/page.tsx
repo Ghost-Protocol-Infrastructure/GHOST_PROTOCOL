@@ -1133,6 +1133,11 @@ export default function Home() {
               <Link href="/terms" className="text-neutral-600 transition-colors hover:text-red-500">
                 Terms_of_Service
               </Link>
+              {" "}|
+              {" "}
+              <Link href="/privacy" className="text-neutral-600 transition-colors hover:text-red-500">
+                Privacy_Policy
+              </Link>
               <br />
               &copy; 2026 Ghost Protocol
             </div>

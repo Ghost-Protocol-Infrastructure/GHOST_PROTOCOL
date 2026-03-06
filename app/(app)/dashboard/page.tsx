@@ -2404,6 +2404,9 @@ def my_agent():
                     <p className="mt-2 text-xs text-neutral-600">
                       {merchantSettlementSummary.submitted.count} submitted spend events awaiting on-chain confirmation.
                     </p>
+                    <p className="mt-1 text-[11px] text-neutral-600">
+                      Settlement processes every hour (average).
+                    </p>
                     {merchantSettlementSummary.submitted.oldestCreatedAt && (
                       <p className="mt-1 text-[11px] text-neutral-600">
                         Oldest submitted event: {formatRelativeTimeFromIso(merchantSettlementSummary.submitted.oldestCreatedAt)}
