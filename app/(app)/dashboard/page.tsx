@@ -938,65 +938,31 @@ console.log(result);`,
 
   const pythonConsumerUsageExample = useMemo(
     () =>
-      `import json
-import os
-import time
-import uuid
+      `import os
+from ghostgate import GhostGate
 
-import requests
-from eth_account import Account
-from eth_account.messages import encode_typed_data
+sdk = GhostGate(
+    api_key=os.environ["GHOST_API_KEY"],
+    private_key=os.environ["GHOST_SIGNER_PRIVATE_KEY"],
+    base_url=os.getenv("GHOST_GATE_BASE_URL", "${APP_BASE_URL}"),
+    chain_id=${PREFERRED_CHAIN_ID},  # ${PREFERRED_CHAIN_NAME}
+    service_slug="${consumerServiceSlug}",
+    credit_cost=1,
+)
 
-# Trusted CLI/server environment only.
-# Never expose this private key in frontend code.
-private_key = os.environ["GHOST_SIGNER_PRIVATE_KEY"]
-base_url = os.getenv("GHOST_GATE_BASE_URL", "${APP_BASE_URL}").rstrip("/")
-service = "${consumerServiceSlug}"  # replace dynamically
-credit_cost = 1
-chain_id = ${PREFERRED_CHAIN_ID}  # ${PREFERRED_CHAIN_NAME}
+result = sdk.connect()
+print("connect:", result)
 
-payload = {
-    "service": service,
-    "timestamp": int(time.time()),
-    "nonce": uuid.uuid4().hex,
-}
+# Optional telemetry helpers (best effort)
+pulse = sdk.pulse(service_slug="${consumerServiceSlug}")
+print("pulse:", pulse)
 
-typed_data = {
-    "types": {
-        "EIP712Domain": [
-            {"name": "name", "type": "string"},
-            {"name": "version", "type": "string"},
-            {"name": "chainId", "type": "uint256"},
-        ],
-        "Access": [
-            {"name": "service", "type": "string"},
-            {"name": "timestamp", "type": "uint256"},
-            {"name": "nonce", "type": "string"},
-        ],
-    },
-    "domain": {
-        "name": "GhostGate",
-        "version": "1",
-        "chainId": chain_id,
-    },
-    "primaryType": "Access",
-    "message": payload,
-}
-
-signable = encode_typed_data(full_message=typed_data)
-signed = Account.sign_message(signable, private_key=private_key)
-
-url = f"{base_url}/api/gate/{service}"
-headers = {
-    "x-ghost-sig": signed.signature.hex(),
-    "x-ghost-payload": json.dumps(payload),
-    "x-ghost-credit-cost": str(credit_cost),
-    "accept": "application/json, text/plain;q=0.9, */*;q=0.8",
-}
-
-response = requests.post(url, headers=headers, timeout=10)
-print("status:", response.status_code)
-print("body:", response.text)`,
+outcome = sdk.outcome(
+    success=result["connected"],
+    status_code=result["status"],
+    service_slug="${consumerServiceSlug}",
+)
+print("outcome:", outcome)`,
     [consumerServiceSlug],
   );
 
@@ -1746,7 +1712,7 @@ print("body:", response.text)`,
   const merchantSdkExample = useMemo(
     () =>
       `import os
-from flask import Flask
+from flask import Flask, jsonify
 from ghostgate import GhostGate
 
 app = Flask(__name__)
@@ -1758,14 +1724,22 @@ gate = GhostGate(
     private_key=os.environ.get("GHOST_SIGNER_PRIVATE_KEY") or os.environ.get("PRIVATE_KEY"),
     chain_id=${PREFERRED_CHAIN_ID},  # ${PREFERRED_CHAIN_NAME}
     base_url=os.getenv("GHOST_GATE_BASE_URL", "${APP_BASE_URL}"),
+    service_slug="${merchantServiceSlug}",
+    credit_cost=1,
 )
 
 # Agent ID: ${selectedOwnedAgent?.agentId ?? "YOUR_AGENT_ID"}
 
+# Optional: merchant heartbeat telemetry loop
+heartbeat = gate.start_heartbeat(
+    service_slug="${merchantServiceSlug}",
+    interval_seconds=60,
+)
+
 @app.route('/ask', methods=['POST'])
 @gate.guard(cost=1, service="${merchantServiceSlug}", method="POST")
 def my_agent():
-    return "AI Response"`,
+    return jsonify({"ok": True})`,
     [merchantApiKey, selectedOwnedAgent, merchantServiceSlug],
   );
 
@@ -2770,16 +2744,12 @@ def my_agent():
                       : "border-neutral-800 bg-neutral-950 text-neutral-500 hover:border-neutral-600 hover:text-neutral-300"
                       }`}
                   >
-                    Python CLI
+                    Python SDK
                   </button>
                 </div>
 
                 <div className="border border-neutral-900 bg-neutral-900 p-4">
-                  <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
-                    {consumerSdk === "python"
-                      ? "Trusted CLI Usage Example (Raw EIP-712 Request)"
-                      : "Usage Example"}
-                  </p>
+                  <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Usage Example</p>
                   <pre className="overflow-x-auto whitespace-pre-wrap text-sm text-neutral-300 font-mono">
                     <code>{consumerUsageExample}</code>
                   </pre>
@@ -2787,8 +2757,7 @@ def my_agent():
 
                 {consumerSdk === "python" && (
                   <p className="mt-3 text-xs text-neutral-600">
-                    This example runs in a trusted CLI/server environment and signs the gate request directly. Do
-                    not run this with a raw private key in frontend code.
+                    This example runs in a trusted backend/CLI environment. Keep signer private keys server-side only.
                   </p>
                 )}
 
@@ -2812,7 +2781,7 @@ def my_agent():
                   <p className="text-sm text-neutral-500">
                     {consumerSdk === "node"
                       ? "The Node SDK signs and routes verification requests to"
-                      : "This Python CLI example signs and sends a raw EIP-712 verification request to"}
+                      : "The Python SDK signs and routes verification requests to"}
                   </p>
                   <p className="mt-1">
                     <span className="block break-all text-neutral-300 font-mono">

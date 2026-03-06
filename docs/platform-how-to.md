@@ -57,7 +57,7 @@ For fulfillment, also complete:
 - On Ghost-hosted production, do not replace that signer with your own address.
 
 Important:
-- Python snippet uses placeholders by design; replace values before running.
+- Python snippet now uses the Python SDK surface (`GhostGate.connect/pulse/outcome`) with env vars; set real credentials before running.
 - Node snippet expects env vars for sensitive values.
 
 ## 6. Minimal Integration Checklist

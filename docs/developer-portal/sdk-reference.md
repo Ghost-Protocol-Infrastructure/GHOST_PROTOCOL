@@ -106,6 +106,18 @@ await sdk.outcome({ success: true, statusCode: 200 });
 
 ## Python SDK (`sdks/python/ghostgate.py`)
 
+### Install
+
+```bash
+pip install ghostgate-sdk
+```
+
+For local development from this repo:
+
+```bash
+pip install -e ./sdks/python
+```
+
 ### Import
 
 ```python
@@ -116,11 +128,14 @@ from ghostgate import GhostGate
 
 ```python
 GhostGate(
-    api_key: str,
+    api_key: Optional[str] = None,
     *,
     private_key: Optional[str] = None,
     chain_id: int = 8453,
     base_url: str = "https://ghostprotocol.cc",
+    service_slug: str = "connect",
+    credit_cost: int = 1,
+    timeout_seconds: float = 10.0,
 )
 ```
 
@@ -128,30 +143,61 @@ GhostGate(
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `api_key` | string | Yes | - | App API key for telemetry and SDK context. |
+| `api_key` | string | Yes (constructor or connect call) | `None` | App API key for SDK context and telemetry identity. |
 | `private_key` | string | Yes (arg or env) | `None` | Signing key for EIP-712 requests. |
 | `chain_id` | int | No | `8453` | EIP-712 domain chain ID. |
 | `base_url` | string | No | `https://ghostprotocol.cc` | Base API URL; supports localhost override. |
+| `service_slug` | string | No | `connect` | Default gate service slug (`agent-<id>` for agent integrations). |
+| `credit_cost` | int | No | `1` | Default credit cost sent in `x-ghost-credit-cost`. |
+| `timeout_seconds` | float | No | `10.0` | Default HTTP timeout used by SDK requests. |
 
 The Python SDK also reads:
 
 - `GHOST_GATE_BASE_URL` (overrides `base_url`)
+- `GHOST_API_KEY` (constructor fallback when `api_key` is omitted)
 - `GHOST_SIGNER_PRIVATE_KEY` or `PRIVATE_KEY` (fallback signer)
 
 ### Methods
 
-#### `guard(cost: int, *, service: str = "weather", method: str = "GET")`
+#### `connect(api_key: Optional[str] = None, *, service: Optional[str] = None, cost: Optional[int] = None, method: str = "POST", timeout_seconds: Optional[float] = None) -> ConnectResult`
+
+Sends signed access request to `/api/gate/<service>`.
+
+```python
+ConnectResult = {
+  "connected": bool,
+  "apiKeyPrefix": str,
+  "endpoint": str,
+  "status": int,
+  "payload": Any,
+}
+```
+
+#### `pulse(*, api_key: Optional[str] = None, agent_id: Optional[str] = None, service_slug: Optional[str] = None, metadata: Optional[dict] = None, timeout_seconds: Optional[float] = None) -> TelemetryResult`
+
+Sends heartbeat telemetry to `/api/telemetry/pulse`.
+
+#### `outcome(*, success: bool, status_code: Optional[int] = None, api_key: Optional[str] = None, agent_id: Optional[str] = None, service_slug: Optional[str] = None, metadata: Optional[dict] = None, timeout_seconds: Optional[float] = None) -> TelemetryResult`
+
+Sends consumer outcome telemetry to `/api/telemetry/outcome`.
+
+#### `start_heartbeat(*, interval_seconds: float = 60.0, immediate: bool = True, ...) -> HeartbeatController`
+
+Starts periodic best-effort `pulse()` calls in a background thread.
+
+```python
+controller = gate.start_heartbeat(service_slug="agent-2212", interval_seconds=60)
+controller.stop()
+```
+
+#### `guard(cost: int, *, service: Optional[str] = None, method: str = "GET")`
 
 Decorator that verifies access with Ghost Gate before running your handler.
 
-#### `send_pulse(agent_id: Optional[str] = None) -> bool`
+#### Legacy compatibility aliases
 
-Sends best-effort heartbeat payload to `/api/telemetry/pulse`.
-Server stores pulse events and uses telemetry ingestion jobs for ranking signals.
-
-#### `report_consumer_outcome(*, success: bool, status_code: Optional[int] = None, agent_id: Optional[str] = None) -> bool`
-
-Sends usage outcome to `/api/telemetry/outcome`.
+- `send_pulse(agent_id: Optional[str] = None) -> bool` (alias of `pulse(...).ok`)
+- `report_consumer_outcome(*, success: bool, status_code: Optional[int] = None, agent_id: Optional[str] = None) -> bool` (alias of `outcome(...).ok`)
 
 ### Python example
 
@@ -159,10 +205,17 @@ Sends usage outcome to `/api/telemetry/outcome`.
 from ghostgate import GhostGate
 
 gate = GhostGate(
-    api_key="sk_live_your_api_key",
-    private_key="0xyour_private_key",
-    base_url="http://localhost:3000",
+    api_key="sk_live_your_sdk_context_key",
+    private_key="0xyour_signer_private_key",
+    base_url="https://ghostprotocol.cc",
+    service_slug="agent-2212",
+    credit_cost=1,
 )
+
+result = gate.connect()
+print(result)
+
+heartbeat = gate.start_heartbeat(service_slug="agent-2212", interval_seconds=60)
 
 @gate.guard(cost=1, service="agent-2212", method="POST")
 def handler():
@@ -183,9 +236,9 @@ Current SDK names:
 
 | Canonical action | Node SDK | Python SDK |
 |---|---|---|
-| `connect()` | `connect(apiKey?)` | `guard(...)/_verify_access(...)` |
-| `pulse()` | `pulse(...)` | `send_pulse(...)` |
-| `outcome()` | `outcome(...)` | `report_consumer_outcome(...)` |
+| `connect()` | `connect(apiKey?)` | `connect(api_key?)` |
+| `pulse()` | `pulse(...)` | `pulse(...)` (`send_pulse(...)` alias) |
+| `outcome()` | `outcome(...)` | `outcome(...)` (`report_consumer_outcome(...)` alias) |
 
 ---
 

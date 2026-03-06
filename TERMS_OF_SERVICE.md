@@ -302,7 +302,7 @@ These Terms, together with the Privacy Policy (available at [https://ghostprotoc
 
 For questions about these Terms, please contact:
 
-**Ghost Protocol Infrastructure, LLC**
+**Ghost Protocol Infrastructure LLC**
 Email: **help@ghostprotocol.cc**
 
 ---
