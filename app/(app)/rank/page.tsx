@@ -377,6 +377,20 @@ const tierClassName: Record<LeadTier, string> = {
 };
 const PAGE_SIZE = 250;
 const SEARCH_DEBOUNCE_MS = 300;
+const CREDIT_PRICE_WEI_FALLBACK = "10000000000000";
+
+const formatWeiToEth = (rawWei: string): string => {
+  try {
+    const wei = BigInt(rawWei);
+    const weiPerEth = 1_000_000_000_000_000_000n;
+    const whole = wei / weiPerEth;
+    const fractionRaw = (wei % weiPerEth).toString().padStart(18, "0");
+    const fraction = fractionRaw.replace(/0+$/, "");
+    return fraction.length > 0 ? `${whole.toString()}.${fraction}` : whole.toString();
+  } catch {
+    return "0.00001";
+  }
+};
 
 export default function Home() {
   const [network, setNetwork] = useState<Network>("BASE");
@@ -398,6 +412,8 @@ export default function Home() {
   const { address: userAddress } = useAccount();
   const router = useRouter();
   const networkSelectValue = network === "BASE" ? "base" : "megaeth";
+  const creditPriceWei = process.env.NEXT_PUBLIC_GHOST_CREDIT_PRICE_WEI?.trim() || CREDIT_PRICE_WEI_FALLBACK;
+  const creditPriceEth = formatWeiToEth(creditPriceWei);
 
   useEffect(() => {
     const debounceHandle = window.setTimeout(() => {
@@ -519,6 +535,40 @@ export default function Home() {
       rank: agent.rank ?? rankOffset + index + 1,
     }));
   }, [baseLeads, network, currentPage]);
+
+  const rankMachineReadableSchemaJson = useMemo(() => {
+    const listItems = rankedAgents.slice(0, 10).map((agent, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      item: {
+        "@type": "SoftwareApplication",
+        name: agent.displayName,
+        identifier: agent.agentId,
+        url: `https://ghostprotocol.cc/agent/${encodeURIComponent(agent.agentId)}`,
+      },
+    }));
+
+    return JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "ItemList",
+      name: "GhostRank Agent Leaderboard",
+      url: "https://ghostprotocol.cc/rank",
+      numberOfItems: rankedAgents.length,
+      itemListElement: listItems,
+      offers: {
+        "@type": "Offer",
+        priceCurrency: "ETH",
+        price: creditPriceEth,
+        description: "Ghost Credit unit price on Base. Service request cost may vary by service configuration.",
+      },
+      hasPart: [
+        "https://ghostprotocol.cc/openapi.json",
+        "https://ghostprotocol.cc/llms.txt",
+        "https://ghostprotocol.cc/.well-known/ai-plugin.json",
+        "https://ghostprotocol.cc/api/pricing",
+      ],
+    });
+  }, [creditPriceEth, rankedAgents]);
 
   const networkStatusDisplay =
     network === "MEGAETH" ? MEGAETH_STATUS_DISPLAY : getBaseNetworkStatusDisplay(syncHealth);
@@ -1157,6 +1207,10 @@ export default function Home() {
           </div>
         </div>
       </footer>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: rankMachineReadableSchemaJson }}
+      />
     </>
   );
 }

@@ -38,6 +38,9 @@ const sdk = new GhostAgent({
   privateKey: process.env.GHOST_SIGNER_PRIVATE_KEY as `0x${string}`,
   baseUrl: process.env.GHOST_BASE_URL,
   serviceSlug: "agent-18755",
+  // Optional x402 compatibility mode:
+  // authMode: "x402",
+  // x402Scheme: "ghost-eip712-credit-v1",
 });
 
 await sdk.connect();

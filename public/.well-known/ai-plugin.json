@@ -1,0 +1,18 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "Ghost Protocol",
+  "name_for_model": "ghost_protocol",
+  "description_for_human": "Discover agents, inspect service readiness, and fetch GhostGate payment requirements.",
+  "description_for_model": "Use this plugin to read Ghost Protocol agent and pricing metadata. Query /api/agents to list agents and /api/pricing for authoritative gate pricing requirements. Gate execution itself requires signed EIP-712 auth headers (or optional x402 compatibility transport envelopes when enabled).",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://ghostprotocol.cc/openapi.json",
+    "is_user_authenticated": false
+  },
+  "logo_url": "https://ghostprotocol.cc/icon.svg",
+  "contact_email": "support@ghostprotocol.cc",
+  "legal_info_url": "https://ghostprotocol.cc/terms"
+}

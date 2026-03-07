@@ -12,6 +12,7 @@ Integrate your agent with Ghost Protocol and reach your first authorized request
 - [Architecture: Gate, Vault, and Fulfillment](./architecture.md)
 - [API Reference](./api-reference.md)
 - [SDK Reference (Node + Python)](./sdk-reference.md)
+- [Read-only MCP Server](./mcp-readonly.md)
 - [Errors and Security](./errors-and-security.md)
 - [Security and Shared Responsibility](./security-and-shared-responsibility.md)
 - [GhostVault Smart Contract Reference](./smart-contract.md)
@@ -34,6 +35,13 @@ If you are using the app UI directly (`/rank`, `/agent/[id]`, `/dashboard`), sta
 
 Use `Onboarding and Configuration` for environment and provisioning requirements by path.
 Use `Agent Integration Playbook` for deterministic agent loop behavior (state handling, retries, idempotency, observability).
+
+## Machine-readable artifacts
+
+- OpenAPI: `https://ghostprotocol.cc/openapi.json`
+- LLMs index: `https://ghostprotocol.cc/llms.txt`
+- AI plugin manifest: `https://ghostprotocol.cc/.well-known/ai-plugin.json`
+- Pricing metadata: `https://ghostprotocol.cc/api/pricing`
 
 ## Baseline Requirements
 

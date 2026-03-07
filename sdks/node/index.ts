@@ -9,6 +9,8 @@ export type GhostAgentConfig = {
   chainId?: number;
   serviceSlug?: string;
   creditCost?: number;
+  authMode?: "ghost-eip712" | "x402";
+  x402Scheme?: string;
 };
 
 export type ConnectResult = {
@@ -17,12 +19,18 @@ export type ConnectResult = {
   endpoint: string;
   status: number;
   payload: unknown;
+  x402?: {
+    paymentRequired: unknown | null;
+    paymentResponse: unknown | null;
+  };
 };
 
 const DEFAULT_BASE_URL = "https://ghostprotocol.cc";
 const DEFAULT_CHAIN_ID = 8453;
 const DEFAULT_SERVICE_SLUG = "connect";
 const DEFAULT_CREDIT_COST = 1;
+const DEFAULT_AUTH_MODE: "ghost-eip712" | "x402" = "ghost-eip712";
+const DEFAULT_X402_SCHEME = "ghost-eip712-credit-v1";
 
 const ACCESS_TYPES = {
   Access: [
@@ -47,6 +55,18 @@ const parsePayload = async (response: Response): Promise<unknown> => {
   }
 };
 
+const encodeBase64Json = (value: unknown): string => Buffer.from(JSON.stringify(value), "utf8").toString("base64");
+
+const decodeBase64Json = (value: string | null): unknown | null => {
+  if (!value) return null;
+  try {
+    const decoded = Buffer.from(value, "base64").toString("utf8");
+    return JSON.parse(decoded) as unknown;
+  } catch {
+    return null;
+  }
+};
+
 export class GhostAgent {
   private apiKey: string | null = null;
   private readonly baseUrl: string;
@@ -54,6 +74,8 @@ export class GhostAgent {
   private readonly chainId: number;
   private readonly serviceSlug: string;
   private readonly creditCost: number;
+  private readonly authMode: "ghost-eip712" | "x402";
+  private readonly x402Scheme: string;
 
   constructor(config: GhostAgentConfig = {}) {
     this.baseUrl = normalizeBaseUrl(config.baseUrl ?? DEFAULT_BASE_URL);
@@ -63,6 +85,8 @@ export class GhostAgent {
     this.creditCost = Number.isFinite(config.creditCost) && (config.creditCost ?? 0) > 0
       ? Math.trunc(config.creditCost as number)
       : DEFAULT_CREDIT_COST;
+    this.authMode = config.authMode ?? DEFAULT_AUTH_MODE;
+    this.x402Scheme = config.x402Scheme?.trim() || DEFAULT_X402_SCHEME;
   }
 
   async connect(apiKey: string): Promise<ConnectResult> {
@@ -101,18 +125,32 @@ export class GhostAgent {
     });
 
     const endpoint = `${this.baseUrl}/api/gate/${encodeURIComponent(this.serviceSlug)}`;
+    const headers: Record<string, string> = {
+      accept: "application/json, text/plain;q=0.9, */*;q=0.8",
+    };
+    if (this.authMode === "x402") {
+      headers["payment-signature"] = encodeBase64Json({
+        x402Version: 2,
+        scheme: this.x402Scheme,
+        network: `eip155:${this.chainId}`,
+        payload: headerPayload,
+        signature,
+      });
+    } else {
+      headers["x-ghost-sig"] = signature;
+      headers["x-ghost-payload"] = JSON.stringify(headerPayload);
+      headers["x-ghost-credit-cost"] = String(this.creditCost);
+    }
+
     const response = await fetch(endpoint, {
       method: "POST",
-      headers: {
-        "x-ghost-sig": signature,
-        "x-ghost-payload": JSON.stringify(headerPayload),
-        "x-ghost-credit-cost": String(this.creditCost),
-        accept: "application/json, text/plain;q=0.9, */*;q=0.8",
-      },
+      headers,
       cache: "no-store",
     });
 
     const responsePayload = await parsePayload(response);
+    const paymentRequired = decodeBase64Json(response.headers.get("payment-required"));
+    const paymentResponse = decodeBase64Json(response.headers.get("payment-response"));
     if (response.ok) {
       this.apiKey = normalizedApiKey;
     }
@@ -123,6 +161,14 @@ export class GhostAgent {
       endpoint,
       status: response.status,
       payload: responsePayload,
+      ...(this.authMode === "x402" || paymentRequired || paymentResponse
+        ? {
+            x402: {
+              paymentRequired,
+              paymentResponse,
+            },
+          }
+        : {}),
     };
   }
 

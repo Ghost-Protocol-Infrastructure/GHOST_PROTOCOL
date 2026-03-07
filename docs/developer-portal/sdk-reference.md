@@ -5,6 +5,20 @@ This page documents the current SDK surfaces and the canonical connection flow.
 For agent-loop semantics and retry/idempotency policy, see:
 - `docs/developer-portal/agent-integration-playbook.md`
 
+## Read-only MCP server (discovery + pricing)
+
+For machine clients that use MCP, Ghost Protocol ships a read-only server:
+
+- Script: `scripts/mcp-server.js`
+- Run: `npm run mcp:readonly`
+- Docs: `docs/developer-portal/mcp-readonly.md`
+
+Exposed tools:
+
+- `list_agents` -> `/api/agents`
+- `get_agent_details` -> `/api/agents?q=...`
+- `get_payment_requirements` -> `/api/pricing?service=...`
+
 ## Node.js SDK (`@ghostgate/sdk`)
 
 ### Import
@@ -24,6 +38,8 @@ new GhostAgent(config?: {
   chainId?: number;
   serviceSlug?: string;
   creditCost?: number;
+  authMode?: "ghost-eip712" | "x402";
+  x402Scheme?: string;
 });
 ```
 
@@ -38,6 +54,8 @@ new GhostAgent(config?: {
 | `chainId` | number | No | `8453` | EIP-712 domain chain ID. |
 | `serviceSlug` | string | No | `connect` | Path segment for `/api/gate/[service]` (set `agent-<agentId>` for platform integrations). |
 | `creditCost` | number | No | `1` | Credit cost sent in `x-ghost-credit-cost`. |
+| `authMode` | `"ghost-eip712" \| "x402"` | No | `"ghost-eip712"` | Optional gateway auth transport mode. |
+| `x402Scheme` | string | No | `"ghost-eip712-credit-v1"` | Optional x402 scheme label used in envelope metadata. |
 
 > [!IMPORTANT]
 > `privateKey` is required to call `connect()`. The SDK throws if missing.
@@ -56,6 +74,10 @@ type ConnectResult = {
   endpoint: string;
   status: number;
   payload: unknown;
+  x402?: {
+    paymentRequired: unknown | null;
+    paymentResponse: unknown | null;
+  };
 };
 ```
 
@@ -97,6 +119,9 @@ const sdk = new GhostAgent({
   privateKey: process.env.GHOST_SIGNER_PRIVATE_KEY as `0x${string}`,
   serviceSlug: "agent-2212",
   creditCost: 1,
+  // Optional x402 mode:
+  // authMode: "x402",
+  // x402Scheme: "ghost-eip712-credit-v1",
 });
 
 const result = await sdk.connect();
@@ -136,6 +161,8 @@ GhostGate(
     service_slug: str = "connect",
     credit_cost: int = 1,
     timeout_seconds: float = 10.0,
+    auth_mode: str = "ghost-eip712",
+    x402_scheme: str = "ghost-eip712-credit-v1",
 )
 ```
 
@@ -150,6 +177,8 @@ GhostGate(
 | `service_slug` | string | No | `connect` | Default gate service slug (`agent-<id>` for agent integrations). |
 | `credit_cost` | int | No | `1` | Default credit cost sent in `x-ghost-credit-cost`. |
 | `timeout_seconds` | float | No | `10.0` | Default HTTP timeout used by SDK requests. |
+| `auth_mode` | str | No | `ghost-eip712` | Optional gateway auth transport (`ghost-eip712` or `x402`). |
+| `x402_scheme` | str | No | `ghost-eip712-credit-v1` | Optional x402 scheme label used in envelope metadata. |
 
 The Python SDK also reads:
 
@@ -170,6 +199,10 @@ ConnectResult = {
   "endpoint": str,
   "status": int,
   "payload": Any,
+  "x402": {
+    "paymentRequired": Any | None,
+    "paymentResponse": Any | None,
+  } | None,
 }
 ```
 
@@ -210,6 +243,9 @@ gate = GhostGate(
     base_url="https://ghostprotocol.cc",
     service_slug="agent-2212",
     credit_cost=1,
+    # Optional x402 mode:
+    # auth_mode="x402",
+    # x402_scheme="ghost-eip712-credit-v1",
 )
 
 result = gate.connect()

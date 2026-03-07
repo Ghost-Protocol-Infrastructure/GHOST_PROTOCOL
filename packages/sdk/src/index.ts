@@ -13,6 +13,8 @@ export type GhostAgentConfig = {
   chainId?: number;
   serviceSlug?: string;
   creditCost?: number;
+  authMode?: "ghost-eip712" | "x402";
+  x402Scheme?: string;
 };
 
 export type ConnectResult = {
@@ -21,6 +23,10 @@ export type ConnectResult = {
   endpoint: string;
   status: number;
   payload: unknown;
+  x402?: {
+    paymentRequired: unknown | null;
+    paymentResponse: unknown | null;
+  };
 };
 
 export type TelemetryResult = {
@@ -67,6 +73,8 @@ const DEFAULT_CHAIN_ID = 8453;
 const DEFAULT_SERVICE_SLUG = "connect";
 const DEFAULT_CREDIT_COST = 1;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 60_000;
+const DEFAULT_AUTH_MODE: "ghost-eip712" | "x402" = "ghost-eip712";
+const DEFAULT_X402_SCHEME = "ghost-eip712-credit-v1";
 
 const ACCESS_TYPES = {
   Access: [
@@ -91,6 +99,18 @@ const getApiKeyPrefix = (apiKey: string): string => {
 const parsePayload = async (response: Response): Promise<unknown> => {
   try {
     return await response.json();
+  } catch {
+    return null;
+  }
+};
+
+const encodeBase64Json = (value: unknown): string => Buffer.from(JSON.stringify(value), "utf8").toString("base64");
+
+const decodeBase64Json = (value: string | null): unknown | null => {
+  if (!value) return null;
+  try {
+    const decoded = Buffer.from(value, "base64").toString("utf8");
+    return JSON.parse(decoded) as unknown;
   } catch {
     return null;
   }
@@ -180,6 +200,8 @@ export class GhostAgent {
   private readonly telemetryServiceSlug: string | null;
   private readonly serviceSlug: string;
   private readonly creditCost: number;
+  private readonly authMode: "ghost-eip712" | "x402";
+  private readonly x402Scheme: string;
 
   constructor(config: GhostAgentConfig = {}) {
     const normalizedServiceSlug = normalizeOptionalString(config.serviceSlug);
@@ -193,6 +215,8 @@ export class GhostAgent {
     this.creditCost = Number.isFinite(config.creditCost) && (config.creditCost ?? 0) > 0
       ? Math.trunc(config.creditCost as number)
       : DEFAULT_CREDIT_COST;
+    this.authMode = config.authMode ?? DEFAULT_AUTH_MODE;
+    this.x402Scheme = normalizeOptionalString(config.x402Scheme) ?? DEFAULT_X402_SCHEME;
   }
 
   async connect(apiKey?: string): Promise<ConnectResult> {
@@ -231,18 +255,32 @@ export class GhostAgent {
     });
 
     const endpoint = `${this.baseUrl}/api/gate/${encodeURIComponent(this.serviceSlug)}`;
+    const gateHeaders: Record<string, string> = {
+      accept: "application/json, text/plain;q=0.9, */*;q=0.8",
+    };
+    if (this.authMode === "x402") {
+      gateHeaders["payment-signature"] = encodeBase64Json({
+        x402Version: 2,
+        scheme: this.x402Scheme,
+        network: `eip155:${this.chainId}`,
+        payload: headerPayload,
+        signature,
+      });
+    } else {
+      gateHeaders["x-ghost-sig"] = signature;
+      gateHeaders["x-ghost-payload"] = JSON.stringify(headerPayload);
+      gateHeaders["x-ghost-credit-cost"] = String(this.creditCost);
+    }
+
     const response = await fetch(endpoint, {
       method: "POST",
-      headers: {
-        "x-ghost-sig": signature,
-        "x-ghost-payload": JSON.stringify(headerPayload),
-        "x-ghost-credit-cost": String(this.creditCost),
-        accept: "application/json, text/plain;q=0.9, */*;q=0.8",
-      },
+      headers: gateHeaders,
       cache: "no-store",
     });
 
     const responsePayload = await parsePayload(response);
+    const paymentRequired = decodeBase64Json(response.headers.get("payment-required"));
+    const paymentResponse = decodeBase64Json(response.headers.get("payment-response"));
     if (response.ok) {
       this.apiKey = normalizedApiKey;
     }
@@ -253,6 +291,14 @@ export class GhostAgent {
       endpoint,
       status: response.status,
       payload: responsePayload,
+      ...(this.authMode === "x402" || paymentRequired || paymentResponse
+        ? {
+            x402: {
+              paymentRequired,
+              paymentResponse,
+            },
+          }
+        : {}),
     };
   }
 

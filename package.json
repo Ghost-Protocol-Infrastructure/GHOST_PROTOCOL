@@ -31,6 +31,7 @@
     "lint": "eslint",
     "migrate:db": "npx tsx scripts/migrate-db.ts",
     "migrate:indexer": "npx tsx scripts/migrate-indexer.ts",
+    "mcp:readonly": "node scripts/mcp-server.js",
     "check:lock": "npx npm@10.8.2 ci --ignore-scripts --no-audit --no-fund",
     "update-data": "npm run index:db",
     "postinstall": "prisma generate",

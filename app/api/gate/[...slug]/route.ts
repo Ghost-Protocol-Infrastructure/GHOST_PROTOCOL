@@ -18,6 +18,7 @@ import { consumeFulfillmentRateLimit } from "@/lib/fulfillment-rate-limit";
 export const runtime = "nodejs";
 
 const REPLAY_WINDOW_SECONDS = 60n;
+const X402_VERSION = 2;
 
 const DOMAIN = {
   name: "GhostGate",
@@ -66,6 +67,11 @@ const RECEIPT_SIGNING_SECRET = process.env.GHOST_GATE_RECEIPT_SIGNING_SECRET?.tr
 const ENFORCE_LIVE_GATEWAY_READINESS = process.env.GHOST_GATE_ENFORCE_LIVE_GATEWAY_READINESS?.trim() === "true";
 const ENFORCE_LIVE_GATEWAY_READINESS_AGENT_ONLY =
   (process.env.GHOST_GATE_ENFORCE_LIVE_GATEWAY_READINESS_AGENT_ONLY?.trim() ?? "") !== "false";
+const GHOST_GATE_X402_ENABLED = process.env.GHOST_GATE_X402_ENABLED?.trim() === "true";
+const GHOST_GATE_X402_SCHEME = process.env.GHOST_GATE_X402_SCHEME?.trim() || "ghost-eip712-credit-v1";
+const GHOST_GATE_X402_ASSET = process.env.GHOST_GATE_X402_ASSET?.trim() || "GHOST_CREDIT";
+const GHOST_GATE_X402_HINT =
+  process.env.GHOST_GATE_X402_HINT?.trim() || "Send PAYMENT-SIGNATURE containing base64 JSON with payload+signature.";
 
 const ENV_SERVICE_PRICING = (() => {
   const raw = process.env.GHOST_GATE_SERVICE_PRICING_JSON?.trim();
@@ -93,10 +99,10 @@ const ENV_SERVICE_PRICING = (() => {
   return pricing;
 })();
 
-const json = (body: unknown, status = 200): NextResponse =>
+const json = (body: unknown, status = 200, extraHeaders?: Record<string, string>): NextResponse =>
   NextResponse.json(body, {
     status,
-    headers: { "cache-control": "no-store" },
+    headers: { "cache-control": "no-store", ...(extraHeaders ?? {}) },
   });
 
 const parseTimestamp = (value: unknown): bigint | null => {
@@ -133,6 +139,65 @@ const parseAndValidatePayload = (rawPayload: string): AccessPayload | null => {
 const parseSignature = (rawSig: string): `0x${string}` | null => {
   if (!/^0x[0-9a-fA-F]+$/.test(rawSig)) return null;
   return rawSig as `0x${string}`;
+};
+
+const encodeBase64Json = (value: unknown): string => Buffer.from(JSON.stringify(value), "utf8").toString("base64");
+
+const decodeBase64Json = (raw: string): unknown | null => {
+  try {
+    const decoded = Buffer.from(raw, "base64").toString("utf8");
+    return JSON.parse(decoded) as unknown;
+  } catch {
+    return null;
+  }
+};
+
+type X402ExtractionResult =
+  | {
+      ok: true;
+      rawSig: string;
+      rawPayload: string;
+      parsedEnvelope: unknown;
+    }
+  | {
+      ok: false;
+      reason:
+        | "missing_payment_signature"
+        | "invalid_payment_signature_base64"
+        | "missing_envelope_signature_or_payload";
+    };
+
+const extractX402AuthHeaders = (request: NextRequest): X402ExtractionResult => {
+  const paymentSignature = request.headers.get("payment-signature");
+  if (!paymentSignature) {
+    return { ok: false, reason: "missing_payment_signature" };
+  }
+
+  const decodedEnvelope = decodeBase64Json(paymentSignature.trim());
+  if (!decodedEnvelope || typeof decodedEnvelope !== "object") {
+    return { ok: false, reason: "invalid_payment_signature_base64" };
+  }
+
+  const envelope = decodedEnvelope as Record<string, unknown>;
+  const envelopeSignature =
+    typeof envelope.signature === "string"
+      ? envelope.signature
+      : typeof envelope.xGhostSig === "string"
+        ? envelope.xGhostSig
+        : null;
+
+  const envelopePayload = envelope.payload ?? envelope.xGhostPayload ?? null;
+  if (!envelopeSignature || envelopePayload == null) {
+    return { ok: false, reason: "missing_envelope_signature_or_payload" };
+  }
+
+  const rawPayload = typeof envelopePayload === "string" ? envelopePayload : JSON.stringify(envelopePayload);
+  return {
+    ok: true,
+    rawSig: envelopeSignature,
+    rawPayload,
+    parsedEnvelope: decodedEnvelope,
+  };
 };
 
 const resolveServiceFromSlug = async (context: RouteContext): Promise<string | null> => {
@@ -225,6 +290,56 @@ type ServiceGatewayReadiness = {
   lastCanaryCheckedAt: string | null;
   lastCanaryPassedAt: string | null;
 };
+
+const buildX402PaymentRequiredEnvelope = (input: {
+  request: NextRequest;
+  service: string;
+  cost: bigint;
+  reason:
+    | "missing_payment_signature"
+    | "invalid_payment_signature_base64"
+    | "missing_envelope_signature_or_payload"
+    | "insufficient_credits";
+}) => ({
+  x402Version: X402_VERSION,
+  reason: input.reason,
+  resource: {
+    url: `${input.request.nextUrl.origin}/api/gate/${encodeURIComponent(input.service)}`,
+    service: input.service,
+  },
+  accepts: [
+    {
+      scheme: GHOST_GATE_X402_SCHEME,
+      network: `eip155:${GHOST_PREFERRED_CHAIN_ID}`,
+      amount: input.cost.toString(),
+      asset: GHOST_GATE_X402_ASSET,
+      replayWindowSeconds: REPLAY_WINDOW_SECONDS.toString(),
+      hint: GHOST_GATE_X402_HINT,
+    },
+  ],
+});
+
+const buildX402PaymentResponseEnvelope = (input: {
+  service: string;
+  signer: Address;
+  cost: bigint;
+  remainingCredits: bigint;
+  requestId: string;
+  issuedAt: string;
+  receipt: { algorithm: "hmac-sha256"; signature: string; issuedAt: string; requestId: string } | null;
+}) => ({
+  x402Version: X402_VERSION,
+  scheme: GHOST_GATE_X402_SCHEME,
+  network: `eip155:${GHOST_PREFERRED_CHAIN_ID}`,
+  service: input.service,
+  signer: input.signer.toLowerCase(),
+  amount: input.cost.toString(),
+  asset: GHOST_GATE_X402_ASSET,
+  remainingCredits: input.remainingCredits.toString(),
+  requestId: input.requestId,
+  issuedAt: input.issuedAt,
+  receipt: input.receipt,
+});
 
 const shouldEnforceServiceGatewayReadiness = (service: string): boolean => {
   if (!ENFORCE_LIVE_GATEWAY_READINESS) return false;
@@ -327,6 +442,7 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
     cost?: bigint | null;
     remainingCredits?: bigint | null;
     metadata?: Record<string, unknown>;
+    headers?: Record<string, string>;
   }): Promise<NextResponse> => {
     await logGateAccessEvent({
       service: requestedService,
@@ -338,18 +454,73 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
       remainingCredits: input.remainingCredits ?? null,
       metadata: input.metadata ?? null,
     });
-    return json(input.body, input.status);
+    return json(input.body, input.status, input.headers);
   };
 
-  const rawSig = request.headers.get("x-ghost-sig");
-  const rawPayload = request.headers.get("x-ghost-payload");
+  let rawSig = request.headers.get("x-ghost-sig");
+  let rawPayload = request.headers.get("x-ghost-payload");
+  let authSource: "ghost-eip712" | "x402-payment-signature" = "ghost-eip712";
+  let x402ParsedEnvelope: unknown = null;
+
   if (!rawSig || !rawPayload) {
-    return respondWithOutcome({
-      outcome: "MALFORMED_AUTH",
-      status: 400,
-      body: { error: "Missing required auth headers", code: 400 },
-      metadata: { reason: "missing_auth_headers" },
-    });
+    const hasAnyGhostAuthHeader = Boolean(rawSig) || Boolean(rawPayload);
+    if (!GHOST_GATE_X402_ENABLED) {
+      return respondWithOutcome({
+        outcome: "MALFORMED_AUTH",
+        status: 400,
+        body: { error: "Missing required auth headers", code: 400 },
+        metadata: { reason: "missing_auth_headers" },
+      });
+    }
+
+    if (hasAnyGhostAuthHeader) {
+      return respondWithOutcome({
+        outcome: "MALFORMED_AUTH",
+        status: 400,
+        body: { error: "Malformed signature or payload", code: 400 },
+        metadata: {
+          reason: "partial_ghost_auth_headers",
+          authSource,
+        },
+      });
+    }
+
+    const { cost: x402ExpectedCost } = await resolveRequestCost(request, requestedService);
+    const extractedX402Headers = extractX402AuthHeaders(request);
+
+    if (!extractedX402Headers.ok) {
+      const paymentRequired = buildX402PaymentRequiredEnvelope({
+        request,
+        service: requestedService,
+        cost: x402ExpectedCost,
+        reason: extractedX402Headers.reason,
+      });
+
+      return respondWithOutcome({
+        outcome: "MALFORMED_AUTH",
+        status: 402,
+        body: {
+          error: "Payment Required",
+          code: 402,
+          details: {
+            required: x402ExpectedCost.toString(),
+            x402: paymentRequired,
+          },
+        },
+        metadata: {
+          reason: extractedX402Headers.reason,
+          authSource: "x402",
+        },
+        headers: {
+          "payment-required": encodeBase64Json(paymentRequired),
+        },
+      });
+    }
+
+    rawSig = extractedX402Headers.rawSig;
+    rawPayload = extractedX402Headers.rawPayload;
+    authSource = "x402-payment-signature";
+    x402ParsedEnvelope = extractedX402Headers.parsedEnvelope;
   }
 
   const signature = parseSignature(rawSig);
@@ -359,7 +530,10 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
       outcome: "MALFORMED_AUTH",
       status: 400,
       body: { error: "Malformed signature or payload", code: 400 },
-      metadata: { reason: "malformed_signature_or_payload" },
+      metadata: {
+        reason: "malformed_signature_or_payload",
+        authSource,
+      },
     });
   }
 
@@ -369,7 +543,7 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
       status: 401,
       body: { error: "Service mismatch", code: 401 },
       nonce: payload.nonce,
-      metadata: { payloadService: payload.service },
+      metadata: { payloadService: payload.service, authSource },
     });
   }
 
@@ -379,7 +553,7 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
       status: 401,
       body: { error: "Signature expired", code: 401 },
       nonce: payload.nonce,
-      metadata: { payloadTimestamp: payload.timestamp.toString() },
+      metadata: { payloadTimestamp: payload.timestamp.toString(), authSource },
     });
   }
 
@@ -408,7 +582,7 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
       status: 401,
       body: { error: "Invalid Signature", code: 401 },
       nonce: payload.nonce,
-      metadata: { reason: "recover_or_verify_throw" },
+      metadata: { reason: "recover_or_verify_throw", authSource },
     });
   }
 
@@ -419,7 +593,7 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
       body: { error: "Invalid Signature", code: 401 },
       signer,
       nonce: payload.nonce,
-      metadata: { reason: "verify_false" },
+      metadata: { reason: "verify_false", authSource },
     });
   }
 
@@ -450,6 +624,7 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
         requestId,
         metadata: {
           reason: "service_gateway_readiness_lookup_failed",
+          authSource,
         },
       });
     }
@@ -479,6 +654,7 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
           readinessStatus: serviceGatewayReadiness.readinessStatus,
           lastCanaryCheckedAt: serviceGatewayReadiness.lastCanaryCheckedAt,
           lastCanaryPassedAt: serviceGatewayReadiness.lastCanaryPassedAt,
+          authSource,
         },
       });
     }
@@ -514,6 +690,15 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
 
   if (consumed.status === "insufficient_credits") {
     const balance = await getUserCredits(signer);
+    const paymentRequired =
+      authSource === "x402-payment-signature"
+        ? buildX402PaymentRequiredEnvelope({
+            request,
+            service: requestedService,
+            cost: requestCost,
+            reason: "insufficient_credits",
+          })
+        : null;
     return respondWithOutcome({
       outcome: "INSUFFICIENT_CREDITS",
       status: 402,
@@ -523,6 +708,7 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
         details: {
           balance: balance.toString(),
           required: requestCost.toString(),
+          ...(paymentRequired ? { x402: paymentRequired } : {}),
         },
       },
       signer,
@@ -530,6 +716,10 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
       requestId,
       cost: requestCost,
       remainingCredits: balance,
+      metadata: {
+        authSource,
+      },
+      headers: paymentRequired ? { "payment-required": encodeBase64Json(paymentRequired) } : undefined,
     });
   }
 
@@ -543,6 +733,19 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
     requestId,
     issuedAt,
   });
+
+  const x402PaymentResponse =
+    authSource === "x402-payment-signature"
+      ? buildX402PaymentResponseEnvelope({
+          service: requestedService,
+          signer,
+          cost: requestCost,
+          remainingCredits: consumed.after,
+          requestId,
+          issuedAt,
+          receipt,
+        })
+      : null;
 
   return respondWithOutcome({
     outcome: "AUTHORIZED",
@@ -558,6 +761,8 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
       requestId,
       receipt,
       costSource: requestCostSource,
+      authSource,
+      ...(x402PaymentResponse ? { x402: { paymentResponse: x402PaymentResponse } } : {}),
     },
     signer,
     nonce: payload.nonce,
@@ -567,7 +772,10 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
     metadata: {
       nonceAccepted: consumed.nonceAccepted,
       costSource: requestCostSource,
+      authSource,
+      ...(x402ParsedEnvelope ? { x402Envelope: true } : {}),
     },
+    headers: x402PaymentResponse ? { "payment-response": encodeBase64Json(x402PaymentResponse) } : undefined,
   });
 };
 

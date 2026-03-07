@@ -8,13 +8,53 @@ import GhostLogo from '@/components/GhostLogo';
 
 const isHexAddress = (value: string): boolean => /^0x[a-fA-F0-9]{40}$/.test(value);
 const truncateAddress = (value: string): string => `${value.slice(0, 6)}...${value.slice(-4)}`;
+const CREDIT_PRICE_WEI_FALLBACK = "10000000000000";
+
+const formatWeiToEth = (rawWei: string): string => {
+  try {
+    const wei = BigInt(rawWei);
+    const weiPerEth = 1_000_000_000_000_000_000n;
+    const whole = wei / weiPerEth;
+    const fractionRaw = (wei % weiPerEth).toString().padStart(18, "0");
+    const fraction = fractionRaw.replace(/0+$/, "");
+    return fraction.length > 0 ? `${whole.toString()}.${fraction}` : whole.toString();
+  } catch {
+    return "0.00001";
+  }
+};
 
 const HomePage = () => {
   const ghostVaultAddress = process.env.NEXT_PUBLIC_GHOST_VAULT_ADDRESS?.trim() ?? '';
+  const creditPriceWei = process.env.NEXT_PUBLIC_GHOST_CREDIT_PRICE_WEI?.trim() || CREDIT_PRICE_WEI_FALLBACK;
+  const creditPriceEth = formatWeiToEth(creditPriceWei);
   const hasGhostVaultAddress = isHexAddress(ghostVaultAddress);
   const vaultDisplay = hasGhostVaultAddress ? truncateAddress(ghostVaultAddress) : 'UNCONFIGURED';
   const vaultHref = hasGhostVaultAddress ? `https://basescan.org/address/${ghostVaultAddress}` : null;
   const [copiedVault, setCopiedVault] = React.useState(false);
+  const machineReadableSchemaJson = React.useMemo(
+    () =>
+      JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        name: "Ghost Protocol",
+        applicationCategory: "DeveloperApplication",
+        operatingSystem: "Any",
+        url: "https://ghostprotocol.cc",
+        offers: {
+          "@type": "Offer",
+          priceCurrency: "ETH",
+          price: creditPriceEth,
+          description: "Ghost Credit unit price on Base. Service request cost may vary by service configuration.",
+        },
+        hasPart: [
+          "https://ghostprotocol.cc/openapi.json",
+          "https://ghostprotocol.cc/llms.txt",
+          "https://ghostprotocol.cc/.well-known/ai-plugin.json",
+          "https://ghostprotocol.cc/api/pricing",
+        ],
+      }),
+    [creditPriceEth],
+  );
 
   const handleCopyVault = async () => {
     if (!hasGhostVaultAddress) return;
@@ -245,6 +285,10 @@ const HomePage = () => {
           animation: marquee 30s linear infinite;
         }
       `}} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: machineReadableSchemaJson }}
+      />
     </div>
   );
 };

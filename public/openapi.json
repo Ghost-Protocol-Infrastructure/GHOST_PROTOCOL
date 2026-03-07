@@ -1,0 +1,273 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Ghost Protocol API",
+    "version": "1.0.0",
+    "description": "Machine-readable API surface for GhostRank discovery and GhostGate access."
+  },
+  "servers": [
+    {
+      "url": "https://ghostprotocol.cc"
+    }
+  ],
+  "paths": {
+    "/api/agents": {
+      "get": {
+        "summary": "List indexed agents",
+        "operationId": "listAgents",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 100
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "owner",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "volume"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent list payload"
+          },
+          "400": {
+            "description": "Invalid query parameters"
+          }
+        }
+      }
+    },
+    "/api/pricing": {
+      "get": {
+        "summary": "Get authoritative GhostGate pricing metadata",
+        "operationId": "getPricingRequirements",
+        "parameters": [
+          {
+            "name": "service",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional service slug for resolved per-service request cost."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pricing metadata and optional resolved service cost"
+          },
+          "400": {
+            "description": "Invalid service slug"
+          }
+        }
+      }
+    },
+    "/api/gate/{service}": {
+      "get": {
+        "summary": "Authorize access and consume credits",
+        "operationId": "gateAuthorizeGet",
+        "parameters": [
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-ghost-sig",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-ghost-payload",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-ghost-credit-cost",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "payment-signature",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "x402 compatibility envelope (base64 JSON), active only when GHOST_GATE_X402_ENABLED=true."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized",
+            "headers": {
+              "payment-response": {
+                "description": "x402 compatibility response envelope",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed auth"
+          },
+          "401": {
+            "description": "Invalid signature / service mismatch / expired"
+          },
+          "402": {
+            "description": "Payment required",
+            "headers": {
+              "payment-required": {
+                "description": "x402 compatibility requirement envelope",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Replay detected"
+          },
+          "423": {
+            "description": "Service not live"
+          },
+          "429": {
+            "description": "Rate limited"
+          }
+        }
+      },
+      "post": {
+        "summary": "Authorize access and consume credits",
+        "operationId": "gateAuthorizePost",
+        "parameters": [
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-ghost-sig",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-ghost-payload",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-ghost-credit-cost",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "payment-signature",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "x402 compatibility envelope (base64 JSON), active only when GHOST_GATE_X402_ENABLED=true."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized",
+            "headers": {
+              "payment-response": {
+                "description": "x402 compatibility response envelope",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed auth"
+          },
+          "401": {
+            "description": "Invalid signature / service mismatch / expired"
+          },
+          "402": {
+            "description": "Payment required",
+            "headers": {
+              "payment-required": {
+                "description": "x402 compatibility requirement envelope",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Replay detected"
+          },
+          "423": {
+            "description": "Service not live"
+          },
+          "429": {
+            "description": "Rate limited"
+          }
+        }
+      }
+    }
+  }
+}

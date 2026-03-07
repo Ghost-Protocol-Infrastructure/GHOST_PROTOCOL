@@ -6,6 +6,7 @@ using credit checks.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import threading
@@ -42,6 +43,8 @@ class GhostGate:
     DEFAULT_CREDIT_COST = 1
     DEFAULT_TIMEOUT_SECONDS = 10.0
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 60.0
+    DEFAULT_AUTH_MODE = "ghost-eip712"
+    DEFAULT_X402_SCHEME = "ghost-eip712-credit-v1"
     DOMAIN_NAME = "GhostGate"
     DOMAIN_VERSION = "1"
 
@@ -55,6 +58,8 @@ class GhostGate:
         service_slug: str = DEFAULT_SERVICE_SLUG,
         credit_cost: int = DEFAULT_CREDIT_COST,
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+        auth_mode: str = DEFAULT_AUTH_MODE,
+        x402_scheme: str = DEFAULT_X402_SCHEME,
     ) -> None:
         self.api_key = self._normalize_optional_string(api_key) or self._normalize_optional_string(os.getenv("GHOST_API_KEY"))
         self.chain_id = chain_id
@@ -67,6 +72,11 @@ class GhostGate:
         self.service_slug = self._normalize_optional_string(service_slug) or self.DEFAULT_SERVICE_SLUG
         self.credit_cost = self._normalize_credit_cost(credit_cost)
         self.timeout_seconds = self._normalize_timeout(timeout_seconds)
+        normalized_auth_mode = (auth_mode or self.DEFAULT_AUTH_MODE).strip().lower()
+        if normalized_auth_mode not in ("ghost-eip712", "x402"):
+            raise ValueError("auth_mode must be 'ghost-eip712' or 'x402'.")
+        self.auth_mode = normalized_auth_mode
+        self.x402_scheme = (x402_scheme or self.DEFAULT_X402_SCHEME).strip() or self.DEFAULT_X402_SCHEME
         self.private_key = private_key or os.getenv("GHOST_SIGNER_PRIVATE_KEY") or os.getenv("PRIVATE_KEY")
         if not self.private_key:
             raise ValueError("A signing private key is required (private_key arg or GHOST_SIGNER_PRIVATE_KEY/PRIVATE_KEY).")
@@ -106,15 +116,23 @@ class GhostGate:
                 timeout_seconds=timeout_seconds,
             )
             payload = self._parse_response_payload(response)
+            payment_required = self._decode_base64_json(response.headers.get("payment-required"))
+            payment_response = self._decode_base64_json(response.headers.get("payment-response"))
             if response.ok:
                 self.api_key = resolved_api_key
-            return {
+            result: ConnectResult = {
                 "connected": response.ok,
                 "apiKeyPrefix": self._api_key_prefix(resolved_api_key),
                 "endpoint": endpoint,
                 "status": response.status_code,
                 "payload": payload,
             }
+            if self.auth_mode == "x402" or payment_required is not None or payment_response is not None:
+                result["x402"] = {
+                    "paymentRequired": payment_required,
+                    "paymentResponse": payment_response,
+                }
+            return result
         except requests.RequestException as error:
             return {
                 "connected": False,
@@ -324,12 +342,25 @@ class GhostGate:
     ) -> requests.Response:
         payload = self._build_access_payload(service)
         signature = self._sign_access_payload(payload)
-        headers = {
-            "x-ghost-sig": signature,
-            "x-ghost-payload": json.dumps(payload),
-            "x-ghost-credit-cost": str(cost),
-            "accept": "application/json, text/plain;q=0.9, */*;q=0.8",
-        }
+        if self.auth_mode == "x402":
+            envelope = {
+                "x402Version": 2,
+                "scheme": self.x402_scheme,
+                "network": f"eip155:{self.chain_id}",
+                "payload": payload,
+                "signature": signature,
+            }
+            headers = {
+                "payment-signature": self._encode_base64_json(envelope),
+                "accept": "application/json, text/plain;q=0.9, */*;q=0.8",
+            }
+        else:
+            headers = {
+                "x-ghost-sig": signature,
+                "x-ghost-payload": json.dumps(payload),
+                "x-ghost-credit-cost": str(cost),
+                "accept": "application/json, text/plain;q=0.9, */*;q=0.8",
+            }
         target = f"{self.gate_url}/{quote(service, safe='')}"
         return requests.request(
             method=method.upper(),
@@ -403,6 +434,19 @@ class GhostGate:
             return response.json()
         except ValueError:
             return response.text
+
+    @staticmethod
+    def _encode_base64_json(value: Any) -> str:
+        return base64.b64encode(json.dumps(value).encode("utf-8")).decode("ascii")
+
+    @staticmethod
+    def _decode_base64_json(value: Optional[str]) -> Any:
+        if not value:
+            return None
+        try:
+            return json.loads(base64.b64decode(value).decode("utf-8"))
+        except Exception:  # noqa: BLE001 - tolerant decode for interop responses
+            return None
 
     @staticmethod
     def _assert_telemetry_identity(

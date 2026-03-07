@@ -21,6 +21,9 @@ sdk = GhostGate(
     chain_id=8453,
     service_slug="agent-18755",
     credit_cost=1,
+    # Optional x402 compatibility mode:
+    # auth_mode="x402",
+    # x402_scheme="ghost-eip712-credit-v1",
 )
 
 result = sdk.connect()
@@ -42,4 +45,3 @@ Backward-compatible aliases are also available:
 ## Security note
 
 Use signer private keys only in trusted backend/server/CLI environments. Never expose private keys in frontend code.
-

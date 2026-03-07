@@ -1,7 +1,20 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import Link from "next/link";
 import GhostLogo from "@/components/GhostLogo";
 
-export default function PrivacyPage() {
+const loadPrivacyPolicy = async (): Promise<string> => {
+  const policyPath = path.join(process.cwd(), "PRIVACY_POLICY.md");
+  try {
+    return await readFile(policyPath, "utf8");
+  } catch {
+    return "PRIVACY_POLICY.md was not found in the deployment artifact.";
+  }
+};
+
+export default async function PrivacyPage() {
+  const privacyText = await loadPrivacyPolicy();
+
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-400 font-mono selection:bg-red-900 selection:text-white">
       <header className="border-b border-neutral-900 bg-neutral-950/90 backdrop-blur-sm px-4 py-3">
@@ -32,13 +45,7 @@ export default function PrivacyPage() {
           <h1 className="mb-6 text-lg font-bold uppercase tracking-[0.18em] text-neutral-100">
             Privacy Policy
           </h1>
-          <div className="space-y-4 text-sm leading-7 text-neutral-400">
-            <p>Privacy policy text will be published here.</p>
-            <p className="text-neutral-500">
-              This is a placeholder route at <code className="text-neutral-300">/privacy</code> for the upcoming
-              policy copy.
-            </p>
-          </div>
+          <article className="whitespace-pre-wrap text-sm leading-7 text-neutral-400">{privacyText}</article>
         </div>
       </main>
     </div>

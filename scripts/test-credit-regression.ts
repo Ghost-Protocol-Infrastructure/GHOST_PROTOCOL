@@ -13,6 +13,7 @@ process.env.GHOST_GATE_ENFORCE_NONCE_UNIQUENESS = "true";
 process.env.GHOST_GATE_ALLOW_CLIENT_COST_OVERRIDE = "false";
 process.env.GHOST_REQUEST_CREDIT_COST = "1";
 process.env.GHOST_GATE_ENFORCE_LIVE_GATEWAY_READINESS = "true";
+process.env.GHOST_GATE_X402_ENABLED = "true";
 
 const DOMAIN = {
   name: "GhostGate",
@@ -33,6 +34,16 @@ const assert = (condition: boolean, message: string): void => {
 };
 
 type GateResponseBody = Record<string, unknown>;
+
+const encodeBase64Json = (value: unknown): string => Buffer.from(JSON.stringify(value), "utf8").toString("base64");
+const decodeBase64Json = (value: string | null): unknown | null => {
+  if (!value) return null;
+  try {
+    return JSON.parse(Buffer.from(value, "base64").toString("utf8")) as unknown;
+  } catch {
+    return null;
+  }
+};
 
 const createLiveGatewayConfig = async (
   prisma: PrismaClient,
@@ -71,7 +82,7 @@ const callGate = async (
     requestId: string;
     requestScopedCost: string;
   },
-): Promise<{ status: number; body: GateResponseBody }> => {
+): Promise<{ status: number; body: GateResponseBody; paymentRequired: string | null; paymentResponse: string | null }> => {
   const req = new NextRequest(`http://localhost/api/gate/${input.service}`, {
     method: "GET",
     headers: {
@@ -84,7 +95,56 @@ const callGate = async (
 
   const res = await gateGet(req, { params: { slug: input.service.split("/") } });
   const body = (await res.json()) as GateResponseBody;
-  return { status: res.status, body };
+  return {
+    status: res.status,
+    body,
+    paymentRequired: res.headers.get("payment-required"),
+    paymentResponse: res.headers.get("payment-response"),
+  };
+};
+
+const callGateX402 = async (
+  gateGet: (request: NextRequest, context: { params: { slug: string[] } }) => Promise<Response>,
+  input: {
+    service: string;
+    signature: `0x${string}`;
+    payload: Record<string, unknown>;
+  },
+): Promise<{ status: number; body: GateResponseBody; paymentRequired: string | null; paymentResponse: string | null }> => {
+  const req = new NextRequest(`http://localhost/api/gate/${input.service}`, {
+    method: "POST",
+    headers: {
+      "payment-signature": encodeBase64Json({
+        x402Version: 2,
+        scheme: "ghost-eip712-credit-v1",
+        payload: input.payload,
+        signature: input.signature,
+      }),
+    },
+  });
+
+  const res = await gateGet(req, { params: { slug: input.service.split("/") } });
+  const body = (await res.json()) as GateResponseBody;
+  return {
+    status: res.status,
+    body,
+    paymentRequired: res.headers.get("payment-required"),
+    paymentResponse: res.headers.get("payment-response"),
+  };
+};
+
+const callGateWithoutAuth = async (
+  gateGet: (request: NextRequest, context: { params: { slug: string[] } }) => Promise<Response>,
+  service: string,
+): Promise<{ status: number; body: GateResponseBody; paymentRequired: string | null }> => {
+  const req = new NextRequest(`http://localhost/api/gate/${service}`, { method: "GET" });
+  const res = await gateGet(req, { params: { slug: service.split("/") } });
+  const body = (await res.json()) as GateResponseBody;
+  return {
+    status: res.status,
+    body,
+    paymentRequired: res.headers.get("payment-required"),
+  };
 };
 
 const run = async (): Promise<void> => {
@@ -351,6 +411,65 @@ const run = async (): Promise<void> => {
       assert(balanceAfter === beforeBalance, `Expected balance rollback to ${beforeBalance}, got ${balanceAfter}`);
       assert(nonceCount === 0, `Expected nonce rollback on earning conflict, got ${nonceCount}`);
       assert(gateDebitCount === 0, `Expected no gate ledger debit on earning conflict, got ${gateDebitCount}`);
+    }
+
+    {
+      const account = privateKeyToAccount(generatePrivateKey());
+      const signer = account.address;
+      const signerKey = signer.toLowerCase();
+      cleanupWallets.add(signerKey);
+
+      await updateUserCredits(signer, 2n);
+
+      const agentId = `${Date.now()}05`;
+      const service = `agent-${agentId}`;
+      const ownerAddress = privateKeyToAccount(generatePrivateKey()).address.toLowerCase();
+      cleanupAgentIds.add(agentId);
+      await createLiveGatewayConfig(prisma, { agentId, serviceSlug: service, ownerAddress });
+
+      const paymentRequiredResponse = await callGateWithoutAuth(gateGet, service);
+      assert(
+        paymentRequiredResponse.status === 402,
+        `Expected x402 missing-signature status 402, got ${paymentRequiredResponse.status}`,
+      );
+      assert(
+        typeof paymentRequiredResponse.paymentRequired === "string" && paymentRequiredResponse.paymentRequired.length > 0,
+        "Expected payment-required header when x402 auth is missing.",
+      );
+
+      const nonce = `reg-x402-${Date.now()}`;
+      const timestamp = BigInt(Math.floor(Date.now() / 1000));
+      const signature = await account.signTypedData({
+        domain: DOMAIN,
+        types: TYPES,
+        primaryType: "Access",
+        message: { service, timestamp, nonce },
+      });
+
+      const x402Result = await callGateX402(gateGet, {
+        service,
+        signature,
+        payload: {
+          service,
+          timestamp: timestamp.toString(),
+          nonce,
+        },
+      });
+
+      assert(x402Result.status === 200, `Expected x402 gate call status 200, got ${x402Result.status}`);
+      assert(
+        x402Result.body?.authSource === "x402-payment-signature",
+        `Expected authSource x402-payment-signature, got ${String(x402Result.body?.authSource)}`,
+      );
+      assert(
+        typeof x402Result.paymentResponse === "string" && x402Result.paymentResponse.length > 0,
+        "Expected payment-response header on x402 success.",
+      );
+      const paymentResponseEnvelope = decodeBase64Json(x402Result.paymentResponse) as Record<string, unknown> | null;
+      assert(
+        paymentResponseEnvelope?.scheme === "ghost-eip712-credit-v1",
+        `Expected x402 payment response scheme ghost-eip712-credit-v1, got ${String(paymentResponseEnvelope?.scheme)}`,
+      );
     }
 
     console.log("Credit regression tests passed.");

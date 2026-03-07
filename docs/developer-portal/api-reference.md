@@ -10,7 +10,26 @@ Ghost Gate uses signed headers:
 - `x-ghost-payload`: JSON payload string
 - `x-ghost-credit-cost`: optional request cost override
 
+Optional interoperability mode (`GHOST_GATE_X402_ENABLED=true`) also supports x402-style headers:
+
+- `payment-signature`: base64 JSON envelope containing `payload` + `signature`
+- `payment-required`: base64 JSON requirement envelope on `402`
+- `payment-response`: base64 JSON settlement receipt envelope on `200`
+
 No bearer token is required for gate authorization. Signature validity and credits are the source of truth.
+
+## Machine-readable protocol artifacts
+
+- OpenAPI: `https://ghostprotocol.cc/openapi.json`
+- LLMs index: `https://ghostprotocol.cc/llms.txt`
+- AI plugin manifest: `https://ghostprotocol.cc/.well-known/ai-plugin.json`
+- Pricing metadata: `GET /api/pricing`
+
+The pricing endpoint is the authoritative source for:
+
+- `creditPriceWei` (credit unit price)
+- per-service request cost resolution (`service` query)
+- x402 transport compatibility metadata (`x402CompatibilityEnabled`, `x402Scheme`)
 
 ## Fulfillment API Families
 
@@ -256,15 +275,19 @@ Authorize access for a service slug and consume credits.
 
 | Header | Required | Description |
 |---|---|---|
-| `x-ghost-sig` | Yes | Hex EIP-712 signature over payload. |
-| `x-ghost-payload` | Yes | JSON string: `{"service","timestamp","nonce"}`. |
+| `x-ghost-sig` | Yes* | Hex EIP-712 signature over payload. |
+| `x-ghost-payload` | Yes* | JSON string: `{"service","timestamp","nonce"}`. |
 | `x-ghost-credit-cost` | Optional | Positive integer cost. May be ignored by server policy. |
+| `payment-signature` | Optional | x402 compatibility envelope (base64 JSON). Used only when `GHOST_GATE_X402_ENABLED=true`. |
 
 Notes:
 
 - `x-ghost-credit-cost` is ignored unless `GHOST_GATE_ALLOW_CLIENT_COST_OVERRIDE=true` in runtime env.
 - Server may resolve cost from DB service pricing, env pricing map, or default cost.
 - `requestId` is server-derived from `service:signer:nonce`; client `x-ghost-request-id` override is not used.
+- `*` If x402 mode is active and `payment-signature` is provided, server accepts that envelope instead of `x-ghost-*` headers.
+- In x402 mode, missing/invalid payment envelope and insufficient credits return `402` with `payment-required` response header.
+- In x402 mode, successful authorization includes `payment-response` response header.
 
 ### Request example
 
@@ -321,7 +344,10 @@ curl -X POST "https://ghostprotocol.cc/api/gate/agent-2212" \
   "code": 402,
   "details": {
     "balance": "0",
-    "required": "1"
+    "required": "1",
+    "x402": {
+      "x402Version": 2
+    }
   }
 }
 ```
