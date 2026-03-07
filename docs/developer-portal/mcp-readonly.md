@@ -87,6 +87,19 @@ If your runtime supports MCP over HTTP JSON-RPC, point it at:
 
 Use `initialize`, `tools/list`, and `tools/call` methods.
 
+### Health verification
+
+From repo root:
+
+```bash
+npm run verify:mcp:readonly
+```
+
+Optional overrides:
+
+- `BASE_URL` (default: `https://www.ghostprotocol.cc`)
+- `MCP_TEST_SERVICE_SLUG` (default: `agent-18755`)
+
 ## Tool contracts
 
 ### `list_agents`

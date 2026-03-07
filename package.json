@@ -21,6 +21,7 @@
     "test:fulfillment:regression": "npx tsx scripts/test-fulfillment-regression.ts",
     "monitor:credits": "npx tsx scripts/monitor-credit-alerts.ts",
     "test:credits:regression": "npx tsx scripts/test-credit-regression.ts",
+    "verify:mcp:readonly": "npx tsx scripts/verify-mcp-readonly.ts",
     "typecheck": "tsc --noEmit",
     "contracts:compile": "hardhat compile",
     "contracts:deploy:vault:base-mainnet": "node scripts/deploy-vault.js --network=base-mainnet",

@@ -1,0 +1,94 @@
+name: MCP Read-only Monitor
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Base URL to verify (defaults to production)"
+        required: false
+        default: "https://www.ghostprotocol.cc"
+        type: string
+      service_slug:
+        description: "Service slug for get_payment_requirements probe"
+        required: false
+        default: "agent-18755"
+        type: string
+  schedule:
+    - cron: "17,47 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mcp-readonly-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BASE_URL_INPUT: ${{ github.event.inputs.base_url }}
+      SERVICE_SLUG_INPUT: ${{ github.event.inputs.service_slug }}
+      ALERT_SMTP_SERVER: ${{ secrets.ALERT_SMTP_SERVER }}
+      ALERT_SMTP_USERNAME: ${{ secrets.ALERT_SMTP_USERNAME }}
+      ALERT_SMTP_PASSWORD: ${{ secrets.ALERT_SMTP_PASSWORD }}
+      ALERT_FROM_EMAIL: ${{ secrets.ALERT_FROM_EMAIL }}
+      ALERT_SMTP_PORT: ${{ secrets.ALERT_SMTP_PORT || '587' }}
+      ALERT_SMTP_SECURE: ${{ secrets.ALERT_SMTP_SECURE || 'false' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify read-only MCP endpoint
+        env:
+          BASE_URL: ${{ env.BASE_URL_INPUT }}
+          MCP_TEST_SERVICE_SLUG: ${{ env.SERVICE_SLUG_INPUT }}
+          MCP_VERIFY_TIMEOUT_MS: "20000"
+        run: |
+          set -euo pipefail
+
+          base_url="${BASE_URL:-https://www.ghostprotocol.cc}"
+          base_url="${base_url%/}"
+          if [ "${base_url}" = "https://ghostprotocol.cc" ]; then
+            base_url="https://www.ghostprotocol.cc"
+          fi
+
+          export BASE_URL="${base_url}"
+          npm run verify:mcp:readonly
+
+      - name: Send MCP monitor alert email
+        if: ${{ failure() && env.ALERT_SMTP_SERVER != '' && env.ALERT_SMTP_USERNAME != '' && env.ALERT_SMTP_PASSWORD != '' && env.ALERT_FROM_EMAIL != '' }}
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ env.ALERT_SMTP_SERVER }}
+          server_port: ${{ env.ALERT_SMTP_PORT }}
+          secure: ${{ env.ALERT_SMTP_SECURE }}
+          username: ${{ env.ALERT_SMTP_USERNAME }}
+          password: ${{ env.ALERT_SMTP_PASSWORD }}
+          from: ${{ env.ALERT_FROM_EMAIL }}
+          to: ghostprotocol.infra@gmail.com
+          subject: "[Ghost Protocol][MCP] Read-only endpoint monitor failure"
+          body: |
+            Read-only MCP endpoint verification failed.
+
+            Repository: ${{ github.repository }}
+            Workflow: ${{ github.workflow }}
+            Job: ${{ github.job }}
+            Branch/Ref: ${{ github.ref }}
+            Actor: ${{ github.actor }}
+            Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Warn when MCP alert email secrets are missing
+        if: ${{ failure() && (env.ALERT_SMTP_SERVER == '' || env.ALERT_SMTP_USERNAME == '' || env.ALERT_SMTP_PASSWORD == '' || env.ALERT_FROM_EMAIL == '') }}
+        run: |
+          echo "::warning::MCP monitor failed but SMTP secrets are not fully configured. Set ALERT_SMTP_SERVER, ALERT_SMTP_USERNAME, ALERT_SMTP_PASSWORD, ALERT_FROM_EMAIL (and optional ALERT_SMTP_PORT/ALERT_SMTP_SECURE)."

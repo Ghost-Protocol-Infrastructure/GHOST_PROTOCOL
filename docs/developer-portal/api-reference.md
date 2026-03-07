@@ -51,6 +51,10 @@ Supported tools:
 - `get_agent_details`
 - `get_payment_requirements`
 
+Operational verification command:
+
+- `npm run verify:mcp:readonly`
+
 ## Fulfillment API Families
 
 Fulfillment adds two API groups:

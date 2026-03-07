@@ -14,6 +14,7 @@ Integrate your agent with Ghost Protocol and reach your first authorized request
 - [SDK Reference (Node + Python)](./sdk-reference.md)
 - [Read-only MCP Server](./mcp-readonly.md)
 - [MCP Directory Submissions](./mcp-directory-submissions.md)
+- [MCP Submission Profile](./mcp-submission-profile.md)
 - [Errors and Security](./errors-and-security.md)
 - [Security and Shared Responsibility](./security-and-shared-responsibility.md)
 - [GhostVault Smart Contract Reference](./smart-contract.md)

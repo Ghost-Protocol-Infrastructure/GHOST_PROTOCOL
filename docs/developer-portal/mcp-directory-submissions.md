@@ -40,9 +40,33 @@ Status meanings:
 | mcpservers.org | SUBMIT | Submit public metadata and capability summary. |
 | Cursor directory (if/when open) | SUBMIT | Use same packet above. |
 
+Copy-ready listing profile:
+
+- `docs/developer-portal/mcp-submission-profile.md`
+
 ## Verification checklist before each submission
 
 1. `GET /api/mcp/read-only` returns `ok: true` and expected tool list.
 2. `POST /api/mcp/read-only` with `tools/list` returns 200 and tool schema.
 3. `/.well-known/mcp.json` resolves and matches live endpoint URL.
 4. `openapi.json` and `llms.txt` are reachable from production.
+
+## Automated monitoring
+
+Workflow:
+
+- `.github/workflows/mcp-readonly-monitor.yml`
+
+Schedule:
+
+- Twice per hour (`:17` and `:47`, UTC)
+
+It verifies:
+
+1. `GET /api/mcp/read-only`
+2. `GET /.well-known/mcp.json`
+3. MCP JSON-RPC `initialize`
+4. MCP JSON-RPC `tools/list`
+5. MCP JSON-RPC `tools/call` for:
+   - `list_agents`
+   - `get_payment_requirements`
