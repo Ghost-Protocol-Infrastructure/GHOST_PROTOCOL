@@ -10,7 +10,9 @@ Primary surfaces:
 Machine-readable API artifacts:
 - OpenAPI: https://ghostprotocol.cc/openapi.json
 - AI plugin manifest: https://ghostprotocol.cc/.well-known/ai-plugin.json
+- MCP manifest: https://ghostprotocol.cc/.well-known/mcp.json
 - Pricing metadata: https://ghostprotocol.cc/api/pricing
+- MCP read-only endpoint: https://ghostprotocol.cc/api/mcp/read-only
 
 Core API endpoints:
 - Agent discovery: GET https://ghostprotocol.cc/api/agents

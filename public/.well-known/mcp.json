@@ -1,0 +1,34 @@
+{
+  "name": "ghost-protocol-readonly-mcp",
+  "version": "0.2.0",
+  "description": "Read-only Ghost Protocol MCP server for agent discovery and payment requirement lookup.",
+  "transport": {
+    "type": "jsonrpc-http",
+    "url": "https://ghostprotocol.cc/api/mcp/read-only"
+  },
+  "tools": [
+    {
+      "name": "list_agents",
+      "description": "List GhostRank agents with optional search query and pagination."
+    },
+    {
+      "name": "get_agent_details",
+      "description": "Fetch details for one agent by agent_id (or address)."
+    },
+    {
+      "name": "get_payment_requirements",
+      "description": "Fetch authoritative payment requirements for a service slug."
+    }
+  ],
+  "artifacts": {
+    "openapi": "https://ghostprotocol.cc/openapi.json",
+    "llms": "https://ghostprotocol.cc/llms.txt",
+    "pricing": "https://ghostprotocol.cc/api/pricing",
+    "aiPlugin": "https://ghostprotocol.cc/.well-known/ai-plugin.json"
+  },
+  "contact": {
+    "email": "help@ghostprotocol.cc",
+    "legal": "https://ghostprotocol.cc/terms",
+    "privacy": "https://ghostprotocol.cc/privacy"
+  }
+}

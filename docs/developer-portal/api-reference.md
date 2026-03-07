@@ -23,6 +23,7 @@ No bearer token is required for gate authorization. Signature validity and credi
 - OpenAPI: `https://ghostprotocol.cc/openapi.json`
 - LLMs index: `https://ghostprotocol.cc/llms.txt`
 - AI plugin manifest: `https://ghostprotocol.cc/.well-known/ai-plugin.json`
+- MCP manifest: `https://ghostprotocol.cc/.well-known/mcp.json`
 - Pricing metadata: `GET /api/pricing`
 
 The pricing endpoint is the authoritative source for:
@@ -30,6 +31,25 @@ The pricing endpoint is the authoritative source for:
 - `creditPriceWei` (credit unit price)
 - per-service request cost resolution (`service` query)
 - x402 transport compatibility metadata (`x402CompatibilityEnabled`, `x402Scheme`)
+
+## Read-only MCP endpoint
+
+Route:
+
+- `GET /api/mcp/read-only` (metadata + tool catalog)
+- `POST /api/mcp/read-only` (JSON-RPC method handling)
+
+Supported methods:
+
+- `initialize`
+- `tools/list`
+- `tools/call`
+
+Supported tools:
+
+- `list_agents`
+- `get_agent_details`
+- `get_payment_requirements`
 
 ## Fulfillment API Families
 

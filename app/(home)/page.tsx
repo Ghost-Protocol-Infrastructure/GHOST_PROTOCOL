@@ -50,6 +50,8 @@ const HomePage = () => {
           "https://ghostprotocol.cc/openapi.json",
           "https://ghostprotocol.cc/llms.txt",
           "https://ghostprotocol.cc/.well-known/ai-plugin.json",
+          "https://ghostprotocol.cc/.well-known/mcp.json",
+          "https://ghostprotocol.cc/api/mcp/read-only",
           "https://ghostprotocol.cc/api/pricing",
         ],
       }),

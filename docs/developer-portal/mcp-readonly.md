@@ -12,6 +12,15 @@ Supported tools:
 - `get_agent_details`
 - `get_payment_requirements`
 
+## Hosted endpoint
+
+- Metadata: `GET https://ghostprotocol.cc/api/mcp/read-only`
+- JSON-RPC: `POST https://ghostprotocol.cc/api/mcp/read-only`
+- Manifest: `https://ghostprotocol.cc/.well-known/mcp.json`
+
+Transport:
+- `jsonrpc-http`
+
 ## Run locally
 
 From repo root:
@@ -20,10 +29,63 @@ From repo root:
 npm run mcp:readonly
 ```
 
+This launches the stdio MCP server process (`scripts/mcp-server.js`).
+
 ## Environment variables
 
 - `GHOST_MCP_BASE_URL` (optional): Defaults to `https://ghostprotocol.cc`
 - `GHOST_MCP_TIMEOUT_MS` (optional): Defaults to `15000`
+
+## Runtime integration snippets
+
+### Claude Desktop (local stdio)
+
+`claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "ghost-protocol": {
+      "command": "node",
+      "args": [
+        "C:/path/to/GHOST_PROTOCOL/scripts/mcp-server.js"
+      ],
+      "env": {
+        "GHOST_MCP_BASE_URL": "https://ghostprotocol.cc",
+        "GHOST_MCP_TIMEOUT_MS": "15000"
+      }
+    }
+  }
+}
+```
+
+### Cursor (local stdio)
+
+`.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "ghost-protocol": {
+      "command": "node",
+      "args": [
+        "scripts/mcp-server.js"
+      ],
+      "env": {
+        "GHOST_MCP_BASE_URL": "https://ghostprotocol.cc"
+      }
+    }
+  }
+}
+```
+
+### Any MCP runtime with HTTP transport
+
+If your runtime supports MCP over HTTP JSON-RPC, point it at:
+
+- `https://ghostprotocol.cc/api/mcp/read-only`
+
+Use `initialize`, `tools/list`, and `tools/call` methods.
 
 ## Tool contracts
 
@@ -72,4 +134,5 @@ Returns chain id, credit unit pricing, request credit cost, and x402 transport c
 - `https://ghostprotocol.cc/openapi.json`
 - `https://ghostprotocol.cc/llms.txt`
 - `https://ghostprotocol.cc/.well-known/ai-plugin.json`
+- `https://ghostprotocol.cc/.well-known/mcp.json`
 - `https://ghostprotocol.cc/api/pricing`
