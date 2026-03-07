@@ -3,14 +3,14 @@ import { base } from "viem/chains";
 import { prisma } from "../lib/db";
 
 type AgentIndexMode = "erc8004" | "olas";
-type ScoreTxSource = "owner" | "creator";
+type ScoreTxSource = "agent" | "owner" | "creator";
 
 const AGENT_INDEX_MODE: AgentIndexMode =
   process.env.AGENT_INDEX_MODE?.trim().toLowerCase() === "olas" ? "olas" : "erc8004";
 const SCORE_TX_SOURCE: ScoreTxSource = (() => {
   const raw = process.env.SCORE_TX_SOURCE?.trim().toLowerCase();
-  if (raw === "owner" || raw === "creator") return raw;
-  return AGENT_INDEX_MODE === "olas" ? "creator" : "owner";
+  if (raw === "agent" || raw === "owner" || raw === "creator") return raw;
+  return AGENT_INDEX_MODE === "olas" ? "creator" : "agent";
 })();
 
 const INDEXER_RPC_URL =
@@ -217,15 +217,19 @@ const normalizeSourceAddress = (
   return { sourceAddressLower, sourceAddress: parsed };
 };
 
-const resolveTxSourceAddressLower = (agent: { owner: string; creator: string }): string | null => {
-  const primary = SCORE_TX_SOURCE === "owner" ? agent.owner : agent.creator;
-  const secondary = SCORE_TX_SOURCE === "owner" ? agent.creator : agent.owner;
+const resolveTxSourceAddressLower = (agent: { address: string; owner: string; creator: string }): string | null => {
+  const candidates =
+    SCORE_TX_SOURCE === "agent"
+      ? [agent.address, agent.owner, agent.creator]
+      : SCORE_TX_SOURCE === "owner"
+        ? [agent.owner, agent.creator, agent.address]
+        : [agent.creator, agent.owner, agent.address];
 
-  const normalizedPrimary = normalizeSourceAddress(primary ?? "");
-  if (normalizedPrimary) return normalizedPrimary.sourceAddressLower;
-
-  const normalizedSecondary = normalizeSourceAddress(secondary ?? "");
-  return normalizedSecondary ? normalizedSecondary.sourceAddressLower : null;
+  for (const candidate of candidates) {
+    const normalized = normalizeSourceAddress(candidate ?? "");
+    if (normalized) return normalized.sourceAddressLower;
+  }
+  return null;
 };
 
 const statusIndicatesClaimed = (status: string): boolean => {
