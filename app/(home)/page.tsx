@@ -246,19 +246,19 @@ const HomePage = () => {
               GHOST_PROTOCOL_INFRASTRUCTURE
             </div>
             <div className="text-[10px] text-neutral-700 max-w-sm leading-relaxed">
-              Indexing ERC-8004 registries on Base. MegaETH expansion coming.
-              <br />
-              All systems nominal. No warranties implied.{" "}
-              <Link href="/terms" className="text-neutral-600 transition-colors hover:text-red-500">
-                Terms_of_Service
-              </Link>
-              {" "}|
-              {" "}
-              <Link href="/privacy" className="text-neutral-600 transition-colors hover:text-red-500">
-                Privacy_Policy
-              </Link>
-              <br />
-              © 2026 Ghost Protocol
+              <p>Indexing ERC-8004 registries on Base. MegaETH expansion coming.</p>
+              <p>All systems nominal. No warranties implied.</p>
+              <p className="whitespace-nowrap">
+                <Link href="/terms" className="text-neutral-600 transition-colors hover:text-red-500">
+                  Terms_of_Service
+                </Link>
+                {" "}|
+                {" "}
+                <Link href="/privacy" className="text-neutral-600 transition-colors hover:text-red-500">
+                  Privacy_Policy
+                </Link>
+              </p>
+              <p>&copy; 2026 Ghost Protocol</p>
             </div>
           </div>
 
