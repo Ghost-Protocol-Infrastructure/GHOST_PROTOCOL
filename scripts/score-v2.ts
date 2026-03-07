@@ -1143,8 +1143,9 @@ const ingestScoreInputs = async (): Promise<{
     if (!hasDelta) continue;
 
     const sourceChanged = existing?.txSourceAddress !== txSourceAddress;
-    const seedTxCount = !sourceChanged && existing ? Math.max(0, existing.txCount) : 0;
-    const seedTxCountUpdatedAt = !sourceChanged && existing ? existing.txCountUpdatedAt : null;
+    const seedTxCount = existing ? Math.max(0, existing.txCount) : 0;
+    // Preserve prior txCount during source migration, but force stale refresh on changed source.
+    const seedTxCountUpdatedAt = sourceChanged ? null : existing?.txCountUpdatedAt ?? null;
 
     pendingUpserts.push({
       agentAddress: agent.address,
