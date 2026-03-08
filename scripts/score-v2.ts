@@ -5,6 +5,7 @@ import { prisma } from "../lib/db";
 
 type AgentIndexMode = "erc8004" | "olas";
 type ScoreTxSource = "agent" | "owner" | "creator";
+type ResolvedTxSourceKind = "agent" | "owner" | "creator";
 
 type AgentSourceRow = {
   address: string;
@@ -179,6 +180,12 @@ const SCORE_V2_FORCE_EXIT_ON_FINISH =
   process.env.CI?.trim().toLowerCase() === "true";
 const SCORE_V2_SYBIL_GUARD_ENABLED =
   (process.env.SCORE_V2_SYBIL_GUARD_ENABLED?.trim().toLowerCase() ?? "true") !== "false";
+const SCORE_V2_SYNTHETIC_USAGE_PRIMARY = (() => {
+  const raw = process.env.SCORE_V2_SYNTHETIC_USAGE_PRIMARY?.trim().toLowerCase();
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  return AGENT_INDEX_MODE === "erc8004";
+})();
 const SCORE_V2_SYBIL_WINDOW_MINUTES = parseBoundedInt(
   process.env.SCORE_V2_SYBIL_WINDOW_MINUTES,
   7 * 24 * 60,
@@ -259,17 +266,36 @@ const normalizeSourceAddress = (
   return { sourceAddressLower, sourceAddress: parsed };
 };
 
-const resolveTxSourceAddressLower = (row: Pick<AgentSourceRow, "address" | "owner" | "creator">): string | null => {
-  const candidates =
+const resolveTxSourceAddress = (
+  row: Pick<AgentSourceRow, "address" | "owner" | "creator">,
+): { sourceAddressLower: string; sourceKind: ResolvedTxSourceKind } | null => {
+  const candidates: Array<{ kind: ResolvedTxSourceKind; value: string }> =
     SCORE_TX_SOURCE === "agent"
-      ? [row.address, row.owner, row.creator]
+      ? [
+          { kind: "agent", value: row.address },
+          { kind: "owner", value: row.owner },
+          { kind: "creator", value: row.creator },
+        ]
       : SCORE_TX_SOURCE === "owner"
-        ? [row.owner, row.creator, row.address]
-        : [row.creator, row.owner, row.address];
+        ? [
+            { kind: "owner", value: row.owner },
+            { kind: "creator", value: row.creator },
+            { kind: "agent", value: row.address },
+          ]
+        : [
+            { kind: "creator", value: row.creator },
+            { kind: "owner", value: row.owner },
+            { kind: "agent", value: row.address },
+          ];
 
   for (const candidate of candidates) {
-    const normalized = normalizeSourceAddress(candidate ?? "");
-    if (normalized) return normalized.sourceAddressLower;
+    const normalized = normalizeSourceAddress(candidate.value ?? "");
+    if (normalized) {
+      return {
+        sourceAddressLower: normalized.sourceAddressLower,
+        sourceKind: candidate.kind,
+      };
+    }
   }
   return null;
 };
@@ -809,12 +835,35 @@ const buildSnapshotRows = (
   maxClaimedYield: number;
   sybilPenalizedAgents: number;
   sybilMaxPenalty: number;
+  txMetricPathCounts: Record<"agent_onchain" | "synthetic_usage" | "fallback_tx", number>;
 } => {
-  const txCounts = inputs.map((input) => Math.max(0, input.txCount));
+  const preparedInputs = inputs.map((input) => {
+    const gateSignal = gateSybilSignals.byAgentId.get(input.agentId) ?? {
+      authorizedCount: 0,
+      uniqueSignerCount: 0,
+      replayCount: 0,
+      invalidSignatureCount: 0,
+      topSignerAuthorizedCount: 0,
+    };
+    const onchainTxCount = Math.max(0, input.txCount);
+    const usageAuthorizedCount = Math.max(0, gateSignal.authorizedCount);
+    const normalizedAgentAddress = parseAddress(input.agentAddress)?.toLowerCase() ?? null;
+    const txSourceAddressLower = input.txSourceAddress?.toLowerCase() ?? null;
+    const isAgentOnchainSource =
+      normalizedAgentAddress !== null && txSourceAddressLower !== null && txSourceAddressLower === normalizedAgentAddress;
+    const useSyntheticUsage =
+      SCORE_V2_SYNTHETIC_USAGE_PRIMARY && !isAgentOnchainSource && usageAuthorizedCount > 0;
+
+    return {
+      input,
+      gateSignal,
+      effectiveTxCount: useSyntheticUsage ? usageAuthorizedCount : onchainTxCount,
+      txMetricPath: isAgentOnchainSource ? "agent_onchain" : useSyntheticUsage ? "synthetic_usage" : "fallback_tx",
+    } as const;
+  });
+  const txCounts = preparedInputs.map((item) => item.effectiveTxCount);
   const maxTxCount = txCounts.length > 0 ? Math.max(...txCounts) : 0;
-  const uniqueSignerCounts = inputs.map((input) =>
-    Math.max(0, gateSybilSignals.byAgentId.get(input.agentId)?.uniqueSignerCount ?? 0),
-  );
+  const uniqueSignerCounts = preparedInputs.map((item) => Math.max(0, item.gateSignal.uniqueSignerCount));
   const maxUniqueSignerCount = uniqueSignerCounts.length > 0 ? Math.max(...uniqueSignerCounts) : 0;
   const claimedYields = inputs
     .map((input) => (input.isClaimed ? Math.max(0, input.yield) : 0))
@@ -825,11 +874,18 @@ const buildSnapshotRows = (
   const normalizedTxSignalWeight = totalSignalWeight > 0 ? SYBIL_TX_SIGNAL_WEIGHT / totalSignalWeight : 0.5;
   let sybilPenalizedAgents = 0;
   let sybilMaxPenalty = 0;
+  const txMetricPathCounts: Record<"agent_onchain" | "synthetic_usage" | "fallback_tx", number> = {
+    agent_onchain: 0,
+    synthetic_usage: 0,
+    fallback_tx: 0,
+  };
 
-  const scored = inputs.map((input) => {
-    const txCount = Math.max(0, input.txCount);
+  const scored = preparedInputs.map((prepared) => {
+    const { input, gateSignal } = prepared;
+    const txCount = prepared.effectiveTxCount;
+    txMetricPathCounts[prepared.txMetricPath] += 1;
     const txVolumeNorm = normalizeLog100(txCount, maxTxCount);
-    const uniqueSignerCount = Math.max(0, gateSybilSignals.byAgentId.get(input.agentId)?.uniqueSignerCount ?? 0);
+    const uniqueSignerCount = Math.max(0, gateSignal.uniqueSignerCount);
     const uniqueSignerNorm =
       gateSybilSignals.hasCoverage && maxUniqueSignerCount > 0
         ? normalizeLog100(uniqueSignerCount, maxUniqueSignerCount)
@@ -840,17 +896,7 @@ const buildSnapshotRows = (
     const yieldValue = input.isClaimed ? Math.max(0, input.yield) : 0;
     const uptime = input.isClaimed ? clamp(input.uptime, 0, 100) : 0;
     const yieldNorm = maxClaimedYield > 0 ? clamp((yieldValue / maxClaimedYield) * 100, 0, 100) : 0;
-    const antiWashPenalty = gateSybilSignals.hasCoverage
-      ? calculateSybilPenalty(
-          gateSybilSignals.byAgentId.get(input.agentId) ?? {
-            authorizedCount: 0,
-            uniqueSignerCount: 0,
-            replayCount: 0,
-            invalidSignatureCount: 0,
-            topSignerAuthorizedCount: 0,
-          },
-        )
-      : 0;
+    const antiWashPenalty = gateSybilSignals.hasCoverage ? calculateSybilPenalty(gateSignal) : 0;
 
     if (antiWashPenalty > 0) {
       sybilPenalizedAgents += 1;
@@ -915,7 +961,7 @@ const buildSnapshotRows = (
     agentUpdatedAt: row.input.updatedAt,
   }));
 
-  return { rows, maxTxCount, maxClaimedYield, sybilPenalizedAgents, sybilMaxPenalty };
+  return { rows, maxTxCount, maxClaimedYield, sybilPenalizedAgents, sybilMaxPenalty, txMetricPathCounts };
 };
 
 const buildFailureReason = (error: unknown): string => {
@@ -1134,9 +1180,25 @@ const ingestScoreInputs = async (): Promise<{
 
   const pendingUpserts: PendingInputUpsert[] = [];
   const changedSourceSet = new Set<string>();
+  const sourceResolutionCounts: Record<ResolvedTxSourceKind | "unresolved", number> = {
+    agent: 0,
+    owner: 0,
+    creator: 0,
+    unresolved: 0,
+  };
+  const unresolvedAgentIdSamples: string[] = [];
 
   for (const agent of agents) {
-    const txSourceAddress = resolveTxSourceAddressLower(agent);
+    const resolvedSource = resolveTxSourceAddress(agent);
+    const txSourceAddress = resolvedSource?.sourceAddressLower ?? null;
+    if (resolvedSource) {
+      sourceResolutionCounts[resolvedSource.sourceKind] += 1;
+    } else {
+      sourceResolutionCounts.unresolved += 1;
+      if (unresolvedAgentIdSamples.length < 10) {
+        unresolvedAgentIdSamples.push(agent.agentId);
+      }
+    }
     const isClaimed = statusIndicatesClaimed(agent.status);
     const existing = existingByAddress.get(agent.address);
     const hasDelta = hasSourceDelta(agent, existing, txSourceAddress, isClaimed);
@@ -1172,6 +1234,20 @@ const ingestScoreInputs = async (): Promise<{
     }
   }
 
+  console.log(
+    `Heartbeat: score-v2 tx source resolution => mode=${SCORE_TX_SOURCE}, agent=${sourceResolutionCounts.agent}, owner=${sourceResolutionCounts.owner}, creator=${sourceResolutionCounts.creator}, unresolved=${sourceResolutionCounts.unresolved}`,
+  );
+  if (SCORE_TX_SOURCE === "agent") {
+    console.log(
+      `Heartbeat: score-v2 agent-mode fallback usage => owner_fallback=${sourceResolutionCounts.owner}, creator_fallback=${sourceResolutionCounts.creator}`,
+    );
+  }
+  if (unresolvedAgentIdSamples.length > 0) {
+    console.warn(
+      `Heartbeat: score-v2 unresolved tx source sample agentIds => ${unresolvedAgentIdSamples.join(", ")}`,
+    );
+  }
+
   if (pendingUpserts.length > 0) {
     await upsertScoreInputs(pendingUpserts);
   }
@@ -1203,6 +1279,9 @@ const runSnapshotRanking = async (): Promise<{
   sybilCoverage: boolean;
   sybilServicesTracked: number;
   sybilAuthorizedEvents: number;
+  txMetricAgentOnchainCount: number;
+  txMetricSyntheticUsageCount: number;
+  txMetricFallbackCount: number;
 }> => {
   const inputs = await withPrismaRetry("score-v2 load score inputs for ranking", () =>
     prisma.agentScoreInput.findMany({
@@ -1235,10 +1314,11 @@ const runSnapshotRanking = async (): Promise<{
   }
 
   const gateSybilSignals = await fetchGateSybilSignals();
-  const { rows, maxTxCount, maxClaimedYield, sybilPenalizedAgents, sybilMaxPenalty } = buildSnapshotRows(
-    inputs,
-    gateSybilSignals,
-  );
+  const { rows, maxTxCount, maxClaimedYield, sybilPenalizedAgents, sybilMaxPenalty, txMetricPathCounts } =
+    buildSnapshotRows(
+      inputs,
+      gateSybilSignals,
+    );
   const snapshotId = await writeSnapshot(rows, maxTxCount, maxClaimedYield);
 
   if (!SCORE_V2_SHADOW_ONLY) {
@@ -1255,6 +1335,9 @@ const runSnapshotRanking = async (): Promise<{
     sybilCoverage: gateSybilSignals.hasCoverage,
     sybilServicesTracked: gateSybilSignals.servicesTracked,
     sybilAuthorizedEvents: gateSybilSignals.totalAuthorizedEvents,
+    txMetricAgentOnchainCount: txMetricPathCounts.agent_onchain,
+    txMetricSyntheticUsageCount: txMetricPathCounts.synthetic_usage,
+    txMetricFallbackCount: txMetricPathCounts.fallback_tx,
   };
 };
 
@@ -1278,7 +1361,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `score-v2 config: mode=${AGENT_INDEX_MODE}, tx_source=${SCORE_TX_SOURCE}, shadow_only=${SCORE_V2_SHADOW_ONLY}, rpc_env=${INDEXER_RPC_ENV}, tx_concurrency=${SCORE_V2_TX_CONCURRENCY}, tx_call_timeout_ms=${SCORE_V2_TX_CALL_TIMEOUT_MS}, tx_rpc_timeout_ms=${SCORE_V2_TX_RPC_TIMEOUT_MS}, tx_budget_ms=${SCORE_V2_TX_BUDGET_MS}, ingest_batch_size=${SCORE_V2_INGEST_BATCH_SIZE}, snapshot_batch_size=${SCORE_V2_SNAPSHOT_BATCH_SIZE}, stale_tx_batch=${SCORE_V2_STALE_TX_BATCH}, stale_tx_minutes=${SCORE_V2_STALE_TX_MINUTES}`,
+    `score-v2 config: mode=${AGENT_INDEX_MODE}, tx_source=${SCORE_TX_SOURCE}, synthetic_usage_primary=${SCORE_V2_SYNTHETIC_USAGE_PRIMARY}, shadow_only=${SCORE_V2_SHADOW_ONLY}, rpc_env=${INDEXER_RPC_ENV}, tx_concurrency=${SCORE_V2_TX_CONCURRENCY}, tx_call_timeout_ms=${SCORE_V2_TX_CALL_TIMEOUT_MS}, tx_rpc_timeout_ms=${SCORE_V2_TX_RPC_TIMEOUT_MS}, tx_budget_ms=${SCORE_V2_TX_BUDGET_MS}, ingest_batch_size=${SCORE_V2_INGEST_BATCH_SIZE}, snapshot_batch_size=${SCORE_V2_SNAPSHOT_BATCH_SIZE}, stale_tx_batch=${SCORE_V2_STALE_TX_BATCH}, stale_tx_minutes=${SCORE_V2_STALE_TX_MINUTES}`,
   );
 
   const startedAt = Date.now();
@@ -1308,10 +1391,13 @@ async function main(): Promise<void> {
     last_sybil_authorized_events: String(ranking.sybilAuthorizedEvents),
     last_sybil_penalized_agents: String(ranking.sybilPenalizedAgents),
     last_sybil_max_penalty: String(ranking.sybilMaxPenalty),
+    last_tx_metric_agent_onchain_count: String(ranking.txMetricAgentOnchainCount),
+    last_tx_metric_synthetic_usage_count: String(ranking.txMetricSyntheticUsageCount),
+    last_tx_metric_fallback_count: String(ranking.txMetricFallbackCount),
   });
 
   console.log(
-    `score-v2 complete: snapshot=${ranking.snapshotId}, rows=${ranking.totalRows}, changed_inputs=${ingest.changedInputs}, tx_sources_refreshed=${ingest.refreshedSources}, tx_failures=${ingest.txFetchFailures}${ingest.budgetReached ? ", budget_reached=true" : ""}, sybil_coverage=${ranking.sybilCoverage}, sybil_services=${ranking.sybilServicesTracked}, sybil_authorized_events=${ranking.sybilAuthorizedEvents}, sybil_penalized_agents=${ranking.sybilPenalizedAgents}, sybil_max_penalty=${ranking.sybilMaxPenalty}, elapsed_ms=${elapsedMs}.`,
+    `score-v2 complete: snapshot=${ranking.snapshotId}, rows=${ranking.totalRows}, changed_inputs=${ingest.changedInputs}, tx_sources_refreshed=${ingest.refreshedSources}, tx_failures=${ingest.txFetchFailures}${ingest.budgetReached ? ", budget_reached=true" : ""}, tx_metric_agent_onchain=${ranking.txMetricAgentOnchainCount}, tx_metric_synthetic_usage=${ranking.txMetricSyntheticUsageCount}, tx_metric_fallback=${ranking.txMetricFallbackCount}, sybil_coverage=${ranking.sybilCoverage}, sybil_services=${ranking.sybilServicesTracked}, sybil_authorized_events=${ranking.sybilAuthorizedEvents}, sybil_penalized_agents=${ranking.sybilPenalizedAgents}, sybil_max_penalty=${ranking.sybilMaxPenalty}, elapsed_ms=${elapsedMs}.`,
   );
 }
 

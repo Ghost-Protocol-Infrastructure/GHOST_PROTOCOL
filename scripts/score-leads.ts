@@ -4,6 +4,7 @@ import { prisma } from "../lib/db";
 
 type AgentIndexMode = "erc8004" | "olas";
 type ScoreTxSource = "agent" | "owner" | "creator";
+type ResolvedTxSourceKind = "agent" | "owner" | "creator";
 
 const AGENT_INDEX_MODE: AgentIndexMode =
   process.env.AGENT_INDEX_MODE?.trim().toLowerCase() === "olas" ? "olas" : "erc8004";
@@ -217,17 +218,36 @@ const normalizeSourceAddress = (
   return { sourceAddressLower, sourceAddress: parsed };
 };
 
-const resolveTxSourceAddressLower = (agent: { address: string; owner: string; creator: string }): string | null => {
-  const candidates =
+const resolveTxSourceAddress = (
+  agent: { address: string; owner: string; creator: string },
+): { sourceAddressLower: string; sourceKind: ResolvedTxSourceKind } | null => {
+  const candidates: Array<{ kind: ResolvedTxSourceKind; value: string }> =
     SCORE_TX_SOURCE === "agent"
-      ? [agent.address, agent.owner, agent.creator]
+      ? [
+          { kind: "agent", value: agent.address },
+          { kind: "owner", value: agent.owner },
+          { kind: "creator", value: agent.creator },
+        ]
       : SCORE_TX_SOURCE === "owner"
-        ? [agent.owner, agent.creator, agent.address]
-        : [agent.creator, agent.owner, agent.address];
+        ? [
+            { kind: "owner", value: agent.owner },
+            { kind: "creator", value: agent.creator },
+            { kind: "agent", value: agent.address },
+          ]
+        : [
+            { kind: "creator", value: agent.creator },
+            { kind: "owner", value: agent.owner },
+            { kind: "agent", value: agent.address },
+          ];
 
   for (const candidate of candidates) {
-    const normalized = normalizeSourceAddress(candidate ?? "");
-    if (normalized) return normalized.sourceAddressLower;
+    const normalized = normalizeSourceAddress(candidate.value ?? "");
+    if (normalized) {
+      return {
+        sourceAddressLower: normalized.sourceAddressLower,
+        sourceKind: candidate.kind,
+      };
+    }
   }
   return null;
 };
@@ -412,7 +432,36 @@ async function main(): Promise<void> {
     return;
   }
 
-  const txSourceAddressByAgent = agents.map((agent) => resolveTxSourceAddressLower(agent));
+  const sourceResolutionCounts: Record<ResolvedTxSourceKind | "unresolved", number> = {
+    agent: 0,
+    owner: 0,
+    creator: 0,
+    unresolved: 0,
+  };
+  const unresolvedAgentAddressSamples: string[] = [];
+  const txSourceAddressByAgent = agents.map((agent) => {
+    const resolved = resolveTxSourceAddress(agent);
+    if (resolved) {
+      sourceResolutionCounts[resolved.sourceKind] += 1;
+      return resolved.sourceAddressLower;
+    }
+    sourceResolutionCounts.unresolved += 1;
+    if (unresolvedAgentAddressSamples.length < 10) {
+      unresolvedAgentAddressSamples.push(agent.address);
+    }
+    return null;
+  });
+  console.log(
+    `Heartbeat: tx source resolution => mode=${SCORE_TX_SOURCE}, agent=${sourceResolutionCounts.agent}, owner=${sourceResolutionCounts.owner}, creator=${sourceResolutionCounts.creator}, unresolved=${sourceResolutionCounts.unresolved}`,
+  );
+  if (SCORE_TX_SOURCE === "agent") {
+    console.log(
+      `Heartbeat: agent-mode fallback usage => owner_fallback=${sourceResolutionCounts.owner}, creator_fallback=${sourceResolutionCounts.creator}`,
+    );
+  }
+  if (unresolvedAgentAddressSamples.length > 0) {
+    console.warn(`Heartbeat: unresolved tx source sample agent addresses => ${unresolvedAgentAddressSamples.join(", ")}`);
+  }
   const { txCountBySourceAddressLower, failures, fetched, total, budgetReached } = await fetchTxCountsBySourceAddress(
     txSourceAddressByAgent,
   );
