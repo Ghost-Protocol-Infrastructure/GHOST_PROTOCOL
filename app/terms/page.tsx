@@ -25,14 +25,17 @@ export default async function TermsPage() {
               GHOST_PROTOCOL
             </span>
           </Link>
-          <nav className="inline-flex items-center gap-6 uppercase">
+          <nav className="inline-flex items-center gap-6">
             <Link href="/" className="text-neutral-500 transition-colors hover:text-red-500">
-              home
+              /home
             </Link>
             <Link href="/rank" className="text-neutral-500 transition-colors hover:text-red-500">
-              rank
+              /rank
             </Link>
-            <span className="text-neutral-200">terms</span>
+            <span className="text-neutral-200">/terms</span>
+            <Link href="/privacy" className="text-neutral-500 transition-colors hover:text-red-500">
+              /privacy
+            </Link>
           </nav>
         </div>
       </header>

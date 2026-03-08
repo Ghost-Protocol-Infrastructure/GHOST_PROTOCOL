@@ -25,8 +25,26 @@ const AGENT_INDEX_MODE = process.env.AGENT_INDEX_MODE?.trim().toLowerCase() === 
 const ACTIVE_CURSOR_KEY = AGENT_INDEX_MODE === "olas" ? "agent_indexer_olas" : "agent_indexer_erc8004";
 const LEGACY_CURSOR_KEY = "agent_indexer";
 const LEADERBOARD_READ_FROM_SNAPSHOT = process.env.LEADERBOARD_READ_FROM_SNAPSHOT?.trim().toLowerCase() === "true";
+const SCORE_V2_SYNTHETIC_USAGE_PRIMARY = (() => {
+  const raw = process.env.SCORE_V2_SYNTHETIC_USAGE_PRIMARY?.trim().toLowerCase();
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  return AGENT_INDEX_MODE === "erc8004";
+})();
+const SCORE_V2_SYBIL_WINDOW_MINUTES = (() => {
+  const raw = process.env.SCORE_V2_SYBIL_WINDOW_MINUTES?.trim();
+  if (!raw || !/^\d+$/.test(raw)) return 7 * 24 * 60;
+  const parsed = Number.parseInt(raw, 10);
+  return Math.max(60, Math.min(parsed, 30 * 24 * 60));
+})();
 
 type SyncHealth = "live" | "stale" | "offline" | "unknown";
+type TxMetricSource =
+  | "AGENT_ONCHAIN"
+  | "USAGE_ACTIVITY_7D"
+  | "OWNER_FALLBACK"
+  | "CREATOR_FALLBACK"
+  | "UNRESOLVED";
 
 type SyncMetadata = {
   syncHealth: SyncHealth;
@@ -92,6 +110,78 @@ const parseOwner = (rawOwner: string | null): string | null => {
   const normalized = rawOwner.trim().toLowerCase();
   if (!/^0x[a-f0-9]{40}$/.test(normalized)) return null;
   return normalized;
+};
+
+const HEX_ADDRESS_PATTERN = /^0x[a-f0-9]{40}$/i;
+const isHexAddress = (value: string | null | undefined): boolean =>
+  typeof value === "string" && HEX_ADDRESS_PATTERN.test(value.trim());
+
+const parseAgentIdFromServiceSlug = (service: string): string | null => {
+  const normalized = service.trim().toLowerCase();
+  if (!normalized.startsWith("agent-")) return null;
+  const agentId = normalized.slice("agent-".length).trim();
+  return agentId.length > 0 ? agentId : null;
+};
+
+const resolveUsageAuthorizedCountByAgentIds = async (agentIds: string[]): Promise<Map<string, number>> => {
+  const normalizedAgentIds = Array.from(
+    new Set(
+      agentIds
+        .map((value) => value.trim().toLowerCase())
+        .filter((value) => value.length > 0),
+    ),
+  );
+  if (normalizedAgentIds.length === 0) return new Map();
+
+  const services = normalizedAgentIds.map((agentId) => `agent-${agentId}`);
+  const since = new Date(Date.now() - SCORE_V2_SYBIL_WINDOW_MINUTES * 60_000);
+
+  try {
+    const rows = await prisma.gateAccessEvent.groupBy({
+      by: ["service"],
+      where: {
+        service: { in: services },
+        outcome: "AUTHORIZED",
+        createdAt: { gte: since },
+      },
+      _count: { _all: true },
+    });
+
+    const usageByAgentId = new Map<string, number>();
+    for (const row of rows) {
+      const agentId = parseAgentIdFromServiceSlug(row.service);
+      if (!agentId) continue;
+      usageByAgentId.set(agentId, Math.max(0, Math.trunc(row._count._all)));
+    }
+    return usageByAgentId;
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "P2021"
+    ) {
+      return new Map();
+    }
+    console.error("Failed to resolve GateAccessEvent usage counts.", error);
+    return new Map();
+  }
+};
+
+const inferTxMetricSource = (input: {
+  address: string;
+  owner: string;
+  creator: string;
+  txCount: number;
+  usageAuthorizedCount7d: number;
+}): TxMetricSource => {
+  if (isHexAddress(input.address)) return "AGENT_ONCHAIN";
+  if (SCORE_V2_SYNTHETIC_USAGE_PRIMARY && input.usageAuthorizedCount7d > 0 && input.txCount === input.usageAuthorizedCount7d) {
+    return "USAGE_ACTIVITY_7D";
+  }
+  if (isHexAddress(input.owner)) return "OWNER_FALLBACK";
+  if (isHexAddress(input.creator)) return "CREATOR_FALLBACK";
+  return "UNRESOLVED";
 };
 
 const resolveActivatedAgentsCountUncached = async (): Promise<number> => {
@@ -352,6 +442,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       const syncMetadata = await resolveSyncMetadata(indexerState?.lastSyncedBlock);
       const activatedAgents = await activatedAgentsPromise;
       const gatewayReadinessByAgentId = await resolveGatewayReadinessByAgentIds(rows.map((row) => row.agentId));
+      const usageAuthorizedCountByAgentId = await resolveUsageAuthorizedCountByAgentIds(rows.map((row) => row.agentId));
 
       return NextResponse.json(
         {
@@ -366,36 +457,48 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           syncHealth: syncMetadata.syncHealth,
           syncAgeSeconds: syncMetadata.syncAgeSeconds,
           lastSyncedAt: syncMetadata.lastSyncedAt,
-          agents: rows.map((row) => ({
-            rank: row.rank,
-            address: row.agentAddress,
-            agentId: row.agentId,
-            name: row.name,
-            creator: row.creator,
-            owner: row.owner,
-            image: row.image,
-            description: row.description,
-            telegram: row.telegram,
-            twitter: row.twitter,
-            website: row.website,
-            status: row.status,
-            tier: row.tier,
-            txCount: row.txCount,
-            reputation: row.reputation,
-            rankScore: row.rankScore,
-            yield: row.yield,
-            uptime: row.uptime,
-            volume: row.volume.toString(),
-            score: row.score,
-            gatewayReadinessStatus:
-              gatewayReadinessByAgentId.get(row.agentId.toLowerCase())?.readinessStatus ?? "UNCONFIGURED",
-            gatewayLastCanaryCheckedAt:
-              gatewayReadinessByAgentId.get(row.agentId.toLowerCase())?.lastCanaryCheckedAt ?? null,
-            gatewayLastCanaryPassedAt:
-              gatewayReadinessByAgentId.get(row.agentId.toLowerCase())?.lastCanaryPassedAt ?? null,
-            createdAt: row.agentCreatedAt.toISOString(),
-            updatedAt: row.agentUpdatedAt.toISOString(),
-          })),
+          agents: rows.map((row) => {
+            const normalizedAgentId = row.agentId.toLowerCase();
+            const usageAuthorizedCount7d = usageAuthorizedCountByAgentId.get(normalizedAgentId) ?? 0;
+            return {
+              rank: row.rank,
+              address: row.agentAddress,
+              agentId: row.agentId,
+              name: row.name,
+              creator: row.creator,
+              owner: row.owner,
+              image: row.image,
+              description: row.description,
+              telegram: row.telegram,
+              twitter: row.twitter,
+              website: row.website,
+              status: row.status,
+              tier: row.tier,
+              txCount: row.txCount,
+              txMetricSource: inferTxMetricSource({
+                address: row.agentAddress,
+                owner: row.owner,
+                creator: row.creator,
+                txCount: row.txCount,
+                usageAuthorizedCount7d,
+              }),
+              usageAuthorizedCount7d,
+              reputation: row.reputation,
+              rankScore: row.rankScore,
+              yield: row.yield,
+              uptime: row.uptime,
+              volume: row.volume.toString(),
+              score: row.score,
+              gatewayReadinessStatus:
+                gatewayReadinessByAgentId.get(normalizedAgentId)?.readinessStatus ?? "UNCONFIGURED",
+              gatewayLastCanaryCheckedAt:
+                gatewayReadinessByAgentId.get(normalizedAgentId)?.lastCanaryCheckedAt ?? null,
+              gatewayLastCanaryPassedAt:
+                gatewayReadinessByAgentId.get(normalizedAgentId)?.lastCanaryPassedAt ?? null,
+              createdAt: row.agentCreatedAt.toISOString(),
+              updatedAt: row.agentUpdatedAt.toISOString(),
+            };
+          }),
         },
         {
           headers: { "cache-control": "no-store" },
@@ -480,6 +583,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       .map((agent) => agent.agentId ?? "")
       .filter((value): value is string => value.trim().length > 0),
   );
+  const usageAuthorizedCountByAgentId = await resolveUsageAuthorizedCountByAgentIds(
+    agents
+      .map((agent) => agent.agentId ?? "")
+      .filter((value): value is string => value.trim().length > 0),
+  );
 
   return NextResponse.json(
     {
@@ -494,36 +602,50 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       syncHealth: syncMetadata.syncHealth,
       syncAgeSeconds: syncMetadata.syncAgeSeconds,
       lastSyncedAt: syncMetadata.lastSyncedAt,
-      agents: agents.map((agent, index) => ({
-        rank: rankByAddress.get(agent.address.toLowerCase()) ?? skip + index + 1,
-        address: agent.address,
-        agentId: agent.agentId ?? agent.address,
-        name: agent.name,
-        creator: agent.creator,
-        owner: agent.owner ?? agent.creator,
-        image: agent.image,
-        description: agent.description,
-        telegram: agent.telegram,
-        twitter: agent.twitter,
-        website: agent.website,
-        status: agent.status,
-        tier: agent.tier,
-        txCount: agent.txCount,
-        reputation: agent.reputation,
-        rankScore: agent.rankScore,
-        yield: agent.yield,
-        uptime: agent.uptime,
-        volume: agent.volume.toString(),
-        score: agent.score,
-        gatewayReadinessStatus:
-          gatewayReadinessByAgentId.get((agent.agentId ?? "").toLowerCase())?.readinessStatus ?? "UNCONFIGURED",
-        gatewayLastCanaryCheckedAt:
-          gatewayReadinessByAgentId.get((agent.agentId ?? "").toLowerCase())?.lastCanaryCheckedAt ?? null,
-        gatewayLastCanaryPassedAt:
-          gatewayReadinessByAgentId.get((agent.agentId ?? "").toLowerCase())?.lastCanaryPassedAt ?? null,
-        createdAt: agent.createdAt.toISOString(),
-        updatedAt: agent.updatedAt.toISOString(),
-      })),
+      agents: agents.map((agent, index) => {
+        const ownerAddress = agent.owner ?? agent.creator;
+        const agentId = agent.agentId ?? agent.address;
+        const normalizedAgentId = agentId.toLowerCase();
+        const usageAuthorizedCount7d = usageAuthorizedCountByAgentId.get(normalizedAgentId) ?? 0;
+        return {
+          rank: rankByAddress.get(agent.address.toLowerCase()) ?? skip + index + 1,
+          address: agent.address,
+          agentId,
+          name: agent.name,
+          creator: agent.creator,
+          owner: ownerAddress,
+          image: agent.image,
+          description: agent.description,
+          telegram: agent.telegram,
+          twitter: agent.twitter,
+          website: agent.website,
+          status: agent.status,
+          tier: agent.tier,
+          txCount: agent.txCount,
+          txMetricSource: inferTxMetricSource({
+            address: agent.address,
+            owner: ownerAddress,
+            creator: agent.creator,
+            txCount: agent.txCount,
+            usageAuthorizedCount7d,
+          }),
+          usageAuthorizedCount7d,
+          reputation: agent.reputation,
+          rankScore: agent.rankScore,
+          yield: agent.yield,
+          uptime: agent.uptime,
+          volume: agent.volume.toString(),
+          score: agent.score,
+          gatewayReadinessStatus:
+            gatewayReadinessByAgentId.get((agent.agentId ?? "").toLowerCase())?.readinessStatus ?? "UNCONFIGURED",
+          gatewayLastCanaryCheckedAt:
+            gatewayReadinessByAgentId.get((agent.agentId ?? "").toLowerCase())?.lastCanaryCheckedAt ?? null,
+          gatewayLastCanaryPassedAt:
+            gatewayReadinessByAgentId.get((agent.agentId ?? "").toLowerCase())?.lastCanaryPassedAt ?? null,
+          createdAt: agent.createdAt.toISOString(),
+          updatedAt: agent.updatedAt.toISOString(),
+        };
+      }),
     },
     {
       headers: { "cache-control": "no-store" },

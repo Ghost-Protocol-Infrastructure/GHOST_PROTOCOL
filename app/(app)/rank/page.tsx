@@ -13,6 +13,7 @@ type Network = "MEGAETH" | "BASE";
 type LeadTier = "WHALE" | "ACTIVE" | "NEW" | "GHOST";
 type SyncHealth = "live" | "stale" | "offline" | "unknown";
 type GatewayReadinessStatus = "UNCONFIGURED" | "CONFIGURED" | "LIVE" | "DEGRADED";
+type TxMetricSource = "AGENT_ONCHAIN" | "USAGE_ACTIVITY_7D" | "OWNER_FALLBACK" | "CREATOR_FALLBACK" | "UNRESOLVED";
 const STALE_SYNC_THRESHOLD_SECONDS = 3 * 60 * 60;
 const LEADERBOARD_REFRESH_INTERVAL_MS = 15_000;
 
@@ -27,6 +28,8 @@ type ApiAgent = {
   status: string;
   tier?: string;
   txCount?: number;
+  txMetricSource?: TxMetricSource | string | null;
+  usageAuthorizedCount7d?: number;
   reputation?: number;
   rankScore?: number;
   yield?: number;
@@ -46,6 +49,8 @@ type ProcessedLead = {
   owner: string;
   tier: LeadTier;
   txCount: number;
+  txMetricSource: TxMetricSource;
+  usageAuthorizedCount7d: number;
   velocity: number;
   isClaimed: boolean;
   reputationScore: number;
@@ -115,6 +120,28 @@ const roundToTwo = (value: number): number => Math.round(value * 100) / 100;
 const formatYield = (yieldEth: number): string => `${yieldEth.toFixed(4)} ETH`;
 const formatUptime = (uptimePct: number): string => `${uptimePct.toFixed(1)}%`;
 const formatReputation = (score: number): string => (Number.isInteger(score) ? String(score) : score.toFixed(2));
+const normalizeTxMetricSource = (raw: string | null | undefined): TxMetricSource => {
+  if (raw === "AGENT_ONCHAIN") return raw;
+  if (raw === "USAGE_ACTIVITY_7D") return raw;
+  if (raw === "OWNER_FALLBACK") return raw;
+  if (raw === "CREATOR_FALLBACK") return raw;
+  return "UNRESOLVED";
+};
+const formatTxMetricSource = (source: TxMetricSource, usageAuthorizedCount7d: number): string => {
+  switch (source) {
+    case "AGENT_ONCHAIN":
+      return "on-chain agent";
+    case "USAGE_ACTIVITY_7D":
+      return `usage 7d (${usageAuthorizedCount7d.toLocaleString()})`;
+    case "OWNER_FALLBACK":
+      return "owner fallback";
+    case "CREATOR_FALLBACK":
+      return "creator fallback";
+    case "UNRESOLVED":
+    default:
+      return "source unresolved";
+  }
+};
 const formatBlockHeight = (rawBlock: string | null): string => {
   if (!rawBlock || !/^\d+$/.test(rawBlock)) return "--";
   return rawBlock.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
@@ -339,6 +366,13 @@ const buildLeadsFromApi = (agents: ApiAgent[]): ProcessedLead[] => {
       typeof agent.rankScore === "number" && Number.isFinite(agent.rankScore)
         ? clamp(agent.rankScore, 0, 100)
         : roundToTwo(rawReputation * 0.7 + velocity * 0.3);
+    const txMetricSource = normalizeTxMetricSource(
+      typeof agent.txMetricSource === "string" ? agent.txMetricSource : null,
+    );
+    const usageAuthorizedCount7d =
+      typeof agent.usageAuthorizedCount7d === "number" && Number.isFinite(agent.usageAuthorizedCount7d)
+        ? Math.max(0, Math.trunc(agent.usageAuthorizedCount7d))
+        : 0;
     const agentId = deriveAgentId(agent);
     const ownerSource = agent.owner ?? agent.creator;
 
@@ -353,6 +387,8 @@ const buildLeadsFromApi = (agents: ApiAgent[]): ProcessedLead[] => {
       owner: isHexAddress(ownerSource) ? ownerSource.toLowerCase() : ownerSource,
       tier: parseTier(agent.tier, txCount, isClaimed),
       txCount,
+      txMetricSource,
+      usageAuthorizedCount7d,
       velocity,
       isClaimed,
       reputationScore: rawReputation,
@@ -708,9 +744,14 @@ export default function Home() {
 
         <section className="relative border border-neutral-800 bg-neutral-950">
           <div className="flex flex-col gap-3 border-b border-neutral-800 px-4 py-3 text-[10px] uppercase tracking-widest sm:text-xs md:flex-row md:items-center md:justify-between md:px-6">
-            <div className="text-neutral-600">
-              Showing {visibleStart.toLocaleString()}-{visibleEnd.toLocaleString()} of {filteredAgentsCount.toLocaleString()}
-              {searchQuery ? " (filtered)" : ""}
+            <div className="text-neutral-600 space-y-1">
+              <div>
+                Showing {visibleStart.toLocaleString()}-{visibleEnd.toLocaleString()} of {filteredAgentsCount.toLocaleString()}
+                {searchQuery ? " (filtered)" : ""}
+              </div>
+              <div className="text-[9px] tracking-[0.12em] text-neutral-700">
+                TXS source: on-chain when available, otherwise 7d usage / owner fallback.
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 md:justify-end md:gap-3">
               <span className="text-neutral-500">
@@ -935,6 +976,9 @@ export default function Home() {
                         <div className="border border-neutral-800 bg-neutral-950 p-2">
                           <p className="mb-1 text-neutral-600 font-bold">TXS</p>
                           <p className="text-right text-neutral-400 font-mono">{agent.txCount.toLocaleString()}</p>
+                          <p className="mt-1 text-right text-[9px] text-neutral-600 font-mono normal-case tracking-normal">
+                            {formatTxMetricSource(agent.txMetricSource, agent.usageAuthorizedCount7d)}
+                          </p>
                         </div>
                         <div className="border border-neutral-800 bg-neutral-950 p-2">
                           <p className="mb-1 text-neutral-600 font-bold">REPUTATION</p>
@@ -1118,7 +1162,12 @@ export default function Home() {
                           </div>
                         </div>
                       </div>
-                      <div className="col-span-1 py-3 px-6 border-l border-r border-neutral-800 text-right text-neutral-400 font-mono">{agent.txCount.toLocaleString()}</div>
+                      <div className="col-span-1 py-3 px-6 border-l border-r border-neutral-800 text-right">
+                        <p className="text-neutral-400 font-mono">{agent.txCount.toLocaleString()}</p>
+                        <p className="mt-1 text-[9px] text-neutral-600 font-mono normal-case tracking-normal">
+                          {formatTxMetricSource(agent.txMetricSource, agent.usageAuthorizedCount7d)}
+                        </p>
+                      </div>
                       <div className={`col-span-2 py-3 px-6 border-r border-neutral-800 text-right font-mono ${reputationColor(agent.reputationScore)}`}>
                         {formatReputation(agent.reputationScore)}
                       </div>
