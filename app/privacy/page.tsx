@@ -25,17 +25,17 @@ export default async function PrivacyPage() {
               GHOST_PROTOCOL
             </span>
           </Link>
-          <nav className="inline-flex items-center gap-6 uppercase">
+          <nav className="inline-flex items-center gap-6">
             <Link href="/" className="text-neutral-500 transition-colors hover:text-red-500">
-              home
+              /home
             </Link>
             <Link href="/rank" className="text-neutral-500 transition-colors hover:text-red-500">
-              rank
+              /rank
             </Link>
             <Link href="/terms" className="text-neutral-500 transition-colors hover:text-red-500">
-              terms
+              /terms
             </Link>
-            <span className="text-neutral-200">privacy</span>
+            <span className="text-neutral-200">/privacy</span>
           </nav>
         </div>
       </header>
