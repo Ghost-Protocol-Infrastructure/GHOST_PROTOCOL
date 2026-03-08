@@ -1,0 +1,14 @@
+{
+  "name": "@ghostprotocol/openclaw-ghost-pay",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "requirements": "node ./bin/get-payment-requirements.mjs",
+    "pay": "node ./bin/pay-gate-x402.mjs"
+  },
+  "dependencies": {
+    "viem": "^2.21.0"
+  }
+}
