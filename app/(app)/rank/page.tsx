@@ -130,16 +130,16 @@ const normalizeTxMetricSource = (raw: string | null | undefined): TxMetricSource
 const formatTxMetricSource = (source: TxMetricSource, usageAuthorizedCount7d: number): string => {
   switch (source) {
     case "AGENT_ONCHAIN":
-      return "on-chain agent";
+      return "source: agent txs";
     case "USAGE_ACTIVITY_7D":
       return `usage 7d (${usageAuthorizedCount7d.toLocaleString()})`;
     case "OWNER_FALLBACK":
-      return "owner fallback";
+      return "source: owner txs";
     case "CREATOR_FALLBACK":
-      return "creator fallback";
+      return "source: creator txs";
     case "UNRESOLVED":
     default:
-      return "source unresolved";
+      return "source: unresolved";
   }
 };
 const formatBlockHeight = (rawBlock: string | null): string => {
@@ -750,7 +750,7 @@ export default function Home() {
                 {searchQuery ? " (filtered)" : ""}
               </div>
               <div className="text-[9px] tracking-[0.12em] text-neutral-700">
-                TXS source: on-chain when available, otherwise 7d usage / owner fallback.
+                TXS source: onchain when available, otherwise 7d usage / owner fallback.
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 md:justify-end md:gap-3">
