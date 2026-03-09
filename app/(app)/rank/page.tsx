@@ -14,6 +14,7 @@ type LeadTier = "WHALE" | "ACTIVE" | "NEW" | "GHOST";
 type SyncHealth = "live" | "stale" | "offline" | "unknown";
 type GatewayReadinessStatus = "UNCONFIGURED" | "CONFIGURED" | "LIVE" | "DEGRADED";
 type TxMetricSource = "AGENT_ONCHAIN" | "USAGE_ACTIVITY_7D" | "OWNER_FALLBACK" | "CREATOR_FALLBACK" | "UNRESOLVED";
+type CanonicalAddressSource = "OLAS_AGENT" | "ERC8004_RESOLVED" | "MANUAL_OVERRIDE" | "AGENT_ADDRESS" | "NONE";
 const STALE_SYNC_THRESHOLD_SECONDS = 3 * 60 * 60;
 const LEADERBOARD_REFRESH_INTERVAL_MS = 15_000;
 
@@ -29,7 +30,12 @@ type ApiAgent = {
   tier?: string;
   txCount?: number;
   txMetricSource?: TxMetricSource | string | null;
+  metricSource?: TxMetricSource | string | null;
+  onchainTxCountAgent?: number | null;
+  onchainTxCountOwner?: number;
   usageAuthorizedCount7d?: number;
+  canonicalOnchainAddress?: string | null;
+  canonicalAddressSource?: CanonicalAddressSource | string | null;
   reputation?: number;
   rankScore?: number;
   yield?: number;
@@ -49,8 +55,12 @@ type ProcessedLead = {
   owner: string;
   tier: LeadTier;
   txCount: number;
+  onchainTxCountAgent: number | null;
+  onchainTxCountOwner: number;
   txMetricSource: TxMetricSource;
   usageAuthorizedCount7d: number;
+  canonicalOnchainAddress: string | null;
+  canonicalAddressSource: CanonicalAddressSource;
   velocity: number;
   isClaimed: boolean;
   reputationScore: number;
@@ -127,16 +137,28 @@ const normalizeTxMetricSource = (raw: string | null | undefined): TxMetricSource
   if (raw === "CREATOR_FALLBACK") return raw;
   return "UNRESOLVED";
 };
-const formatTxMetricSource = (source: TxMetricSource, usageAuthorizedCount7d: number): string => {
+const normalizeCanonicalAddressSource = (raw: string | null | undefined): CanonicalAddressSource => {
+  if (raw === "OLAS_AGENT") return raw;
+  if (raw === "ERC8004_RESOLVED") return raw;
+  if (raw === "MANUAL_OVERRIDE") return raw;
+  if (raw === "AGENT_ADDRESS") return raw;
+  return "NONE";
+};
+const formatTxMetricSource = (
+  source: TxMetricSource,
+  usageAuthorizedCount7d: number,
+  onchainTxCountOwner: number,
+  txCount: number,
+): string => {
   switch (source) {
     case "AGENT_ONCHAIN":
       return "source: agent txs";
     case "USAGE_ACTIVITY_7D":
       return `usage 7d (${usageAuthorizedCount7d.toLocaleString()})`;
     case "OWNER_FALLBACK":
-      return "source: owner txs";
+      return `owner fallback (${onchainTxCountOwner.toLocaleString()})`;
     case "CREATOR_FALLBACK":
-      return "source: creator txs";
+      return `creator fallback (${txCount.toLocaleString()})`;
     case "UNRESOLVED":
     default:
       return "source: unresolved";
@@ -367,12 +389,37 @@ const buildLeadsFromApi = (agents: ApiAgent[]): ProcessedLead[] => {
         ? clamp(agent.rankScore, 0, 100)
         : roundToTwo(rawReputation * 0.7 + velocity * 0.3);
     const txMetricSource = normalizeTxMetricSource(
-      typeof agent.txMetricSource === "string" ? agent.txMetricSource : null,
+      typeof agent.metricSource === "string"
+        ? agent.metricSource
+        : typeof agent.txMetricSource === "string"
+          ? agent.txMetricSource
+          : null,
     );
     const usageAuthorizedCount7d =
       typeof agent.usageAuthorizedCount7d === "number" && Number.isFinite(agent.usageAuthorizedCount7d)
         ? Math.max(0, Math.trunc(agent.usageAuthorizedCount7d))
         : 0;
+    const onchainTxCountAgent =
+      typeof agent.onchainTxCountAgent === "number" && Number.isFinite(agent.onchainTxCountAgent)
+        ? Math.max(0, Math.trunc(agent.onchainTxCountAgent))
+        : txMetricSource === "AGENT_ONCHAIN"
+          ? txCount
+          : null;
+    const onchainTxCountOwner =
+      typeof agent.onchainTxCountOwner === "number" && Number.isFinite(agent.onchainTxCountOwner)
+        ? Math.max(0, Math.trunc(agent.onchainTxCountOwner))
+        : txMetricSource === "OWNER_FALLBACK"
+          ? txCount
+          : 0;
+    const canonicalOnchainAddress =
+      typeof agent.canonicalOnchainAddress === "string" && isHexAddress(agent.canonicalOnchainAddress)
+        ? agent.canonicalOnchainAddress.toLowerCase()
+        : isHexAddress(agent.address)
+          ? agent.address.toLowerCase()
+          : null;
+    const canonicalAddressSource = normalizeCanonicalAddressSource(
+      typeof agent.canonicalAddressSource === "string" ? agent.canonicalAddressSource : null,
+    );
     const agentId = deriveAgentId(agent);
     const ownerSource = agent.owner ?? agent.creator;
 
@@ -387,8 +434,12 @@ const buildLeadsFromApi = (agents: ApiAgent[]): ProcessedLead[] => {
       owner: isHexAddress(ownerSource) ? ownerSource.toLowerCase() : ownerSource,
       tier: parseTier(agent.tier, txCount, isClaimed),
       txCount,
+      onchainTxCountAgent,
+      onchainTxCountOwner,
       txMetricSource,
       usageAuthorizedCount7d,
+      canonicalOnchainAddress,
+      canonicalAddressSource,
       velocity,
       isClaimed,
       reputationScore: rawReputation,
@@ -750,7 +801,7 @@ export default function Home() {
                 {searchQuery ? " (filtered)" : ""}
               </div>
               <div className="text-[9px] tracking-[0.12em] text-neutral-700">
-                TXS source: onchain when available, otherwise 7d usage / owner fallback.
+                TXS column shows canonical agent on-chain txs only. Fallback metrics are labeled per row.
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 md:justify-end md:gap-3">
@@ -975,9 +1026,16 @@ export default function Home() {
                       <div className="grid grid-cols-2 gap-2 text-[10px] uppercase tracking-[0.14em]">
                         <div className="border border-neutral-800 bg-neutral-950 p-2">
                           <p className="mb-1 text-neutral-600 font-bold">TXS</p>
-                          <p className="text-right text-neutral-400 font-mono">{agent.txCount.toLocaleString()}</p>
+                          <p className="text-right text-neutral-400 font-mono">
+                            {agent.onchainTxCountAgent === null ? "—" : agent.onchainTxCountAgent.toLocaleString()}
+                          </p>
                           <p className="mt-1 text-right text-[9px] text-neutral-600 font-mono normal-case tracking-normal">
-                            {formatTxMetricSource(agent.txMetricSource, agent.usageAuthorizedCount7d)}
+                            {formatTxMetricSource(
+                              agent.txMetricSource,
+                              agent.usageAuthorizedCount7d,
+                              agent.onchainTxCountOwner,
+                              agent.txCount,
+                            )}
                           </p>
                         </div>
                         <div className="border border-neutral-800 bg-neutral-950 p-2">
@@ -1163,9 +1221,16 @@ export default function Home() {
                         </div>
                       </div>
                       <div className="col-span-1 py-3 px-6 border-l border-r border-neutral-800 text-right">
-                        <p className="text-neutral-400 font-mono">{agent.txCount.toLocaleString()}</p>
+                        <p className="text-neutral-400 font-mono">
+                          {agent.onchainTxCountAgent === null ? "—" : agent.onchainTxCountAgent.toLocaleString()}
+                        </p>
                         <p className="mt-1 text-[9px] text-neutral-600 font-mono normal-case tracking-normal">
-                          {formatTxMetricSource(agent.txMetricSource, agent.usageAuthorizedCount7d)}
+                          {formatTxMetricSource(
+                            agent.txMetricSource,
+                            agent.usageAuthorizedCount7d,
+                            agent.onchainTxCountOwner,
+                            agent.txCount,
+                          )}
                         </p>
                       </div>
                       <div className={`col-span-2 py-3 px-6 border-r border-neutral-800 text-right font-mono ${reputationColor(agent.reputationScore)}`}>

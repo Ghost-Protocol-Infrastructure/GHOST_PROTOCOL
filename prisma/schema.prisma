@@ -21,6 +21,29 @@ enum SnapshotStatus {
   FAILED
 }
 
+enum CanonicalAddressSource {
+  OLAS_AGENT
+  ERC8004_RESOLVED
+  MANUAL_OVERRIDE
+  AGENT_ADDRESS
+  NONE
+}
+
+enum TxMetricSource {
+  AGENT_ONCHAIN
+  USAGE_ACTIVITY_7D
+  OWNER_FALLBACK
+  CREATOR_FALLBACK
+  UNRESOLVED
+}
+
+enum AgentTxSourceKind {
+  AGENT
+  OWNER
+  CREATOR
+  UNRESOLVED
+}
+
 enum CreditLedgerDirection {
   CREDIT
   DEBIT
@@ -418,7 +441,14 @@ model AgentScoreInput {
   website          String?
   status           String    @default("active")
   txSourceAddress  String?
+  txSourceKind     AgentTxSourceKind     @default(UNRESOLVED)
+  canonicalOnchainAddress String?
+  canonicalAddressSource  CanonicalAddressSource @default(NONE)
   txCount          Int       @default(0)
+  onchainTxCountAgent Int?
+  onchainTxCountOwner Int @default(0)
+  usageAuthorizedCount7d Int @default(0)
+  metricSource TxMetricSource @default(UNRESOLVED)
   yield            Float     @default(0)
   uptime           Float     @default(0)
   isClaimed        Boolean   @default(false)
@@ -431,6 +461,8 @@ model AgentScoreInput {
 
   @@index([txSourceAddress])
   @@index([txCountUpdatedAt])
+  @@index([canonicalOnchainAddress])
+  @@index([metricSource])
 }
 
 model LeaderboardSnapshot {
@@ -471,6 +503,12 @@ model LeaderboardSnapshotRow {
   rank           Int
   tier           AgentTier
   txCount        Int
+  onchainTxCountAgent Int?
+  onchainTxCountOwner Int @default(0)
+  usageAuthorizedCount7d Int @default(0)
+  metricSource TxMetricSource @default(UNRESOLVED)
+  canonicalOnchainAddress String?
+  canonicalAddressSource CanonicalAddressSource @default(NONE)
   reputation     Float
   rankScore      Float
   yield          Float
@@ -490,6 +528,7 @@ model LeaderboardSnapshotRow {
   @@index([snapshotId, rankScore])
   @@index([snapshotId, owner])
   @@index([snapshotId, txCount])
+  @@index([snapshotId, metricSource])
 }
 
 model ScorePipelineState {

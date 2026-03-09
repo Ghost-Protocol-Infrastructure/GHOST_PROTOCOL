@@ -1,6 +1,13 @@
 import { createPublicClient, fallback, getAddress, http, type Address } from "viem";
 import { base } from "viem/chains";
-import { Prisma, type AgentTier, SnapshotStatus } from "@prisma/client";
+import {
+  Prisma,
+  type AgentTier,
+  type AgentTxSourceKind,
+  type CanonicalAddressSource,
+  SnapshotStatus,
+  type TxMetricSource,
+} from "@prisma/client";
 import { prisma } from "../lib/db";
 
 type AgentIndexMode = "erc8004" | "olas";
@@ -38,7 +45,14 @@ type ScoreInputRow = {
   website: string | null;
   status: string;
   txSourceAddress: string | null;
+  txSourceKind: AgentTxSourceKind;
+  canonicalOnchainAddress: string | null;
+  canonicalAddressSource: CanonicalAddressSource;
   txCount: number;
+  onchainTxCountAgent: number | null;
+  onchainTxCountOwner: number;
+  usageAuthorizedCount7d: number;
+  metricSource: TxMetricSource;
   yield: number;
   uptime: number;
   isClaimed: boolean;
@@ -58,7 +72,14 @@ type PendingInputUpsert = {
   website: string | null;
   status: string;
   txSourceAddress: string | null;
+  txSourceKind: AgentTxSourceKind;
+  canonicalOnchainAddress: string | null;
+  canonicalAddressSource: CanonicalAddressSource;
   txCount: number;
+  onchainTxCountAgent: number | null;
+  onchainTxCountOwner: number;
+  usageAuthorizedCount7d: number;
+  metricSource: TxMetricSource;
   yieldValue: number;
   uptime: number;
   isClaimed: boolean;
@@ -114,6 +135,12 @@ type SnapshotScoreRow = {
   rank: number;
   tier: AgentTier;
   txCount: number;
+  onchainTxCountAgent: number | null;
+  onchainTxCountOwner: number;
+  usageAuthorizedCount7d: number;
+  metricSource: TxMetricSource;
+  canonicalOnchainAddress: string | null;
+  canonicalAddressSource: CanonicalAddressSource;
   reputation: number;
   rankScore: number;
   yieldValue: number;
@@ -298,6 +325,29 @@ const resolveTxSourceAddress = (
     }
   }
   return null;
+};
+
+const resolveCanonicalOnchainAddress = (
+  row: Pick<AgentSourceRow, "address">,
+): { canonicalOnchainAddress: string | null; canonicalAddressSource: CanonicalAddressSource } => {
+  const normalized = normalizeSourceAddress(row.address ?? "");
+  if (!normalized) {
+    return {
+      canonicalOnchainAddress: null,
+      canonicalAddressSource: "NONE",
+    };
+  }
+  return {
+    canonicalOnchainAddress: normalized.sourceAddressLower,
+    canonicalAddressSource: "AGENT_ADDRESS",
+  };
+};
+
+const toAgentTxSourceKind = (sourceKind: ResolvedTxSourceKind | null): AgentTxSourceKind => {
+  if (sourceKind === "agent") return "AGENT";
+  if (sourceKind === "owner") return "OWNER";
+  if (sourceKind === "creator") return "CREATOR";
+  return "UNRESOLVED";
 };
 
 const statusIndicatesClaimed = (status: string): boolean => {
@@ -586,6 +636,9 @@ const hasSourceDelta = (
   row: AgentSourceRow,
   existing: ScoreInputRow | undefined,
   txSourceAddress: string | null,
+  txSourceKind: AgentTxSourceKind,
+  canonicalOnchainAddress: string | null,
+  canonicalAddressSource: CanonicalAddressSource,
   isClaimed: boolean,
 ): boolean => {
   if (!existing) return true;
@@ -604,6 +657,9 @@ const hasSourceDelta = (
     existing.website !== row.website ||
     existing.status !== row.status ||
     existing.txSourceAddress !== txSourceAddress ||
+    existing.txSourceKind !== txSourceKind ||
+    existing.canonicalOnchainAddress !== canonicalOnchainAddress ||
+    existing.canonicalAddressSource !== canonicalAddressSource ||
     existing.yield !== nextYield ||
     existing.uptime !== nextUptime ||
     existing.isClaimed !== isClaimed
@@ -643,7 +699,14 @@ const upsertScoreInputs = async (rows: PendingInputUpsert[]): Promise<void> => {
                 website: row.website,
                 status: row.status,
                 txSourceAddress: row.txSourceAddress,
+                txSourceKind: row.txSourceKind,
+                canonicalOnchainAddress: row.canonicalOnchainAddress,
+                canonicalAddressSource: row.canonicalAddressSource,
                 txCount: row.txCount,
+                onchainTxCountAgent: row.onchainTxCountAgent,
+                onchainTxCountOwner: row.onchainTxCountOwner,
+                usageAuthorizedCount7d: row.usageAuthorizedCount7d,
+                metricSource: row.metricSource,
                 yield: row.yieldValue,
                 uptime: row.uptime,
                 isClaimed: row.isClaimed,
@@ -662,7 +725,14 @@ const upsertScoreInputs = async (rows: PendingInputUpsert[]): Promise<void> => {
                 website: row.website,
                 status: row.status,
                 txSourceAddress: row.txSourceAddress,
+                txSourceKind: row.txSourceKind,
+                canonicalOnchainAddress: row.canonicalOnchainAddress,
+                canonicalAddressSource: row.canonicalAddressSource,
                 txCount: row.txCount,
+                onchainTxCountAgent: row.onchainTxCountAgent,
+                onchainTxCountOwner: row.onchainTxCountOwner,
+                usageAuthorizedCount7d: row.usageAuthorizedCount7d,
+                metricSource: row.metricSource,
                 yield: row.yieldValue,
                 uptime: row.uptime,
                 isClaimed: row.isClaimed,
@@ -847,18 +917,50 @@ const buildSnapshotRows = (
     };
     const onchainTxCount = Math.max(0, input.txCount);
     const usageAuthorizedCount = Math.max(0, gateSignal.authorizedCount);
-    const normalizedAgentAddress = parseAddress(input.agentAddress)?.toLowerCase() ?? null;
+    const normalizedAgentAddress = input.canonicalOnchainAddress ?? parseAddress(input.agentAddress)?.toLowerCase() ?? null;
     const txSourceAddressLower = input.txSourceAddress?.toLowerCase() ?? null;
     const isAgentOnchainSource =
       normalizedAgentAddress !== null && txSourceAddressLower !== null && txSourceAddressLower === normalizedAgentAddress;
-    const useSyntheticUsage =
-      SCORE_V2_SYNTHETIC_USAGE_PRIMARY && !isAgentOnchainSource && usageAuthorizedCount > 0;
+    const onchainTxCountAgent = isAgentOnchainSource ? onchainTxCount : null;
+    const onchainTxCountOwner = input.txSourceKind === "OWNER" ? onchainTxCount : Math.max(0, input.onchainTxCountOwner ?? 0);
+    const metricSource: TxMetricSource =
+      onchainTxCountAgent !== null
+        ? "AGENT_ONCHAIN"
+        : SCORE_V2_SYNTHETIC_USAGE_PRIMARY && usageAuthorizedCount > 0
+          ? "USAGE_ACTIVITY_7D"
+          : input.txSourceKind === "OWNER"
+            ? "OWNER_FALLBACK"
+            : input.txSourceKind === "CREATOR"
+              ? "CREATOR_FALLBACK"
+              : "UNRESOLVED";
+    const effectiveTxCount =
+      metricSource === "AGENT_ONCHAIN"
+        ? onchainTxCount
+        : metricSource === "USAGE_ACTIVITY_7D"
+          ? usageAuthorizedCount
+          : onchainTxCount;
+    const txMetricPath =
+      metricSource === "AGENT_ONCHAIN"
+        ? "agent_onchain"
+        : metricSource === "USAGE_ACTIVITY_7D"
+          ? "synthetic_usage"
+          : "fallback_tx";
 
     return {
       input,
       gateSignal,
-      effectiveTxCount: useSyntheticUsage ? usageAuthorizedCount : onchainTxCount,
-      txMetricPath: isAgentOnchainSource ? "agent_onchain" : useSyntheticUsage ? "synthetic_usage" : "fallback_tx",
+      metricSource,
+      onchainTxCountAgent,
+      onchainTxCountOwner,
+      usageAuthorizedCount7d: usageAuthorizedCount,
+      effectiveTxCount: Math.max(0, effectiveTxCount),
+      canonicalOnchainAddress: normalizedAgentAddress,
+      canonicalAddressSource: normalizedAgentAddress
+        ? input.canonicalAddressSource === "NONE"
+          ? "AGENT_ADDRESS"
+          : input.canonicalAddressSource
+        : "NONE",
+      txMetricPath,
     } as const;
   });
   const txCounts = preparedInputs.map((item) => item.effectiveTxCount);
@@ -917,6 +1019,12 @@ const buildSnapshotRows = (
     return {
       input,
       txCount,
+      onchainTxCountAgent: prepared.onchainTxCountAgent,
+      onchainTxCountOwner: prepared.onchainTxCountOwner,
+      usageAuthorizedCount7d: prepared.usageAuthorizedCount7d,
+      metricSource: prepared.metricSource,
+      canonicalOnchainAddress: prepared.canonicalOnchainAddress,
+      canonicalAddressSource: prepared.canonicalAddressSource,
       reputation,
       rankScore,
       tier,
@@ -951,6 +1059,12 @@ const buildSnapshotRows = (
     rank: index + 1,
     tier: row.tier,
     txCount: row.txCount,
+    onchainTxCountAgent: row.onchainTxCountAgent,
+    onchainTxCountOwner: row.onchainTxCountOwner,
+    usageAuthorizedCount7d: row.usageAuthorizedCount7d,
+    metricSource: row.metricSource,
+    canonicalOnchainAddress: row.canonicalOnchainAddress,
+    canonicalAddressSource: row.canonicalAddressSource,
     reputation: row.reputation,
     rankScore: row.rankScore,
     yieldValue: row.yieldValue,
@@ -1016,6 +1130,12 @@ const writeSnapshot = async (
               rank: row.rank,
               tier: row.tier,
               txCount: row.txCount,
+              onchainTxCountAgent: row.onchainTxCountAgent,
+              onchainTxCountOwner: row.onchainTxCountOwner,
+              usageAuthorizedCount7d: row.usageAuthorizedCount7d,
+              metricSource: row.metricSource,
+              canonicalOnchainAddress: row.canonicalOnchainAddress,
+              canonicalAddressSource: row.canonicalAddressSource,
               reputation: row.reputation,
               rankScore: row.rankScore,
               yield: row.yieldValue,
@@ -1114,6 +1234,40 @@ const applySnapshotScoresToAgentTable = async (rows: SnapshotScoreRow[]): Promis
   }
 };
 
+const persistDerivedScoreInputMetrics = async (rows: SnapshotScoreRow[]): Promise<void> => {
+  if (rows.length === 0) return;
+
+  let processed = 0;
+  const now = new Date();
+  for (const chunk of chunkArray(rows, SCORE_V2_AGENT_WRITE_BATCH_SIZE)) {
+    await withPrismaRetry(
+      `score-v2 persist derived score-input metrics ${processed + 1}-${Math.min(processed + chunk.length, rows.length)}`,
+      () =>
+        prisma.$transaction(
+          chunk.map((row) =>
+            prisma.agentScoreInput.update({
+              where: { agentAddress: row.agentAddress },
+              data: {
+                onchainTxCountAgent: row.onchainTxCountAgent,
+                onchainTxCountOwner: row.onchainTxCountOwner,
+                usageAuthorizedCount7d: row.usageAuthorizedCount7d,
+                metricSource: row.metricSource,
+                canonicalOnchainAddress: row.canonicalOnchainAddress,
+                canonicalAddressSource: row.canonicalAddressSource,
+                lastIngestedAt: now,
+              },
+            }),
+          ),
+        ),
+    );
+
+    processed += chunk.length;
+    if (processed % SCORE_V2_HEARTBEAT_INTERVAL === 0 || processed === rows.length) {
+      console.log(`Heartbeat: score-v2 persisted derived metrics ${processed}/${rows.length}`);
+    }
+  }
+};
+
 const ingestScoreInputs = async (): Promise<{
   totalAgents: number;
   changedInputs: number;
@@ -1168,7 +1322,14 @@ const ingestScoreInputs = async (): Promise<{
         website: true,
         status: true,
         txSourceAddress: true,
+        txSourceKind: true,
+        canonicalOnchainAddress: true,
+        canonicalAddressSource: true,
         txCount: true,
+        onchainTxCountAgent: true,
+        onchainTxCountOwner: true,
+        usageAuthorizedCount7d: true,
+        metricSource: true,
         yield: true,
         uptime: true,
         isClaimed: true,
@@ -1191,6 +1352,8 @@ const ingestScoreInputs = async (): Promise<{
   for (const agent of agents) {
     const resolvedSource = resolveTxSourceAddress(agent);
     const txSourceAddress = resolvedSource?.sourceAddressLower ?? null;
+    const txSourceKind = toAgentTxSourceKind(resolvedSource?.sourceKind ?? null);
+    const { canonicalOnchainAddress, canonicalAddressSource } = resolveCanonicalOnchainAddress(agent);
     if (resolvedSource) {
       sourceResolutionCounts[resolvedSource.sourceKind] += 1;
     } else {
@@ -1201,13 +1364,34 @@ const ingestScoreInputs = async (): Promise<{
     }
     const isClaimed = statusIndicatesClaimed(agent.status);
     const existing = existingByAddress.get(agent.address);
-    const hasDelta = hasSourceDelta(agent, existing, txSourceAddress, isClaimed);
+    const hasDelta = hasSourceDelta(
+      agent,
+      existing,
+      txSourceAddress,
+      txSourceKind,
+      canonicalOnchainAddress,
+      canonicalAddressSource,
+      isClaimed,
+    );
     if (!hasDelta) continue;
 
     const sourceChanged = existing?.txSourceAddress !== txSourceAddress;
+    const sourceKindChanged = existing?.txSourceKind !== txSourceKind;
     const seedTxCount = existing ? Math.max(0, existing.txCount) : 0;
     // Preserve prior txCount during source migration, but force stale refresh on changed source.
     const seedTxCountUpdatedAt = sourceChanged ? null : existing?.txCountUpdatedAt ?? null;
+    let seedOnchainTxCountAgent: number | null = existing?.onchainTxCountAgent ?? null;
+    if (!canonicalOnchainAddress) {
+      seedOnchainTxCountAgent = null;
+    } else if (txSourceAddress === canonicalOnchainAddress) {
+      seedOnchainTxCountAgent = seedTxCount;
+    }
+    let seedOnchainTxCountOwner = Math.max(0, existing?.onchainTxCountOwner ?? 0);
+    if (resolvedSource?.sourceKind === "owner") {
+      seedOnchainTxCountOwner = seedTxCount;
+    } else if (sourceChanged || sourceKindChanged) {
+      seedOnchainTxCountOwner = 0;
+    }
 
     pendingUpserts.push({
       agentAddress: agent.address,
@@ -1222,7 +1406,14 @@ const ingestScoreInputs = async (): Promise<{
       website: agent.website,
       status: agent.status,
       txSourceAddress,
+      txSourceKind,
+      canonicalOnchainAddress,
+      canonicalAddressSource,
       txCount: seedTxCount,
+      onchainTxCountAgent: seedOnchainTxCountAgent,
+      onchainTxCountOwner: seedOnchainTxCountOwner,
+      usageAuthorizedCount7d: Math.max(0, existing?.usageAuthorizedCount7d ?? 0),
+      metricSource: existing?.metricSource ?? "UNRESOLVED",
       yieldValue: Math.max(0, agent.yield ?? 0),
       uptime: clamp(agent.uptime ?? 0, 0, 100),
       isClaimed,
@@ -1298,7 +1489,14 @@ const runSnapshotRanking = async (): Promise<{
         website: true,
         status: true,
         txSourceAddress: true,
+        txSourceKind: true,
+        canonicalOnchainAddress: true,
+        canonicalAddressSource: true,
         txCount: true,
+        onchainTxCountAgent: true,
+        onchainTxCountOwner: true,
+        usageAuthorizedCount7d: true,
+        metricSource: true,
         yield: true,
         uptime: true,
         isClaimed: true,
@@ -1319,6 +1517,7 @@ const runSnapshotRanking = async (): Promise<{
       inputs,
       gateSybilSignals,
     );
+  await persistDerivedScoreInputMetrics(rows);
   const snapshotId = await writeSnapshot(rows, maxTxCount, maxClaimedYield);
 
   if (!SCORE_V2_SHADOW_ONLY) {

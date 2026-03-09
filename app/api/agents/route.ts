@@ -45,6 +45,7 @@ type TxMetricSource =
   | "OWNER_FALLBACK"
   | "CREATOR_FALLBACK"
   | "UNRESOLVED";
+type CanonicalAddressSource = "OLAS_AGENT" | "ERC8004_RESOLVED" | "MANUAL_OVERRIDE" | "AGENT_ADDRESS" | "NONE";
 
 type SyncMetadata = {
   syncHealth: SyncHealth;
@@ -182,6 +183,24 @@ const inferTxMetricSource = (input: {
   if (isHexAddress(input.owner)) return "OWNER_FALLBACK";
   if (isHexAddress(input.creator)) return "CREATOR_FALLBACK";
   return "UNRESOLVED";
+};
+
+const normalizeTxMetricSource = (raw: string | null | undefined): TxMetricSource | null => {
+  if (raw === "AGENT_ONCHAIN") return raw;
+  if (raw === "USAGE_ACTIVITY_7D") return raw;
+  if (raw === "OWNER_FALLBACK") return raw;
+  if (raw === "CREATOR_FALLBACK") return raw;
+  if (raw === "UNRESOLVED") return raw;
+  return null;
+};
+
+const normalizeCanonicalAddressSource = (raw: string | null | undefined): CanonicalAddressSource | null => {
+  if (raw === "OLAS_AGENT") return raw;
+  if (raw === "ERC8004_RESOLVED") return raw;
+  if (raw === "MANUAL_OVERRIDE") return raw;
+  if (raw === "AGENT_ADDRESS") return raw;
+  if (raw === "NONE") return raw;
+  return null;
 };
 
 const resolveActivatedAgentsCountUncached = async (): Promise<number> => {
@@ -442,7 +461,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       const syncMetadata = await resolveSyncMetadata(indexerState?.lastSyncedBlock);
       const activatedAgents = await activatedAgentsPromise;
       const gatewayReadinessByAgentId = await resolveGatewayReadinessByAgentIds(rows.map((row) => row.agentId));
-      const usageAuthorizedCountByAgentId = await resolveUsageAuthorizedCountByAgentIds(rows.map((row) => row.agentId));
 
       return NextResponse.json(
         {
@@ -459,7 +477,36 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           lastSyncedAt: syncMetadata.lastSyncedAt,
           agents: rows.map((row) => {
             const normalizedAgentId = row.agentId.toLowerCase();
-            const usageAuthorizedCount7d = usageAuthorizedCountByAgentId.get(normalizedAgentId) ?? 0;
+            const usageAuthorizedCount7d = Math.max(0, Math.trunc(row.usageAuthorizedCount7d ?? 0));
+            const txMetricSource =
+              normalizeTxMetricSource(row.metricSource) ??
+              inferTxMetricSource({
+                address: row.agentAddress,
+                owner: row.owner,
+                creator: row.creator,
+                txCount: row.txCount,
+                usageAuthorizedCount7d,
+              });
+            const canonicalOnchainAddress =
+              row.canonicalOnchainAddress?.toLowerCase() ??
+              (txMetricSource === "AGENT_ONCHAIN" && isHexAddress(row.agentAddress)
+                ? row.agentAddress.toLowerCase()
+                : null);
+            const canonicalAddressSource =
+              normalizeCanonicalAddressSource(row.canonicalAddressSource) ??
+              (canonicalOnchainAddress ? "AGENT_ADDRESS" : "NONE");
+            const onchainTxCountAgent =
+              typeof row.onchainTxCountAgent === "number" && Number.isFinite(row.onchainTxCountAgent)
+                ? Math.max(0, Math.trunc(row.onchainTxCountAgent))
+                : txMetricSource === "AGENT_ONCHAIN"
+                  ? Math.max(0, Math.trunc(row.txCount))
+                  : null;
+            const onchainTxCountOwner =
+              typeof row.onchainTxCountOwner === "number" && Number.isFinite(row.onchainTxCountOwner)
+                ? Math.max(0, Math.trunc(row.onchainTxCountOwner))
+                : txMetricSource === "OWNER_FALLBACK"
+                  ? Math.max(0, Math.trunc(row.txCount))
+                  : 0;
             return {
               rank: row.rank,
               address: row.agentAddress,
@@ -475,14 +522,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
               status: row.status,
               tier: row.tier,
               txCount: row.txCount,
-              txMetricSource: inferTxMetricSource({
-                address: row.agentAddress,
-                owner: row.owner,
-                creator: row.creator,
-                txCount: row.txCount,
-                usageAuthorizedCount7d,
-              }),
+              txMetricSource,
+              metricSource: txMetricSource,
+              onchainTxCountAgent,
+              onchainTxCountOwner,
               usageAuthorizedCount7d,
+              canonicalOnchainAddress,
+              canonicalAddressSource,
               reputation: row.reputation,
               rankScore: row.rankScore,
               yield: row.yield,
@@ -583,6 +629,23 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       .map((agent) => agent.agentId ?? "")
       .filter((value): value is string => value.trim().length > 0),
   );
+  const scoreInputs = await prisma.agentScoreInput.findMany({
+    where: {
+      agentAddress: {
+        in: agents.map((agent) => agent.address),
+      },
+    },
+    select: {
+      agentAddress: true,
+      onchainTxCountAgent: true,
+      onchainTxCountOwner: true,
+      usageAuthorizedCount7d: true,
+      metricSource: true,
+      canonicalOnchainAddress: true,
+      canonicalAddressSource: true,
+    },
+  });
+  const scoreInputByAddress = new Map(scoreInputs.map((row) => [row.agentAddress.toLowerCase(), row]));
   const usageAuthorizedCountByAgentId = await resolveUsageAuthorizedCountByAgentIds(
     agents
       .map((agent) => agent.agentId ?? "")
@@ -606,7 +669,41 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         const ownerAddress = agent.owner ?? agent.creator;
         const agentId = agent.agentId ?? agent.address;
         const normalizedAgentId = agentId.toLowerCase();
-        const usageAuthorizedCount7d = usageAuthorizedCountByAgentId.get(normalizedAgentId) ?? 0;
+        const scoreInput = scoreInputByAddress.get(agent.address.toLowerCase());
+        const fallbackUsageCount7d = usageAuthorizedCountByAgentId.get(normalizedAgentId) ?? 0;
+        const usageAuthorizedCount7d =
+          typeof scoreInput?.usageAuthorizedCount7d === "number" && Number.isFinite(scoreInput.usageAuthorizedCount7d)
+            ? Math.max(0, Math.trunc(scoreInput.usageAuthorizedCount7d))
+            : fallbackUsageCount7d;
+        const txMetricSource =
+          normalizeTxMetricSource(scoreInput?.metricSource) ??
+          inferTxMetricSource({
+            address: agent.address,
+            owner: ownerAddress,
+            creator: agent.creator,
+            txCount: agent.txCount,
+            usageAuthorizedCount7d,
+          });
+        const onchainTxCountAgent =
+          typeof scoreInput?.onchainTxCountAgent === "number" && Number.isFinite(scoreInput.onchainTxCountAgent)
+            ? Math.max(0, Math.trunc(scoreInput.onchainTxCountAgent))
+            : isHexAddress(agent.address)
+              ? Math.max(0, Math.trunc(agent.txCount))
+              : null;
+        const onchainTxCountOwner =
+          typeof scoreInput?.onchainTxCountOwner === "number" && Number.isFinite(scoreInput.onchainTxCountOwner)
+            ? Math.max(0, Math.trunc(scoreInput.onchainTxCountOwner))
+            : txMetricSource === "OWNER_FALLBACK"
+              ? Math.max(0, Math.trunc(agent.txCount))
+              : 0;
+        const canonicalOnchainAddress = scoreInput?.canonicalOnchainAddress
+          ? scoreInput.canonicalOnchainAddress.toLowerCase()
+          : isHexAddress(agent.address)
+            ? agent.address.toLowerCase()
+            : null;
+        const canonicalAddressSource =
+          normalizeCanonicalAddressSource(scoreInput?.canonicalAddressSource) ??
+          (canonicalOnchainAddress ? "AGENT_ADDRESS" : "NONE");
         return {
           rank: rankByAddress.get(agent.address.toLowerCase()) ?? skip + index + 1,
           address: agent.address,
@@ -622,14 +719,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           status: agent.status,
           tier: agent.tier,
           txCount: agent.txCount,
-          txMetricSource: inferTxMetricSource({
-            address: agent.address,
-            owner: ownerAddress,
-            creator: agent.creator,
-            txCount: agent.txCount,
-            usageAuthorizedCount7d,
-          }),
+          txMetricSource,
+          metricSource: txMetricSource,
+          onchainTxCountAgent,
+          onchainTxCountOwner,
           usageAuthorizedCount7d,
+          canonicalOnchainAddress,
+          canonicalAddressSource,
           reputation: agent.reputation,
           rankScore: agent.rankScore,
           yield: agent.yield,
