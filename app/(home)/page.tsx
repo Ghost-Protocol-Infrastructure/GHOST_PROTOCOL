@@ -6,31 +6,7 @@ import { ChevronRight, Activity, Lock, Swords } from 'lucide-react';
 import LatencyIndicator from '@/components/LatencyIndicator';
 import GhostLogo from '@/components/GhostLogo';
 
-const isHexAddress = (value: string): boolean => /^0x[a-fA-F0-9]{40}$/.test(value);
-const truncateAddress = (value: string): string => `${value.slice(0, 6)}...${value.slice(-4)}`;
-const CREDIT_PRICE_WEI_FALLBACK = "10000000000000";
-
-const formatWeiToEth = (rawWei: string): string => {
-  try {
-    const wei = BigInt(rawWei);
-    const weiPerEth = 1_000_000_000_000_000_000n;
-    const whole = wei / weiPerEth;
-    const fractionRaw = (wei % weiPerEth).toString().padStart(18, "0");
-    const fraction = fractionRaw.replace(/0+$/, "");
-    return fraction.length > 0 ? `${whole.toString()}.${fraction}` : whole.toString();
-  } catch {
-    return "0.00001";
-  }
-};
-
 const HomePage = () => {
-  const ghostVaultAddress = process.env.NEXT_PUBLIC_GHOST_VAULT_ADDRESS?.trim() ?? '';
-  const creditPriceWei = process.env.NEXT_PUBLIC_GHOST_CREDIT_PRICE_WEI?.trim() || CREDIT_PRICE_WEI_FALLBACK;
-  const creditPriceEth = formatWeiToEth(creditPriceWei);
-  const hasGhostVaultAddress = isHexAddress(ghostVaultAddress);
-  const vaultDisplay = hasGhostVaultAddress ? truncateAddress(ghostVaultAddress) : 'UNCONFIGURED';
-  const vaultHref = hasGhostVaultAddress ? `https://basescan.org/address/${ghostVaultAddress}` : null;
-  const [copiedVault, setCopiedVault] = React.useState(false);
   const machineReadableSchemaJson = React.useMemo(
     () =>
       JSON.stringify({
@@ -40,12 +16,7 @@ const HomePage = () => {
         applicationCategory: "DeveloperApplication",
         operatingSystem: "Any",
         url: "https://ghostprotocol.cc",
-        offers: {
-          "@type": "Offer",
-          priceCurrency: "ETH",
-          price: creditPriceEth,
-          description: "Ghost Credit unit price on Base. Service request cost may vary by service configuration.",
-        },
+        description: "Secure API routing and monetization infrastructure for agentic services.",
         hasPart: [
           "https://ghostprotocol.cc/openapi.json",
           "https://ghostprotocol.cc/llms.txt",
@@ -55,19 +26,8 @@ const HomePage = () => {
           "https://ghostprotocol.cc/api/pricing",
         ],
       }),
-    [creditPriceEth],
+    [],
   );
-
-  const handleCopyVault = async () => {
-    if (!hasGhostVaultAddress) return;
-    try {
-      await navigator.clipboard.writeText(ghostVaultAddress);
-      setCopiedVault(true);
-      window.setTimeout(() => setCopiedVault(false), 1200);
-    } catch {
-      setCopiedVault(false);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-400 font-mono selection:bg-red-900 selection:text-white overflow-x-hidden">
@@ -114,8 +74,8 @@ const HomePage = () => {
 
           <p className="max-w-2xl text-lg md:text-xl text-neutral-500 leading-relaxed mb-12 border-l-2 border-red-600 pl-6">
             The era of toy agents and empty GitHub repos is over.
-            Ghost Protocol provides the verifiable reputation and payment infrastructure for the machine economy.
-            Discover high-signal agents. Monetize autonomous APIs. Ride the rails of agentic autonomy.
+            Ghost Protocol provides verifiable service reputation and secure API infrastructure for modern automation teams.
+            Discover high-signal services. Monetize production APIs. Operate with confidence at scale.
           </p>
 
           <div className="flex flex-col md:flex-row gap-4">
@@ -139,7 +99,7 @@ const HomePage = () => {
 
         <div className="absolute bottom-6 left-0 w-full border-t border-b border-neutral-900 py-2 overflow-hidden bg-neutral-950">
           <div className="whitespace-nowrap text-[10px] text-neutral-700 font-bold tracking-widest animate-marquee inline-block">
-            {"// INDEXING BASE AGENTS // REPUTATION LAYER ACTIVE // SETTLEMENT RAIL ONLINE // BLOCK_TIME: 10MS // TX_VOLUME: 4.2M ETH // AGENT_ID_2049 VERIFIED // INDEXING MEGAETH AGENTS SOON // REPUTATION LAYER ACTIVE // INDEXING BASE AGENTS // REPUTATION LAYER ACTIVE // SETTLEMENT RAIL ONLINE // BLOCK_TIME: 10MS // TX_VOLUME: 4.2M ETH // AGENT_ID_2049 VERIFIED // INDEXING MEGAETH AGENTS // REPUTATION LAYER ACTIVE //"}
+            {"// SERVICE INDEX ACTIVE // REPUTATION LAYER ONLINE // API ROUTING OPERATIONAL // LATENCY PROFILE: STABLE // VERIFIED SERVICE: AGENT_ID_2049 // EXPANSION PIPELINE IN PROGRESS // SERVICE INDEX ACTIVE // REPUTATION LAYER ONLINE // API ROUTING OPERATIONAL // LATENCY PROFILE: STABLE // VERIFIED SERVICE: AGENT_ID_2049 // EXPANSION PIPELINE IN PROGRESS //"}
           </div>
         </div>
       </main>
@@ -158,42 +118,12 @@ const HomePage = () => {
               </p>
               <p>
                 <strong className="text-neutral-200 block mb-2">{"// 02. VERIFIABLE TRUTH"}</strong>
-                Reputation cannot be self-reported. We index the ERC-8004 registry to build a decentralized leaderboard rooted in cryptographic reality. We rank by on-chain transaction volume, verified uptime, and real economic yield, not just hype.
+                Reputation cannot be self-reported. We maintain a verifiable service index rooted in measurable delivery outcomes. We rank by observable usage, verified uptime, and economic performance, not just hype.
               </p>
               <p>
                 <strong className="text-neutral-200 block mb-2">{"// 03. PERMISSIONLESS SETTLEMENT"}</strong>
-                We are the turnstile for agentic commerce. GhostGate provides the drop-in SDK to wrap any agent API behind a crypto-native paywall. Seamless credit deduction. Pull-based fee settlement. We build the rails for machines to pay machines.
+                We are the access layer for agentic commerce. GhostGate provides the drop-in SDK to gate and monetize API access with deterministic authorization, usage accounting, and secure payout operations.
               </p>
-
-              <div className="inline-flex w-full max-w-[620px] items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-neutral-500">
-                <span className="font-bold">VAULT CONTRACT:</span>
-                {vaultHref ? (
-                  <a
-                    href={vaultHref}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="font-mono text-neutral-300 transition-colors duration-150 hover:text-red-500"
-                  >
-                    {vaultDisplay}
-                  </a>
-                ) : (
-                  <span className="font-mono text-neutral-600">{vaultDisplay}</span>
-                )}
-                {hasGhostVaultAddress ? (
-                  <button
-                    type="button"
-                    onClick={handleCopyVault}
-                    className="inline-flex items-center justify-center text-neutral-500 transition-colors duration-150 hover:text-red-500"
-                    aria-label="Copy vault address"
-                    title={copiedVault ? "Copied" : "Copy to clipboard"}
-                  >
-                    <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2">
-                      <rect x="9" y="9" width="13" height="13" rx="1" />
-                      <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
-                    </svg>
-                  </button>
-                ) : null}
-              </div>
             </div>
           </div>
 
@@ -210,7 +140,7 @@ const HomePage = () => {
               </div>
               <h3 className="text-2xl font-bold text-neutral-100 mb-2">ghost_rank</h3>
               <p className="text-neutral-500 text-sm mb-6">
-                The Reputation Layer. A decentralized leaderboard indexing performance, uptime, and yield. The Trustless Registry for Autonomous Agents.
+                The Reputation Layer. A service leaderboard indexing performance, uptime, and yield for autonomous systems.
               </p>
               <div className="flex items-center gap-2 text-red-600 text-xs font-bold uppercase tracking-wider group-hover:gap-4 transition-all">
                 {"//Access_Terminal"} <ChevronRight className="w-4 h-4" />
@@ -229,7 +159,7 @@ const HomePage = () => {
               </div>
               <h3 className="text-2xl font-bold text-neutral-100 mb-2">ghost_gate</h3>
               <p className="text-neutral-500 text-sm mb-6">
-                The Permissionless Rail. A monetization SDK gating API access behind crypto payments. The Settlement Terminal for Agentic Commerce.
+                The Access Rail. A monetization SDK gating API access behind authenticated usage-based billing.
               </p>
               <div className="flex items-center gap-2 text-red-600 text-xs font-bold uppercase tracking-wider group-hover:gap-4 transition-all">
                 {"//Access_TERMINAL"} <ChevronRight className="w-4 h-4" />
@@ -246,7 +176,7 @@ const HomePage = () => {
               GHOST_PROTOCOL_INFRASTRUCTURE
             </div>
             <div className="text-[10px] text-neutral-700 max-w-sm leading-relaxed">
-              <p>Indexing ERC-8004 registries on Base. MegaETH expansion coming.</p>
+              <p>Indexing service registries for autonomous APIs. Expansion pipeline active.</p>
               <p>All systems nominal. No warranties implied.</p>
               <p className="whitespace-nowrap">
                 <Link href="/terms" className="text-neutral-600 transition-colors hover:text-red-500">
@@ -264,9 +194,9 @@ const HomePage = () => {
 
           <div className="grid grid-cols-2 gap-12 text-xs tracking-wider uppercase">
             <div className="flex flex-col gap-3">
-              <span className="text-neutral-500 font-bold mb-1">Network</span>
-              <a href="#" className="hover:text-red-500 transition-colors">Base</a>
-              <a href="#" className="hover:text-red-500 transition-colors">MegaETH</a>
+              <span className="text-neutral-500 font-bold mb-1">Platform</span>
+              <a href="#" className="hover:text-red-500 transition-colors">API Infra</a>
+              <a href="#" className="hover:text-red-500 transition-colors">Settlement Ops</a>
             </div>
             <div className="flex flex-col gap-3">
               <span className="text-neutral-500 font-bold mb-1">Links</span>
