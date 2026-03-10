@@ -35,7 +35,7 @@ Status meanings:
 
 | Directory | Status | Notes |
 |---|---|---|
-| Smithery | SUBMIT | Submit endpoint + manifest + tool scope. |
+| Smithery | LISTED | https://smithery.ai/servers/ghostprotocol/readonly-mcp |
 | MCP.so | SUBMIT | Submit server profile and canonical endpoint. |
 | mcpservers.org | SUBMIT | Submit public metadata and capability summary. |
 | Cursor directory (if/when open) | SUBMIT | Use same packet above. |
