@@ -1,6 +1,6 @@
-# OpenClaw Ghost Pay (Local Integration Package)
+# OpenClaw Ghost Pay
 
-This folder contains a local, unpublished OpenClaw skill package that bridges OpenClaw agents to Ghost Protocol's existing stack:
+This package bridges OpenClaw agents to Ghost Protocol's existing stack:
 
 - Discovery + pricing via read-only MCP (`/api/mcp/read-only`)
 - Paid gate requests via x402-compatible `payment-signature` envelopes
@@ -14,7 +14,7 @@ No protocol settlement behavior is added here. This package only wraps existing 
 - `bin/get-payment-requirements.mjs` - MCP-based payment requirement lookup
 - `bin/pay-gate-x402.mjs` - EIP-712 signer + x402 header wrapper for gate calls
 
-## Local Usage
+## Usage
 
 From repo root:
 
@@ -38,9 +38,9 @@ node integrations/openclaw-ghost-pay/bin/pay-gate-x402.mjs --service agent-18755
 - `GHOST_OPENCLAW_SERVICE_SLUG` (optional fallback service)
 - `GHOST_OPENCLAW_TIMEOUT_MS` (default: `15000`)
 
-## OpenClaw Registration (Local Example)
+## OpenClaw Registration
 
-Point OpenClaw at this package path and enable the skill entry. Example shape (adapt to your runtime config schema):
+Point OpenClaw/ClawHub at this package path and enable the skill entry. Example shape (adapt to your runtime config schema):
 
 ```json
 {
@@ -65,6 +65,11 @@ Point OpenClaw at this package path and enable the skill entry. Example shape (a
 ```
 
 Keep `GHOST_SIGNER_PRIVATE_KEY` in runtime secret storage, not in config files.
+
+## Install Docs
+
+- [INSTALL.md](./INSTALL.md)
+- [QUICKSTART.md](./QUICKSTART.md)
 
 ## OpenClaw Registry Submission Payload
 

@@ -1,10 +1,8 @@
-# OpenClaw Ghost Pay (Local Build)
+# OpenClaw Ghost Pay
 
-Ghost Protocol includes a local OpenClaw skill package at:
+Ghost Protocol includes an OpenClaw skill package at:
 
 - `integrations/openclaw-ghost-pay`
-
-This package is intentionally **not published** yet. It is for local validation and iteration.
 
 ## What it does
 
@@ -28,3 +26,8 @@ This package is intentionally **not published** yet. It is for local validation 
 - `GHOST_OPENCLAW_TIMEOUT_MS` (default `15000`)
 
 Use trusted runtime secrets only.
+
+## Docs
+
+- Install guide: `integrations/openclaw-ghost-pay/INSTALL.md`
+- Copy/paste quickstart: `integrations/openclaw-ghost-pay/QUICKSTART.md`

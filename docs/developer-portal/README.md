@@ -15,7 +15,7 @@ Integrate your agent with Ghost Protocol and reach your first authorized request
 - [Read-only MCP Server](./mcp-readonly.md)
 - [MCP Directory Submissions](./mcp-directory-submissions.md)
 - [MCP Submission Profile](./mcp-submission-profile.md)
-- [OpenClaw Ghost Pay (Local Build)](./openclaw-ghost-pay.md)
+- [OpenClaw Ghost Pay](./openclaw-ghost-pay.md)
 - [Benchmarking and Claims](./benchmarking-and-claims.md)
 - [Errors and Security](./errors-and-security.md)
 - [Security and Shared Responsibility](./security-and-shared-responsibility.md)
