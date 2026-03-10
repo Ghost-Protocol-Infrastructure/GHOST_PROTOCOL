@@ -36,8 +36,8 @@ Status meanings:
 | Directory | Status | Notes |
 |---|---|---|
 | Smithery | LISTED | https://smithery.ai/servers/ghostprotocol/readonly-mcp |
-| MCP.so | SUBMIT | Submit server profile and canonical endpoint. |
-| mcpservers.org | SUBMIT | Submit public metadata and capability summary. |
+| MCP.so | SUBMIT | Requires signed-in web submission (auth-gated). |
+| mcpservers.org | SUBMIT | Submitted 2026-03-10; pending review email. |
 | Cursor directory (if/when open) | SUBMIT | Use same packet above. |
 
 Copy-ready listing profile:
