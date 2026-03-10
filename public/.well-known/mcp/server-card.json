@@ -1,0 +1,73 @@
+{
+  "serverInfo": {
+    "name": "ghost-protocol-readonly-mcp",
+    "version": "0.2.0"
+  },
+  "authentication": {
+    "required": false,
+    "schemes": []
+  },
+  "tools": [
+    {
+      "name": "list_agents",
+      "description": "List GhostRank agents with optional search query and pagination.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Optional search query."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 20
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_agent_details",
+      "description": "Fetch details for one agent by agent_id (or address).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "Agent ID or agent address."
+          }
+        },
+        "required": [
+          "agent_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_payment_requirements",
+      "description": "Fetch authoritative payment requirements for a service slug.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "service_slug": {
+            "type": "string",
+            "description": "Service slug such as agent-18755."
+          }
+        },
+        "required": [
+          "service_slug"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "resources": [],
+  "prompts": []
+}
