@@ -1,0 +1,70 @@
+name: Benchmark Latency
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: "Scenario(s): mcp, gate, e2e (comma-separated)."
+        required: false
+        default: "mcp,gate,e2e"
+        type: string
+      iterations:
+        description: "Requests per scenario."
+        required: false
+        default: "250"
+        type: string
+      concurrency:
+        description: "Concurrent workers."
+        required: false
+        default: "10"
+        type: string
+      service_slug:
+        description: "Service slug under test."
+        required: false
+        default: "agent-18755"
+        type: string
+      base_url:
+        description: "Target base URL."
+        required: false
+        default: "https://ghostprotocol.cc"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      BENCH_SCENARIO: ${{ inputs.scenario }}
+      BENCH_ITERATIONS: ${{ inputs.iterations }}
+      BENCH_CONCURRENCY: ${{ inputs.concurrency }}
+      BENCH_SERVICE_SLUG: ${{ inputs.service_slug }}
+      BENCH_BASE_URL: ${{ inputs.base_url }}
+      BENCH_CHAIN_ID: "8453"
+      BENCH_TIMEOUT_MS: "15000"
+      BENCH_PRIVATE_KEY: ${{ secrets.BENCH_PRIVATE_KEY }}
+      BENCH_OUTPUT: "artifacts/benchmarks/benchmark-${{ github.run_id }}.json"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run benchmark harness
+        run: npm run benchmark:latency
+
+      - name: Upload benchmark artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-latency-report-${{ github.run_id }}
+          path: artifacts/benchmarks/*.json

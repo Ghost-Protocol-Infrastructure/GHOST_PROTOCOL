@@ -65,3 +65,46 @@ Point OpenClaw at this package path and enable the skill entry. Example shape (a
 ```
 
 Keep `GHOST_SIGNER_PRIVATE_KEY` in runtime secret storage, not in config files.
+
+## OpenClaw Registry Submission Payload
+
+Use this copy when submitting `openclaw-ghost-pay` to directories.
+
+- Name: Ghost Protocol - Instant x402 Payments
+- Short Description: Equip your OpenClaw agent to pay for API access with Ghost Credits via x402-compatible headers. Production benchmark: 100% success, p50 210.5ms, p95 402.4ms.
+- Long Description: Ghost Protocol gives OpenClaw agents a low-latency payment path for paywalled APIs. Agents read payment requirements, sign EIP-712 authorization tickets, and send x402-compatible `payment-signature` headers through GhostGate. This package is transport compatibility for x402-style envelopes and uses Ghost Protocol settlement underneath.
+
+Verified production benchmark:
+
+- p50 Latency: 210.5ms
+- Success Rate: 100% (under 10x concurrency load)
+- Replay Protection: 409 rejection on replay attempts.
+
+## Performance & Benchmarks
+GhostGate processes cryptographic signatures and debits off-chain in milliseconds.
+
+**Latest Production Benchmark (March 9, 2026):**
+* **Target:** `https://ghostprotocol.cc`
+* **Load:** 250 iterations, 10 concurrency
+* **Success Rate:** 100%
+* **p50 Latency:** 210.5ms
+* **p95 Latency:** 402.4ms
+
+<details>
+<summary>View Raw Benchmark Artifact (JSON)</summary>
+
+```json
+{
+  "scenario": "gate",
+  "total": 250,
+  "successes": 250,
+  "failures": 0,
+  "successRate": 100,
+  "latencyMs": {
+    "avg": 271.89,
+    "p50": 210.5,
+    "p95": 402.43
+  }
+}
+```
+</details>
