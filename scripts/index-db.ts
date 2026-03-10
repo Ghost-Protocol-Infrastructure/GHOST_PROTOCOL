@@ -122,6 +122,7 @@ const FORCE_RESET_INDEXER =
 const METADATA_FETCH_TIMEOUT_MS = 8_000;
 const METADATA_FETCH_RETRY_COUNT = 2;
 const DEFAULT_IPFS_GATEWAY = "https://ipfs.io/ipfs/";
+const IPFS_CID_PATTERN = /^(Qm[1-9A-HJ-NP-Za-km-z]{44}|bafy[a-zA-Z0-9]{20,})$/;
 const DEFAULT_INDEXER_RPC_FALLBACKS = [
   { label: "1rpc", url: "https://1rpc.io/base" },
   { label: "llamarpc", url: "https://base.llamarpc.com" },
@@ -306,7 +307,7 @@ const getIpfsGateway = (): string => {
   return configured.endsWith("/") ? configured : `${configured}/`;
 };
 
-const resolveUriForFetch = (value: string): string => {
+const resolveUriForFetch = (value: string): string | null => {
   const normalized = value.trim();
   if (normalized.startsWith("ipfs://ipfs/")) {
     return `${getIpfsGateway()}${normalized.replace("ipfs://ipfs/", "")}`;
@@ -314,7 +315,13 @@ const resolveUriForFetch = (value: string): string => {
   if (normalized.startsWith("ipfs://")) {
     return `${getIpfsGateway()}${normalized.replace("ipfs://", "")}`;
   }
-  return normalized;
+  if (/^https?:\/\//i.test(normalized) || /^data:/i.test(normalized)) {
+    return normalized;
+  }
+  if (IPFS_CID_PATTERN.test(normalized)) {
+    return `${getIpfsGateway()}${normalized}`;
+  }
+  return null;
 };
 
 const sanitizeImageField = (raw: unknown): string | null => {
@@ -324,7 +331,7 @@ const sanitizeImageField = (raw: unknown): string | null => {
   if (image.startsWith("<svg")) {
     return `data:image/svg+xml;utf8,${encodeURIComponent(image)}`;
   }
-  return resolveUriForFetch(image);
+  return resolveUriForFetch(image) ?? null;
 };
 
 const parseHttpStatusFromError = (error: unknown): number | null => {
@@ -343,6 +350,17 @@ const getErrorCode = (error: unknown): string | null => {
   if (!cause || typeof cause !== "object") return null;
   const causeCode = (cause as { code?: unknown }).code;
   return typeof causeCode === "string" && causeCode.trim() ? causeCode.trim() : null;
+};
+
+const isExpectedMetadataFetchError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/tokenURI is not a fetchable metadata URI/i.test(message)) return true;
+
+  const httpStatus = parseHttpStatusFromError(error);
+  if (httpStatus === 404 || httpStatus === 410) return true;
+
+  const code = getErrorCode(error);
+  return code === "ERR_INVALID_URL";
 };
 
 const isPermanentMetadataFetchError = (error: unknown): boolean => {
@@ -421,6 +439,9 @@ const fetchServiceMetadata = async (
   }
 
   const metadataUri = resolveUriForFetch(tokenUri);
+  if (!metadataUri) {
+    throw new Error("tokenURI is not a fetchable metadata URI");
+  }
   const payload = await fetchJsonWithRetry(metadataUri);
   const name = sanitizeOptionalText(payload.name);
   const description = sanitizeOptionalText(payload.description);
@@ -472,7 +493,9 @@ const resolveServiceRecord = async (
       console.warn(
         `Metadata fetch failed for service ${serviceIdText}. Falling back to synthetic identity fields.`,
       );
-      console.error(error);
+      if (!isExpectedMetadataFetchError(error)) {
+        console.error(error);
+      }
     }
 
     if (!metadata) {
@@ -531,7 +554,9 @@ const resolveErc8004Record = async (
       console.warn(
         `Metadata fetch failed for ERC-8004 token ${tokenIdText}. Falling back to synthetic identity fields.`,
       );
-      console.error(error);
+      if (!isExpectedMetadataFetchError(error)) {
+        console.error(error);
+      }
     }
 
     if (!metadata) {
@@ -1220,7 +1245,9 @@ const forceRefreshServiceMetadata = async (): Promise<{
       metadata = await fetchServiceMetadata(client, serviceId);
     } catch (error) {
       console.warn(`Metadata fetch failed for service ${serviceIdText} during refresh. Falling back to synthetic values.`);
-      console.error(error);
+      if (!isExpectedMetadataFetchError(error)) {
+        console.error(error);
+      }
     }
 
     const nextName = metadata?.name ?? fallbackServiceName(serviceIdText);

@@ -1,0 +1,87 @@
+name: Score V2 Shadow
+
+on:
+  workflow_dispatch:
+    inputs:
+      shadow_only:
+        description: "Keep v2 in shadow-only mode"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      leaderboard_read_from_snapshot:
+        description: "Read leaderboard API from active snapshot"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+  schedule:
+    - cron: "20 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: score-v2-shadow
+  cancel-in-progress: false
+
+jobs:
+  score-v2-shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      POSTGRES_PRISMA_URL: ${{ secrets.POSTGRES_PRISMA_URL }}
+      POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}
+      BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
+      AGENT_INDEX_MODE: erc8004
+      ERC8004_REGISTRY_ADDRESS: ${{ secrets.ERC8004_REGISTRY_ADDRESS }}
+      GHOST_TELEMETRY_WINDOW_MINUTES: "1440"
+      SCORE_V2_ENABLED: "true"
+      SCORE_V2_SHADOW_ONLY: ${{ github.event.inputs.shadow_only || 'true' }}
+      SCORE_V2_SCHEDULER_ENABLED: "true"
+      LEADERBOARD_READ_FROM_SNAPSHOT: ${{ github.event.inputs.leaderboard_read_from_snapshot || 'false' }}
+      SCORE_V2_TX_CONCURRENCY: "20"
+      SCORE_V2_TX_BATCH_DELAY_MS: "10"
+      SCORE_V2_TX_CALL_TIMEOUT_MS: "10000"
+      SCORE_V2_RPC_TIMEOUT_MS: "10000"
+      SCORE_V2_RPC_RETRY_COUNT: "1"
+      SCORE_V2_TX_BUDGET_MS: "600000"
+      SCORE_V2_INGEST_BATCH_SIZE: "150"
+      SCORE_V2_SNAPSHOT_BATCH_SIZE: "1000"
+      SCORE_V2_AGENT_WRITE_BATCH_SIZE: "100"
+      SCORE_V2_HEARTBEAT_INTERVAL: "100"
+      SCORE_V2_PRISMA_RETRY_ATTEMPTS: "4"
+      SCORE_V2_PRISMA_RETRY_DELAY_MS: "1000"
+      SCORE_V2_PRISMA_CONNECTION_TIMEOUT_MS: "12000"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Run migration
+        run: npm run migrate:indexer
+
+      - name: Ingest telemetry signals
+        run: npm run ingest:telemetry
+
+      - name: Run v2 scoring pipeline
+        run: npm run score:v2
+
+      - name: Report index health
+        run: npx tsx scripts/report-index-health.ts
