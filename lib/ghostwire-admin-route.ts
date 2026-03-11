@@ -37,8 +37,7 @@ const getProvidedSecret = (request: NextRequest, customHeaderName: string): stri
 
 const getGhostWireOperatorSecret = (): string | null =>
   normalizeSecret(process.env.GHOSTWIRE_OPERATOR_SECRET) ??
-  normalizeSecret(process.env.GHOST_WIRE_OPERATOR_SECRET) ??
-  normalizeSecret(process.env.GHOST_SETTLEMENT_OPERATOR_SECRET);
+  normalizeSecret(process.env.GHOST_WIRE_OPERATOR_SECRET);
 
 const getGhostWireSupportSecret = (): string | null =>
   normalizeSecret(process.env.GHOSTWIRE_SUPPORT_SECRET) ?? normalizeSecret(process.env.GHOST_WIRE_SUPPORT_SECRET);
