@@ -59,6 +59,11 @@ const GHOSTWIRE_OPERATOR_RETRY_DELAY_MS = 5 * 60 * 1000;
 const GHOSTWIRE_WEBHOOK_MAX_ATTEMPTS = 6;
 const GHOSTWIRE_WEBHOOK_BASE_RETRY_DELAY_MS = 60 * 1000;
 const GHOSTWIRE_WEBHOOK_MAX_RETRY_DELAY_MS = 30 * 60 * 1000;
+const GHOSTWIRE_ONCHAIN_VISIBILITY_MAX_ATTEMPTS = 8;
+const GHOSTWIRE_ONCHAIN_VISIBILITY_DELAY_MS = 1_500;
+const GHOSTWIRE_ONCHAIN_WRITE_RETRY_ATTEMPTS = 4;
+const GHOSTWIRE_ONCHAIN_WRITE_RETRY_DELAY_MS = 1_500;
+const GHOSTWIRE_LOG_SCAN_BLOCK_RANGE = 9_000n;
 
 export type GhostWireWorkflowStage = "create" | "fund" | "confirmation" | "reconcile";
 
@@ -148,6 +153,8 @@ const nextWebhookRetryAt = (attemptCount: number): Date => {
   return new Date(Date.now() + delay);
 };
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const isRetryableWebhookStatus = (status: number): boolean =>
   status >= 500 || status === 408 || status === 409 || status === 425 || status === 429;
 
@@ -209,75 +216,100 @@ const getLatestGhostWireLifecycleEvent = async (input: {
   const client = createGhostWirePublicClient(input.chainId);
   const jobId = BigInt(input.contractJobId);
   const latestBlock = await client.getBlockNumber();
+  let toBlock = latestBlock;
 
-  const [submittedLogs, completedLogs, rejectedLogs, expiredLogs] = await Promise.all([
-    client.getLogs({
-      address: input.contractAddress,
-      event: getAbiItem({ abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI, name: "JobSubmitted" }),
-      args: { jobId },
-      fromBlock: 0n,
-      toBlock: "latest",
-    }),
-    client.getLogs({
-      address: input.contractAddress,
-      event: getAbiItem({ abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI, name: "JobCompleted" }),
-      args: { jobId },
-      fromBlock: 0n,
-      toBlock: "latest",
-    }),
-    client.getLogs({
-      address: input.contractAddress,
-      event: getAbiItem({ abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI, name: "JobRejected" }),
-      args: { jobId },
-      fromBlock: 0n,
-      toBlock: "latest",
-    }),
-    client.getLogs({
-      address: input.contractAddress,
-      event: getAbiItem({ abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI, name: "JobExpired" }),
-      args: { jobId },
-      fromBlock: 0n,
-      toBlock: "latest",
-    }),
-  ]);
+  while (true) {
+    const fromBlock =
+      toBlock > GHOSTWIRE_LOG_SCAN_BLOCK_RANGE ? toBlock - GHOSTWIRE_LOG_SCAN_BLOCK_RANGE : 0n;
 
-  const events: GhostWireLifecycleEvent[] = [
-    ...submittedLogs.map((log) => ({
-      state: "SUBMITTED" as const,
-      txHash: log.transactionHash,
-      blockNumber: log.blockNumber ?? 0n,
-      logIndex: log.logIndex ?? 0,
-      confirmations: latestBlock >= (log.blockNumber ?? latestBlock) ? Number(latestBlock - (log.blockNumber ?? latestBlock) + 1n) : 0,
-    })),
-    ...completedLogs.map((log) => ({
-      state: "COMPLETED" as const,
-      txHash: log.transactionHash,
-      blockNumber: log.blockNumber ?? 0n,
-      logIndex: log.logIndex ?? 0,
-      confirmations: latestBlock >= (log.blockNumber ?? latestBlock) ? Number(latestBlock - (log.blockNumber ?? latestBlock) + 1n) : 0,
-    })),
-    ...rejectedLogs.map((log) => ({
-      state: "REJECTED" as const,
-      txHash: log.transactionHash,
-      blockNumber: log.blockNumber ?? 0n,
-      logIndex: log.logIndex ?? 0,
-      confirmations: latestBlock >= (log.blockNumber ?? latestBlock) ? Number(latestBlock - (log.blockNumber ?? latestBlock) + 1n) : 0,
-    })),
-    ...expiredLogs.map((log) => ({
-      state: "EXPIRED" as const,
-      txHash: log.transactionHash,
-      blockNumber: log.blockNumber ?? 0n,
-      logIndex: log.logIndex ?? 0,
-      confirmations: latestBlock >= (log.blockNumber ?? latestBlock) ? Number(latestBlock - (log.blockNumber ?? latestBlock) + 1n) : 0,
-    })),
-  ];
+    const [submittedLogs, completedLogs, rejectedLogs, expiredLogs] = await Promise.all([
+      client.getLogs({
+        address: input.contractAddress,
+        event: getAbiItem({ abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI, name: "JobSubmitted" }),
+        args: { jobId },
+        fromBlock,
+        toBlock,
+      }),
+      client.getLogs({
+        address: input.contractAddress,
+        event: getAbiItem({ abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI, name: "JobCompleted" }),
+        args: { jobId },
+        fromBlock,
+        toBlock,
+      }),
+      client.getLogs({
+        address: input.contractAddress,
+        event: getAbiItem({ abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI, name: "JobRejected" }),
+        args: { jobId },
+        fromBlock,
+        toBlock,
+      }),
+      client.getLogs({
+        address: input.contractAddress,
+        event: getAbiItem({ abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI, name: "JobExpired" }),
+        args: { jobId },
+        fromBlock,
+        toBlock,
+      }),
+    ]);
 
-  events.sort((left, right) => {
-    if (left.blockNumber === right.blockNumber) return left.logIndex - right.logIndex;
-    return left.blockNumber < right.blockNumber ? -1 : 1;
-  });
+    const events: GhostWireLifecycleEvent[] = [
+      ...submittedLogs.map((log) => ({
+        state: "SUBMITTED" as const,
+        txHash: log.transactionHash,
+        blockNumber: log.blockNumber ?? 0n,
+        logIndex: log.logIndex ?? 0,
+        confirmations:
+          latestBlock >= (log.blockNumber ?? latestBlock)
+            ? Number(latestBlock - (log.blockNumber ?? latestBlock) + 1n)
+            : 0,
+      })),
+      ...completedLogs.map((log) => ({
+        state: "COMPLETED" as const,
+        txHash: log.transactionHash,
+        blockNumber: log.blockNumber ?? 0n,
+        logIndex: log.logIndex ?? 0,
+        confirmations:
+          latestBlock >= (log.blockNumber ?? latestBlock)
+            ? Number(latestBlock - (log.blockNumber ?? latestBlock) + 1n)
+            : 0,
+      })),
+      ...rejectedLogs.map((log) => ({
+        state: "REJECTED" as const,
+        txHash: log.transactionHash,
+        blockNumber: log.blockNumber ?? 0n,
+        logIndex: log.logIndex ?? 0,
+        confirmations:
+          latestBlock >= (log.blockNumber ?? latestBlock)
+            ? Number(latestBlock - (log.blockNumber ?? latestBlock) + 1n)
+            : 0,
+      })),
+      ...expiredLogs.map((log) => ({
+        state: "EXPIRED" as const,
+        txHash: log.transactionHash,
+        blockNumber: log.blockNumber ?? 0n,
+        logIndex: log.logIndex ?? 0,
+        confirmations:
+          latestBlock >= (log.blockNumber ?? latestBlock)
+            ? Number(latestBlock - (log.blockNumber ?? latestBlock) + 1n)
+            : 0,
+      })),
+    ];
 
-  return events.at(-1) ?? null;
+    if (events.length > 0) {
+      events.sort((left, right) => {
+        if (left.blockNumber === right.blockNumber) return left.logIndex - right.logIndex;
+        return left.blockNumber < right.blockNumber ? -1 : 1;
+      });
+      return events.at(-1) ?? null;
+    }
+
+    if (fromBlock === 0n) {
+      return null;
+    }
+
+    toBlock = fromBlock - 1n;
+  }
 };
 
 const recordOperatorSpendFromReceipt = async (input: {
@@ -428,6 +460,145 @@ const parseJobCreatedEvent = (job: GhostWirePendingJob, logs: readonly unknown[]
   return typeof rawJobId === "bigint" ? rawJobId.toString() : null;
 };
 
+type GhostWireOnchainJob = Awaited<
+  ReturnType<ReturnType<typeof createGhostWirePublicClient>["readContract"]>
+>;
+
+const normalizeGhostWireErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : "GhostWire on-chain operation failed.";
+
+const isGhostWireTransientConsistencyError = (error: unknown): boolean => {
+  const message = normalizeGhostWireErrorMessage(error).toLowerCase();
+  return (
+    message.includes("0x71c8f460") ||
+    message.includes("invalidjob") ||
+    message.includes("invalid job") ||
+    message.includes("execution reverted") ||
+    message.includes("nonce too low") ||
+    message.includes("replacement transaction underpriced") ||
+    message.includes("already known")
+  );
+};
+
+const readGhostWireOnchainJob = async (input: {
+  publicClient: ReturnType<typeof createGhostWirePublicClient>;
+  contractAddress: `0x${string}`;
+  contractJobId: string;
+}) =>
+  input.publicClient.readContract({
+    address: input.contractAddress,
+    abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI,
+    functionName: "getJob",
+    args: [BigInt(input.contractJobId)],
+  });
+
+const waitForGhostWireOnchainJobVisibility = async (input: {
+  publicClient: ReturnType<typeof createGhostWirePublicClient>;
+  contractAddress: `0x${string}`;
+  contractJobId: string;
+  expectedClientAddress: string;
+  expectedProviderAddress: string;
+}) => {
+  let lastError: string | null = null;
+
+  for (let attempt = 1; attempt <= GHOSTWIRE_ONCHAIN_VISIBILITY_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const job = (await readGhostWireOnchainJob(input)) as {
+        client?: string;
+        provider?: string;
+        budget?: bigint;
+        status?: bigint | number;
+      };
+
+      const clientMatches =
+        typeof job.client === "string" &&
+        job.client.toLowerCase() === input.expectedClientAddress.toLowerCase();
+      const providerMatches =
+        typeof job.provider === "string" &&
+        job.provider.toLowerCase() === input.expectedProviderAddress.toLowerCase();
+
+      if (clientMatches && providerMatches) {
+        return {
+          ok: true as const,
+          job,
+        };
+      }
+
+      lastError = "On-chain job became visible with unexpected client/provider values.";
+    } catch (error) {
+      lastError = normalizeGhostWireErrorMessage(error);
+    }
+
+    if (attempt < GHOSTWIRE_ONCHAIN_VISIBILITY_MAX_ATTEMPTS) {
+      await sleep(GHOSTWIRE_ONCHAIN_VISIBILITY_DELAY_MS);
+    }
+  }
+
+  return {
+    ok: false as const,
+    error:
+      lastError ??
+      "GhostWire job did not become visible on-chain within the expected post-create consistency window.",
+  };
+};
+
+const waitForGhostWireBudgetVisibility = async (input: {
+  publicClient: ReturnType<typeof createGhostWirePublicClient>;
+  contractAddress: `0x${string}`;
+  contractJobId: string;
+  expectedBudgetAmount: bigint;
+}) => {
+  let lastError: string | null = null;
+
+  for (let attempt = 1; attempt <= GHOSTWIRE_ONCHAIN_VISIBILITY_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const job = (await readGhostWireOnchainJob(input)) as {
+        budget?: bigint;
+      };
+
+      if (job.budget === input.expectedBudgetAmount) {
+        return {
+          ok: true as const,
+          job,
+        };
+      }
+
+      lastError = `Observed budget ${String(job.budget ?? null)} instead of ${input.expectedBudgetAmount.toString()}.`;
+    } catch (error) {
+      lastError = normalizeGhostWireErrorMessage(error);
+    }
+
+    if (attempt < GHOSTWIRE_ONCHAIN_VISIBILITY_MAX_ATTEMPTS) {
+      await sleep(GHOSTWIRE_ONCHAIN_VISIBILITY_DELAY_MS);
+    }
+  }
+
+  return {
+    ok: false as const,
+    error:
+      lastError ??
+      "GhostWire budget was not visible on-chain within the expected post-setBudget consistency window.",
+  };
+};
+
+const runGhostWireWriteWithRetry = async <T>(operation: () => Promise<T>) => {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= GHOSTWIRE_ONCHAIN_WRITE_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isGhostWireTransientConsistencyError(error) || attempt >= GHOSTWIRE_ONCHAIN_WRITE_RETRY_ATTEMPTS) {
+        throw error;
+      }
+      await sleep(GHOSTWIRE_ONCHAIN_WRITE_RETRY_DELAY_MS * attempt);
+    }
+  }
+
+  throw lastError;
+};
+
 const attemptGhostWireHostedCreateAndFund = async (job: GhostWirePendingJob) => {
   if (job.contractState !== "OPEN") {
     return {
@@ -444,6 +615,7 @@ const attemptGhostWireHostedCreateAndFund = async (job: GhostWirePendingJob) => 
   }
 
   const {
+    chainId,
     account,
     contractAddress,
     expectedPaymentToken,
@@ -526,6 +698,29 @@ const attemptGhostWireHostedCreateAndFund = async (job: GhostWirePendingJob) => 
 
       createTxHash = createHash;
       contractJobId = parsedContractJobId;
+
+      const visibility = await waitForGhostWireOnchainJobVisibility({
+        publicClient,
+        contractAddress,
+        contractJobId,
+        expectedClientAddress: job.clientAddress,
+        expectedProviderAddress: job.providerAddress,
+      });
+      if (!visibility.ok) {
+        await updateGhostWireWorkflowStage({
+          jobId: job.id,
+          stage: "create",
+          status: "FAILED",
+          lastError: visibility.error,
+          nextRetryAt: nextRetryAt(),
+          incrementRetryCount: true,
+        });
+        return {
+          jobId: job.jobId,
+          status: "failed" as ReconcileResultStatus,
+          detail: visibility.error,
+        };
+      }
     } catch (error) {
       await updateGhostWireWorkflowStage({
         jobId: job.id,
@@ -553,14 +748,39 @@ const attemptGhostWireHostedCreateAndFund = async (job: GhostWirePendingJob) => 
   }
 
   try {
-    const budgetHash = await walletClient.writeContract({
-      account,
-      chain: walletClient.chain,
-      address: contractAddress,
-      abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI,
-      functionName: "setBudget",
-      args: [BigInt(contractJobId), job.contractBudgetAmount],
+    const visibility = await waitForGhostWireOnchainJobVisibility({
+      publicClient,
+      contractAddress,
+      contractJobId,
+      expectedClientAddress: job.clientAddress,
+      expectedProviderAddress: job.providerAddress,
     });
+    if (!visibility.ok) {
+      await updateGhostWireWorkflowStage({
+        jobId: job.id,
+        stage: "create",
+        status: "FAILED",
+        lastError: visibility.error,
+        nextRetryAt: nextRetryAt(),
+        incrementRetryCount: true,
+      });
+      return {
+        jobId: job.jobId,
+        status: "failed" as ReconcileResultStatus,
+        detail: visibility.error,
+      };
+    }
+
+    const budgetHash = await runGhostWireWriteWithRetry(() =>
+      walletClient.writeContract({
+        account,
+        chain: walletClient.chain,
+        address: contractAddress,
+        abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI,
+        functionName: "setBudget",
+        args: [BigInt(contractJobId), job.contractBudgetAmount],
+      }),
+    );
     const budgetReceipt = await publicClient.waitForTransactionReceipt({
       hash: budgetHash,
       confirmations: 1,
@@ -589,6 +809,28 @@ const attemptGhostWireHostedCreateAndFund = async (job: GhostWirePendingJob) => 
       txHash: budgetHash,
       receipt: budgetReceipt,
     });
+
+    const budgetVisibility = await waitForGhostWireBudgetVisibility({
+      publicClient,
+      contractAddress,
+      contractJobId,
+      expectedBudgetAmount: job.contractBudgetAmount,
+    });
+    if (!budgetVisibility.ok) {
+      await updateGhostWireWorkflowStage({
+        jobId: job.id,
+        stage: "create",
+        status: "FAILED",
+        lastError: budgetVisibility.error,
+        nextRetryAt: nextRetryAt(),
+        incrementRetryCount: true,
+      });
+      return {
+        jobId: job.jobId,
+        status: "failed" as ReconcileResultStatus,
+        detail: budgetVisibility.error,
+      };
+    }
 
     await updateGhostWireWorkflowStage({
       jobId: job.id,
@@ -669,14 +911,16 @@ const attemptGhostWireHostedCreateAndFund = async (job: GhostWirePendingJob) => 
         });
       }
 
-      const nextFundHash = await walletClient.writeContract({
-        account,
-        chain: walletClient.chain,
-        address: contractAddress,
-        abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI,
-        functionName: "fund",
-        args: [BigInt(contractJobId), job.contractBudgetAmount],
-      });
+      const nextFundHash = await runGhostWireWriteWithRetry(() =>
+        walletClient.writeContract({
+          account,
+          chain: walletClient.chain,
+          address: contractAddress,
+          abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI,
+          functionName: "fund",
+          args: [BigInt(contractJobId), job.contractBudgetAmount],
+        }),
+      );
       const fundReceipt = await publicClient.waitForTransactionReceipt({
         hash: nextFundHash,
         confirmations: 1,
@@ -714,6 +958,26 @@ const attemptGhostWireHostedCreateAndFund = async (job: GhostWirePendingJob) => 
       });
 
       fundTxHash = nextFundHash;
+
+      const minConfirmations = resolveGhostWireMinConfirmations(chainId);
+      if (minConfirmations <= 1) {
+        const reconciled = await reconcileWireJobFundedState({
+          jobId: job.jobId,
+          createTxHash,
+          fundTxHash,
+          confirmedAt: new Date(),
+          blockNumber: fundReceipt.blockNumber,
+          confirmations: 1,
+        });
+        return {
+          jobId: job.jobId,
+          status: "confirmed_funded" as ReconcileResultStatus,
+          state: reconciled.publicState,
+          contractState: reconciled.contractState,
+          createTxHash,
+          fundTxHash,
+        };
+      }
 
       await updateGhostWireWorkflowStage({
         jobId: job.id,
@@ -1027,23 +1291,21 @@ const reconcileWireJobPostFundingLifecycle = async (job: GhostWirePendingJob) =>
   const publicClient = createGhostWirePublicClient(chainId);
   const contractJobId = BigInt(job.contractJobId);
 
-  const [onchainJob, latestLifecycleEvent] = await Promise.all([
-    publicClient.readContract({
-      address: getAddress(job.contractAddress),
-      abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI,
-      functionName: "getJob",
-      args: [contractJobId],
-    }),
-    getLatestGhostWireLifecycleEvent({
-      chainId,
-      contractAddress: getAddress(job.contractAddress),
-      contractJobId: job.contractJobId,
-    }),
-  ]);
+  const onchainJob = await publicClient.readContract({
+    address: getAddress(job.contractAddress),
+    abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI,
+    functionName: "getJob",
+    args: [contractJobId],
+  });
 
   const onchainState = mapGhostWireContractStatus(onchainJob.status);
 
   if (job.terminalTxHash) {
+    const latestLifecycleEvent = await getLatestGhostWireLifecycleEvent({
+      chainId,
+      contractAddress: getAddress(job.contractAddress),
+      contractJobId: job.contractJobId,
+    });
     const terminalTxHash = normalizeHash(job.terminalTxHash);
     if (!terminalTxHash) {
       const result = await markManualReview(job.id, "reconcile", "GhostWire terminal transaction hash is malformed.");
@@ -1099,6 +1361,25 @@ const reconcileWireJobPostFundingLifecycle = async (job: GhostWirePendingJob) =>
     }
   }
 
+  if (onchainState === "FUNDED") {
+    const expired = Math.floor(Date.now() / 1000) >= Number(onchainJob.expiredAt);
+    if (expired) {
+      return attemptGhostWireHostedExpiry(job);
+    }
+
+    return {
+      jobId: job.jobId,
+      status: "already_reconciled" as ReconcileResultStatus,
+      detail: "Wire job remains funded and is awaiting provider submission.",
+    };
+  }
+
+  const latestLifecycleEvent = await getLatestGhostWireLifecycleEvent({
+    chainId,
+    contractAddress: getAddress(job.contractAddress),
+    contractJobId: job.contractJobId,
+  });
+
   if (latestLifecycleEvent && latestLifecycleEvent.confirmations < minConfirmations) {
     await updateGhostWireWorkflowStage({
       jobId: job.id,
@@ -1111,19 +1392,6 @@ const reconcileWireJobPostFundingLifecycle = async (job: GhostWirePendingJob) =>
       jobId: job.jobId,
       status: "waiting_confirmation" as ReconcileResultStatus,
       detail: `${latestLifecycleEvent.state} transaction has ${latestLifecycleEvent.confirmations}/${minConfirmations} confirmations.`,
-    };
-  }
-
-  if (onchainState === "FUNDED") {
-    const expired = Math.floor(Date.now() / 1000) >= Number(onchainJob.expiredAt);
-    if (expired) {
-      return attemptGhostWireHostedExpiry(job);
-    }
-
-    return {
-      jobId: job.jobId,
-      status: "already_reconciled" as ReconcileResultStatus,
-      detail: "Wire job remains funded and is awaiting provider submission.",
     };
   }
 
