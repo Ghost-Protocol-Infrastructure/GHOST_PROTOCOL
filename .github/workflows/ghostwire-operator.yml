@@ -1,0 +1,107 @@
+name: GhostWire Operator
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Base URL to call (defaults to production)"
+        required: false
+        default: "https://www.ghostprotocol.cc"
+        type: string
+      workflow_limit:
+        description: "Optional max GhostWire jobs to process this run"
+        required: false
+        default: "25"
+        type: string
+      webhook_limit:
+        description: "Optional max GhostWire webhooks to deliver this run"
+        required: false
+        default: "25"
+        type: string
+  schedule:
+    - cron: "7-57/10 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ghostwire-operator
+  cancel-in-progress: false
+
+jobs:
+  ghostwire-operator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Run GhostWire operator tick
+        env:
+          GHOSTWIRE_OPERATOR_SECRET: ${{ secrets.GHOSTWIRE_OPERATOR_SECRET }}
+          BASE_URL_INPUT: ${{ github.event.inputs.base_url }}
+          WORKFLOW_LIMIT_INPUT: ${{ github.event.inputs.workflow_limit }}
+          WEBHOOK_LIMIT_INPUT: ${{ github.event.inputs.webhook_limit }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GHOSTWIRE_OPERATOR_SECRET:-}" ]; then
+            echo "Missing repo secret GHOSTWIRE_OPERATOR_SECRET" >&2
+            exit 1
+          fi
+
+          base_url="${BASE_URL_INPUT:-https://www.ghostprotocol.cc}"
+          base_url="${base_url%/}"
+          if [ "${base_url}" = "https://ghostprotocol.cc" ]; then
+            base_url="https://www.ghostprotocol.cc"
+          fi
+
+          workflow_limit="${WORKFLOW_LIMIT_INPUT:-25}"
+          webhook_limit="${WEBHOOK_LIMIT_INPUT:-25}"
+          operator_url="${base_url}/api/admin/wire/operator"
+
+          request_body="$(printf '{"workflowLimit":%s,"webhookLimit":%s}' "${workflow_limit}" "${webhook_limit}")"
+
+          call_with_operator_secret() {
+            local url="$1"
+            local body="$2"
+            local response_file="$3"
+            local http_code=""
+            local attempt=1
+            local max_attempts=3
+
+            while [ "${attempt}" -le "${max_attempts}" ]; do
+              echo "Attempt ${attempt}/${max_attempts}: POST ${url}"
+              http_code="$(curl -sS -o "${response_file}" -w '%{http_code}' \
+                -X POST \
+                -H "Authorization: Bearer ${GHOSTWIRE_OPERATOR_SECRET}" \
+                -H "Accept: application/json" \
+                -H "Content-Type: application/json" \
+                --data "${body}" \
+                "${url}")"
+
+              if [ "${http_code}" = "200" ]; then
+                return 0
+              fi
+
+              if [ "${http_code}" = "401" ]; then
+                echo "GhostWire operator endpoint rejected secret with HTTP 401" >&2
+                return 1
+              fi
+
+              if [ "${attempt}" -lt "${max_attempts}" ]; then
+                echo "GhostWire operator endpoint failed with HTTP ${http_code}; retrying in 10s..." >&2
+                sleep 10
+              else
+                echo "GhostWire operator endpoint failed with HTTP ${http_code}" >&2
+              fi
+
+              attempt=$((attempt + 1))
+            done
+
+            return 1
+          }
+
+          if ! call_with_operator_secret "${operator_url}" "${request_body}" operator-response.json; then
+            cat operator-response.json >&2 || true
+            exit 1
+          fi
+
+          cat operator-response.json

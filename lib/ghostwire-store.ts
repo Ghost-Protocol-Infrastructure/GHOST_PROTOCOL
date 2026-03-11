@@ -3,6 +3,7 @@ import {
   Prisma,
   type WireContractState,
   type WireOperatorActionType,
+  type WireTerminalDisposition,
   type WireWebhookDeliveryStatus,
   type WireWorkflowStatus,
 } from "@prisma/client";
@@ -26,6 +27,20 @@ const buildWireOpenWebhookEventId = (jobId: string): string => `wire_job_open_we
 const buildWireFundedEventId = (jobId: string, txHash: string): string => `wire_job_funded:${jobId}:${txHash.toLowerCase()}`;
 const buildWireFundedWebhookEventId = (jobId: string, txHash: string): string =>
   `wire_job_funded_webhook:${jobId}:${txHash.toLowerCase()}`;
+const buildWireSubmittedEventId = (jobId: string, txHash?: string | null): string =>
+  txHash ? `wire_job_submitted:${jobId}:${txHash.toLowerCase()}` : `wire_job_submitted:${jobId}`;
+const buildWireSubmittedWebhookEventId = (jobId: string, txHash?: string | null): string =>
+  txHash ? `wire_job_submitted_webhook:${jobId}:${txHash.toLowerCase()}` : `wire_job_submitted_webhook:${jobId}`;
+const buildWireTerminalEventId = (jobId: string, state: WireTerminalDisposition, txHash?: string | null): string =>
+  txHash ? `wire_job_terminal:${jobId}:${state}:${txHash.toLowerCase()}` : `wire_job_terminal:${jobId}:${state}`;
+const buildWireTerminalWebhookEventId = (
+  jobId: string,
+  state: WireTerminalDisposition,
+  txHash?: string | null,
+): string =>
+  txHash
+    ? `wire_job_terminal_webhook:${jobId}:${state}:${txHash.toLowerCase()}`
+    : `wire_job_terminal_webhook:${jobId}:${state}`;
 
 const serializeBigInt = (value: bigint | null | undefined): string | null => (value == null ? null : value.toString());
 
@@ -304,6 +319,67 @@ const buildFundedWebhookPayload = (job: {
   pricing: buildWirePricingPayload(job),
 });
 
+const buildSubmittedWebhookPayload = (job: {
+  jobId: string;
+  quoteId: string;
+  chainId: number;
+  contractAddress: string | null;
+  contractJobId: string | null;
+  contractState: WireContractState;
+  publicState: WireContractState;
+  fundTxHash: string | null;
+  updatedAt: Date;
+  principalAmount: bigint;
+  protocolFeeAmount: bigint;
+  networkReserveAmount: bigint;
+}) => ({
+  jobId: job.jobId,
+  quoteId: job.quoteId,
+  state: job.publicState,
+  contractState: job.contractState,
+  contractAddress: job.contractAddress,
+  contractJobId: job.contractJobId,
+  fundTxHash: job.fundTxHash,
+  observedAt: job.updatedAt.toISOString(),
+  pricing: buildWirePricingPayload(job),
+});
+
+const buildTerminalWebhookPayload = (job: {
+  jobId: string;
+  quoteId: string;
+  chainId: number;
+  contractAddress: string | null;
+  contractJobId: string | null;
+  contractState: WireContractState;
+  publicState: WireContractState;
+  terminalDisposition: WireTerminalDisposition | null;
+  terminalTxHash: string | null;
+  updatedAt: Date;
+  principalAmount: bigint;
+  protocolFeeAmount: bigint;
+  networkReserveAmount: bigint;
+  operatorSpends: Array<{ nativeAmountSpent: bigint }>;
+}) => ({
+  jobId: job.jobId,
+  quoteId: job.quoteId,
+  state: job.publicState,
+  contractState: job.contractState,
+  contractAddress: job.contractAddress,
+  contractJobId: job.contractJobId,
+  terminalDisposition: job.terminalDisposition,
+  terminalTxHash: job.terminalTxHash,
+  observedAt: job.updatedAt.toISOString(),
+  pricing: buildWirePricingPayload(job),
+  settlement: deriveTerminalSettlement({
+    contractState: job.contractState,
+    terminalDisposition: job.terminalDisposition,
+    principalAmount: job.principalAmount,
+    protocolFeeAmount: job.protocolFeeAmount,
+    networkReserveAmount: job.networkReserveAmount,
+    operatorSpends: job.operatorSpends,
+  }),
+});
+
 const hasWireWebhookTarget = (job: {
   webhookTargetUrl?: string | null;
   webhookSecret?: string | null;
@@ -536,28 +612,35 @@ export const getWireJobById = async (jobId: string): Promise<{
   };
 };
 
-export const listWireJobsNeedingOperatorWork = async (limit: number) =>
-  prisma.wireJob.findMany({
-    where: {
+const buildWireOperatorWorkWhere = (now: Date): Prisma.WireJobWhereInput => ({
+  workflow: {
+    AND: [
+      { manualReviewRequired: false },
+      {
+        OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }],
+      },
+    ],
+  },
+  OR: [
+    {
       workflow: {
-        AND: [
-          {
-            manualReviewRequired: false,
-          },
-          {
-            OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: new Date() } }],
-          },
-          {
-            OR: [
-              { createStatus: { in: ["PENDING", "FAILED"] } },
-              { fundStatus: { in: ["PENDING", "FAILED"] } },
-              { confirmationStatus: { in: ["PENDING", "FAILED"] } },
-              { reconcileStatus: { in: ["PENDING", "FAILED"] } },
-            ],
-          },
+        OR: [
+          { createStatus: { in: ["PENDING", "FAILED", "IN_PROGRESS"] } },
+          { fundStatus: { in: ["PENDING", "FAILED", "IN_PROGRESS"] } },
+          { confirmationStatus: { in: ["PENDING", "FAILED", "IN_PROGRESS"] } },
+          { reconcileStatus: { in: ["PENDING", "FAILED", "IN_PROGRESS"] } },
         ],
       },
     },
+    {
+      publicState: { in: ["FUNDED", "SUBMITTED"] },
+    },
+  ],
+});
+
+export const listWireJobsNeedingOperatorWork = async (limit: number) =>
+  prisma.wireJob.findMany({
+    where: buildWireOperatorWorkWhere(new Date()),
     orderBy: { createdAt: "asc" },
     take: limit,
     select: {
@@ -596,6 +679,8 @@ export const listWireJobsNeedingOperatorWork = async (limit: number) =>
       },
     },
   });
+
+export const countWireJobsNeedingOperatorWork = async () => prisma.wireJob.count({ where: buildWireOperatorWorkWhere(new Date()) });
 
 export const listPendingWireWebhookOutboxEvents = async (limit: number) =>
   prisma.wireWebhookOutbox.findMany({
@@ -884,6 +969,68 @@ export const recordWireJobExecutionArtifacts = async (input: {
     };
   });
 
+export const recordWireJobTerminalArtifacts = async (input: {
+  jobId: string;
+  terminalTxHash: string;
+}) =>
+  prisma.$transaction(async (tx) => {
+    const job = await tx.wireJob.findUnique({
+      where: { jobId: input.jobId },
+      include: { workflow: true },
+    });
+    if (!job) throw new WireJobNotFoundError();
+
+    if (job.terminalTxHash && job.terminalTxHash.toLowerCase() !== input.terminalTxHash.toLowerCase()) {
+      throw new WireJobExecutionConflictError("Wire job terminal transaction hash conflicts with existing execution record.");
+    }
+
+    const workflow = await tx.wireJobWorkflow.update({
+      where: { wireJobId: job.id },
+      data: {
+        confirmationStatus: job.workflow?.confirmationStatus === "SUCCEEDED" ? "IN_PROGRESS" : "IN_PROGRESS",
+        reconcileStatus: "PENDING",
+        lastError: null,
+        nextRetryAt: null,
+        lastAttemptAt: new Date(),
+        manualReviewRequired: false,
+        manualReviewReason: null,
+      },
+      select: {
+        createStatus: true,
+        fundStatus: true,
+        confirmationStatus: true,
+        reconcileStatus: true,
+        manualReviewRequired: true,
+        manualReviewReason: true,
+      },
+    });
+
+    const updatedJob = await tx.wireJob.update({
+      where: { id: job.id },
+      data: {
+        terminalTxHash: input.terminalTxHash,
+      },
+      select: {
+        id: true,
+        jobId: true,
+        quoteId: true,
+        chainId: true,
+        contractAddress: true,
+        contractJobId: true,
+        createTxHash: true,
+        fundTxHash: true,
+        terminalTxHash: true,
+        publicState: true,
+        contractState: true,
+      },
+    });
+
+    return {
+      ...updatedJob,
+      operator: workflow,
+    };
+  });
+
 export const upsertWireOperatorSpend = async (input: {
   wireJobId: string;
   actionType: WireOperatorActionType;
@@ -909,6 +1056,257 @@ export const upsertWireOperatorSpend = async (input: {
       effectiveGasPrice: input.effectiveGasPrice,
       nativeAmountSpent: input.nativeAmountSpent,
     },
+  });
+
+export const reconcileWireJobSubmittedState = async (input: {
+  jobId: string;
+  submitTxHash?: string | null;
+  confirmedAt: Date;
+  blockNumber: bigint;
+  confirmations: number;
+  logIndex?: number | null;
+}) =>
+  prisma.$transaction(async (tx) => {
+    const job = await tx.wireJob.findUnique({
+      where: { jobId: input.jobId },
+      include: {
+        workflow: true,
+      },
+    });
+    if (!job) throw new WireJobNotFoundError();
+
+    const transitionEventId = buildWireSubmittedEventId(job.jobId, input.submitTxHash);
+    const webhookEventId = buildWireSubmittedWebhookEventId(job.jobId, input.submitTxHash);
+
+    const updatedJob = await tx.wireJob.update({
+      where: { id: job.id },
+      data: {
+        contractState: "SUBMITTED",
+        publicState: "SUBMITTED",
+      },
+      select: {
+        id: true,
+        jobId: true,
+        quoteId: true,
+        chainId: true,
+        contractAddress: true,
+        contractJobId: true,
+        contractState: true,
+        publicState: true,
+        principalAmount: true,
+        protocolFeeAmount: true,
+        networkReserveAmount: true,
+        fundTxHash: true,
+        webhookTargetUrl: true,
+        webhookSecret: true,
+        updatedAt: true,
+      },
+    });
+
+    const workflow = await tx.wireJobWorkflow.update({
+      where: { wireJobId: job.id },
+      data: {
+        confirmationStatus: "SUCCEEDED",
+        reconcileStatus: "SUCCEEDED",
+        lastError: null,
+        nextRetryAt: null,
+        lastAttemptAt: input.confirmedAt,
+        manualReviewRequired: false,
+        manualReviewReason: null,
+      },
+      select: {
+        createStatus: true,
+        fundStatus: true,
+        confirmationStatus: true,
+        reconcileStatus: true,
+        manualReviewRequired: true,
+        manualReviewReason: true,
+      },
+    });
+
+    await tx.wireJobTransition.upsert({
+      where: { eventId: transitionEventId },
+      update: {
+        fromState: job.contractState,
+        toState: "SUBMITTED",
+        sourceTxHash: input.submitTxHash ?? null,
+        sourceLogIndex: input.logIndex ?? null,
+        blockNumber: input.blockNumber,
+        observedAt: input.confirmedAt,
+        confirmedAt: input.confirmedAt,
+        confirmationsAtObservation: input.confirmations,
+      },
+      create: {
+        wireJobId: job.id,
+        eventId: transitionEventId,
+        fromState: job.contractState,
+        toState: "SUBMITTED",
+        sourceTxHash: input.submitTxHash ?? null,
+        sourceLogIndex: input.logIndex ?? null,
+        blockNumber: input.blockNumber,
+        observedAt: input.confirmedAt,
+        confirmedAt: input.confirmedAt,
+        confirmationsAtObservation: input.confirmations,
+      },
+    });
+
+    if (hasWireWebhookTarget(updatedJob)) {
+      await tx.wireWebhookOutbox.upsert({
+        where: { eventId: webhookEventId },
+        update: {
+          eventType: "wire.job.submitted",
+          state: "SUBMITTED",
+          contractState: "SUBMITTED",
+          payloadJson: buildSubmittedWebhookPayload(updatedJob) as Prisma.InputJsonValue,
+        },
+        create: {
+          eventId: webhookEventId,
+          wireJobId: job.id,
+          eventType: "wire.job.submitted",
+          state: "SUBMITTED",
+          contractState: "SUBMITTED",
+          payloadJson: buildSubmittedWebhookPayload(updatedJob) as Prisma.InputJsonValue,
+        },
+      });
+    }
+
+    return {
+      ...updatedJob,
+      operator: workflow,
+    };
+  });
+
+export const reconcileWireJobTerminalState = async (input: {
+  jobId: string;
+  state: WireTerminalDisposition;
+  terminalTxHash?: string | null;
+  confirmedAt: Date;
+  blockNumber: bigint;
+  confirmations: number;
+  logIndex?: number | null;
+}) =>
+  prisma.$transaction(async (tx) => {
+    const job = await tx.wireJob.findUnique({
+      where: { jobId: input.jobId },
+      include: {
+        workflow: true,
+        operatorSpends: {
+          select: {
+            nativeAmountSpent: true,
+          },
+        },
+      },
+    });
+    if (!job) throw new WireJobNotFoundError();
+
+    const transitionEventId = buildWireTerminalEventId(job.jobId, input.state, input.terminalTxHash);
+    const webhookEventId = buildWireTerminalWebhookEventId(job.jobId, input.state, input.terminalTxHash);
+
+    const updatedJob = await tx.wireJob.update({
+      where: { id: job.id },
+      data: {
+        contractState: input.state,
+        publicState: input.state,
+        terminalDisposition: input.state,
+        terminalTxHash: input.terminalTxHash ?? job.terminalTxHash,
+      },
+      select: {
+        id: true,
+        jobId: true,
+        quoteId: true,
+        chainId: true,
+        contractAddress: true,
+        contractJobId: true,
+        contractState: true,
+        publicState: true,
+        terminalDisposition: true,
+        terminalTxHash: true,
+        principalAmount: true,
+        protocolFeeAmount: true,
+        networkReserveAmount: true,
+        webhookTargetUrl: true,
+        webhookSecret: true,
+        updatedAt: true,
+      },
+    });
+
+    const workflow = await tx.wireJobWorkflow.update({
+      where: { wireJobId: job.id },
+      data: {
+        confirmationStatus: "SUCCEEDED",
+        reconcileStatus: "SUCCEEDED",
+        lastError: null,
+        nextRetryAt: null,
+        lastAttemptAt: input.confirmedAt,
+        manualReviewRequired: false,
+        manualReviewReason: null,
+      },
+      select: {
+        createStatus: true,
+        fundStatus: true,
+        confirmationStatus: true,
+        reconcileStatus: true,
+        manualReviewRequired: true,
+        manualReviewReason: true,
+      },
+    });
+
+    await tx.wireJobTransition.upsert({
+      where: { eventId: transitionEventId },
+      update: {
+        fromState: job.contractState,
+        toState: input.state,
+        sourceTxHash: input.terminalTxHash ?? null,
+        sourceLogIndex: input.logIndex ?? null,
+        blockNumber: input.blockNumber,
+        observedAt: input.confirmedAt,
+        confirmedAt: input.confirmedAt,
+        confirmationsAtObservation: input.confirmations,
+      },
+      create: {
+        wireJobId: job.id,
+        eventId: transitionEventId,
+        fromState: job.contractState,
+        toState: input.state,
+        sourceTxHash: input.terminalTxHash ?? null,
+        sourceLogIndex: input.logIndex ?? null,
+        blockNumber: input.blockNumber,
+        observedAt: input.confirmedAt,
+        confirmedAt: input.confirmedAt,
+        confirmationsAtObservation: input.confirmations,
+      },
+    });
+
+    if (hasWireWebhookTarget(updatedJob)) {
+      await tx.wireWebhookOutbox.upsert({
+        where: { eventId: webhookEventId },
+        update: {
+          eventType: `wire.job.${input.state.toLowerCase()}`,
+          state: input.state,
+          contractState: input.state,
+          payloadJson: buildTerminalWebhookPayload({
+            ...updatedJob,
+            operatorSpends: job.operatorSpends,
+          }) as Prisma.InputJsonValue,
+        },
+        create: {
+          eventId: webhookEventId,
+          wireJobId: job.id,
+          eventType: `wire.job.${input.state.toLowerCase()}`,
+          state: input.state,
+          contractState: input.state,
+          payloadJson: buildTerminalWebhookPayload({
+            ...updatedJob,
+            operatorSpends: job.operatorSpends,
+          }) as Prisma.InputJsonValue,
+        },
+      });
+    }
+
+    return {
+      ...updatedJob,
+      operator: workflow,
+    };
   });
 
 export const reconcileWireJobFundedState = async (input: {

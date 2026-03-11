@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
       {
         ok: true,
         authMode: "bearer-secret",
-        operatorMode: "hosted-create-fund-reconcile",
+        operatorMode: "hosted-create-fund-reconcile-terminal",
         ...snapshot,
       },
       200,

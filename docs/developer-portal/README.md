@@ -16,6 +16,7 @@ Integrate your agent with Ghost Protocol and reach your first authorized request
 - [MCP Directory Submissions](./mcp-directory-submissions.md)
 - [MCP Submission Profile](./mcp-submission-profile.md)
 - [OpenClaw Ghost Pay](./openclaw-ghost-pay.md)
+- [GhostWire Webhooks](./ghostwire-webhooks.md)
 - [Benchmarking and Claims](./benchmarking-and-claims.md)
 - [Errors and Security](./errors-and-security.md)
 - [Security and Shared Responsibility](./security-and-shared-responsibility.md)
