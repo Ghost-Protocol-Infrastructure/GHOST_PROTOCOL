@@ -108,6 +108,58 @@ enum MerchantSettlementBatchStatus {
   FAILED
 }
 
+enum WireSettlementAsset {
+  USDC
+}
+
+enum WireReserveAsset {
+  ETH
+}
+
+enum WireJobType {
+  SERVICE
+}
+
+enum WireContractState {
+  OPEN
+  FUNDED
+  SUBMITTED
+  COMPLETED
+  REJECTED
+  EXPIRED
+}
+
+enum WireTerminalDisposition {
+  COMPLETED
+  REJECTED
+  EXPIRED
+}
+
+enum WireWorkflowStatus {
+  PENDING
+  IN_PROGRESS
+  SUCCEEDED
+  FAILED
+}
+
+enum WireOperatorActionType {
+  APPROVE
+  CREATE
+  FUND
+  SUBMIT
+  COMPLETE
+  REJECT
+  EXPIRE
+  RECLAIM
+}
+
+enum WireWebhookDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+  DEAD_LETTER
+}
+
 model CreditBalance {
   walletAddress   String   @id
   credits         Int      @default(0)
@@ -373,14 +425,14 @@ model AgentGatewayDelegatedSigner {
 }
 
 model MerchantSettlementBatch {
-  id             String                      @id @default(cuid())
+  id             String                        @id @default(cuid())
   status         MerchantSettlementBatchStatus @default(OPEN)
   txHash         String?
   submittedAt    DateTime?
   confirmedAt    DateTime?
   failureMessage String?
-  createdAt      DateTime                    @default(now())
-  updatedAt      DateTime                    @updatedAt
+  createdAt      DateTime                      @default(now())
+  updatedAt      DateTime                      @updatedAt
 
   earnings MerchantEarning[]
 
@@ -391,8 +443,8 @@ model MerchantSettlementBatch {
 }
 
 model MerchantEarning {
-  id                   String                   @id @default(cuid())
-  settlementId         String                   @unique
+  id                   String                    @id @default(cuid())
+  settlementId         String                    @unique
   walletAddress        String
   merchantOwnerAddress String
   agentId              String?
@@ -403,13 +455,13 @@ model MerchantEarning {
   grossWei             BigInt
   feeWei               BigInt
   netWei               BigInt
-  status               MerchantEarningStatus    @default(PENDING)
+  status               MerchantEarningStatus     @default(PENDING)
   allocatorBatchId     String?
   txHash               String?
   failureCode          String?
   failureMessage       String?
-  createdAt            DateTime                 @default(now())
-  updatedAt            DateTime                 @updatedAt
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
 
   wallet         CreditBalance            @relation(fields: [walletAddress], references: [walletAddress], onDelete: Cascade)
   allocatorBatch MerchantSettlementBatch? @relation(fields: [allocatorBatchId], references: [id], onDelete: SetNull)
@@ -429,33 +481,33 @@ model SystemState {
 }
 
 model AgentScoreInput {
-  agentAddress     String    @id
-  agentId          String
-  name             String
-  creator          String
-  owner            String
-  image            String?
-  description      String?
-  telegram         String?
-  twitter          String?
-  website          String?
-  status           String    @default("active")
-  txSourceAddress  String?
-  txSourceKind     AgentTxSourceKind     @default(UNRESOLVED)
+  agentAddress            String                 @id
+  agentId                 String
+  name                    String
+  creator                 String
+  owner                   String
+  image                   String?
+  description             String?
+  telegram                String?
+  twitter                 String?
+  website                 String?
+  status                  String                 @default("active")
+  txSourceAddress         String?
+  txSourceKind            AgentTxSourceKind      @default(UNRESOLVED)
   canonicalOnchainAddress String?
   canonicalAddressSource  CanonicalAddressSource @default(NONE)
-  txCount          Int       @default(0)
-  onchainTxCountAgent Int?
-  onchainTxCountOwner Int @default(0)
-  usageAuthorizedCount7d Int @default(0)
-  metricSource TxMetricSource @default(UNRESOLVED)
-  yield            Float     @default(0)
-  uptime           Float     @default(0)
-  isClaimed        Boolean   @default(false)
-  txCountUpdatedAt DateTime?
-  lastIngestedAt   DateTime  @default(now())
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  txCount                 Int                    @default(0)
+  onchainTxCountAgent     Int?
+  onchainTxCountOwner     Int                    @default(0)
+  usageAuthorizedCount7d  Int                    @default(0)
+  metricSource            TxMetricSource         @default(UNRESOLVED)
+  yield                   Float                  @default(0)
+  uptime                  Float                  @default(0)
+  isClaimed               Boolean                @default(false)
+  txCountUpdatedAt        DateTime?
+  lastIngestedAt          DateTime               @default(now())
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
 
   agent Agent @relation(fields: [agentAddress], references: [address], onDelete: Cascade)
 
@@ -487,38 +539,38 @@ model LeaderboardSnapshot {
 }
 
 model LeaderboardSnapshotRow {
-  id             String    @id @default(cuid())
-  snapshotId     String
-  agentAddress   String
-  agentId        String
-  name           String
-  creator        String
-  owner          String
-  image          String?
-  description    String?
-  telegram       String?
-  twitter        String?
-  website        String?
-  status         String
-  rank           Int
-  tier           AgentTier
-  txCount        Int
-  onchainTxCountAgent Int?
-  onchainTxCountOwner Int @default(0)
-  usageAuthorizedCount7d Int @default(0)
-  metricSource TxMetricSource @default(UNRESOLVED)
+  id                      String                 @id @default(cuid())
+  snapshotId              String
+  agentAddress            String
+  agentId                 String
+  name                    String
+  creator                 String
+  owner                   String
+  image                   String?
+  description             String?
+  telegram                String?
+  twitter                 String?
+  website                 String?
+  status                  String
+  rank                    Int
+  tier                    AgentTier
+  txCount                 Int
+  onchainTxCountAgent     Int?
+  onchainTxCountOwner     Int                    @default(0)
+  usageAuthorizedCount7d  Int                    @default(0)
+  metricSource            TxMetricSource         @default(UNRESOLVED)
   canonicalOnchainAddress String?
-  canonicalAddressSource CanonicalAddressSource @default(NONE)
-  reputation     Float
-  rankScore      Float
-  yield          Float
-  uptime         Float
-  volume         BigInt
-  score          Int
-  agentCreatedAt DateTime
-  agentUpdatedAt DateTime
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  canonicalAddressSource  CanonicalAddressSource @default(NONE)
+  reputation              Float
+  rankScore               Float
+  yield                   Float
+  uptime                  Float
+  volume                  BigInt
+  score                   Int
+  agentCreatedAt          DateTime
+  agentUpdatedAt          DateTime
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
 
   snapshot LeaderboardSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
   agent    Agent               @relation(fields: [agentAddress], references: [address], onDelete: Cascade)
@@ -536,4 +588,159 @@ model ScorePipelineState {
   value     String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model WireQuote {
+  id                           String               @id @default(cuid())
+  quoteId                      String               @unique
+  clientAddress                String?
+  providerAddress              String
+  evaluatorAddress             String
+  chainId                      Int
+  settlementAsset              WireSettlementAsset
+  principalAmount              BigInt
+  protocolFeeAmount            BigInt
+  networkReserveAmount         BigInt
+  networkReserveAsset          WireReserveAsset
+  networkReserveDecimals       Int                  @default(18)
+  displayReserveEstimateAmount BigInt?
+  displayReserveEstimateAsset  WireSettlementAsset?
+  jobType                      WireJobType          @default(SERVICE)
+  ttlSeconds                   Int
+  expiresAt                    DateTime
+  consumedAt                   DateTime?
+  createdAt                    DateTime             @default(now())
+
+  job WireJob?
+
+  @@index([expiresAt])
+  @@index([consumedAt])
+  @@index([chainId, settlementAsset, createdAt])
+  @@index([providerAddress, createdAt])
+}
+
+model WireJob {
+  id                   String                   @id @default(cuid())
+  jobId                String                   @unique
+  quoteId              String                   @unique
+  chainId              Int
+  jobExpiresAt         DateTime
+  contractAddress      String?
+  contractJobId        String?
+  contractBudgetAmount BigInt
+  clientAddress        String
+  providerAddress      String
+  evaluatorAddress     String
+  settlementAsset      WireSettlementAsset
+  principalAmount      BigInt
+  protocolFeeAmount    BigInt
+  networkReserveAmount BigInt
+  networkReserveAsset  WireReserveAsset
+  specHash             String
+  metadataUri          String?
+  contractState        WireContractState        @default(OPEN)
+  publicState          WireContractState        @default(OPEN)
+  terminalDisposition  WireTerminalDisposition?
+  createTxHash         String?
+  fundTxHash           String?
+  terminalTxHash       String?
+  webhookTargetUrl     String?
+  webhookSecret        String?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  quote          WireQuote           @relation(fields: [quoteId], references: [quoteId], onDelete: Restrict)
+  workflow       WireJobWorkflow?
+  transitions    WireJobTransition[]
+  operatorSpends WireOperatorSpend[]
+  webhookOutbox  WireWebhookOutbox[]
+
+  @@index([chainId, publicState, createdAt])
+  @@index([clientAddress, createdAt])
+  @@index([providerAddress, createdAt])
+  @@index([evaluatorAddress, createdAt])
+  @@index([jobExpiresAt])
+  @@index([contractAddress, contractJobId])
+}
+
+model WireJobWorkflow {
+  id                 String             @id @default(cuid())
+  wireJobId          String             @unique
+  createStatus       WireWorkflowStatus @default(PENDING)
+  fundStatus         WireWorkflowStatus @default(PENDING)
+  confirmationStatus WireWorkflowStatus @default(PENDING)
+  reconcileStatus    WireWorkflowStatus @default(PENDING)
+  lastError          String?
+  lastAttemptAt      DateTime?
+  retryCount         Int                @default(0)
+  nextRetryAt        DateTime?
+  manualReviewRequired Boolean          @default(false)
+  manualReviewReason String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  wireJob WireJob @relation(fields: [wireJobId], references: [id], onDelete: Cascade)
+
+  @@index([nextRetryAt])
+  @@index([manualReviewRequired, nextRetryAt])
+  @@index([reconcileStatus, nextRetryAt])
+}
+
+model WireJobTransition {
+  id                         String             @id @default(cuid())
+  wireJobId                  String
+  eventId                    String             @unique
+  fromState                  WireContractState?
+  toState                    WireContractState
+  sourceTxHash               String?
+  sourceLogIndex             Int?
+  blockNumber                BigInt?
+  observedAt                 DateTime           @default(now())
+  confirmedAt                DateTime?
+  confirmationsAtObservation Int?
+
+  wireJob WireJob @relation(fields: [wireJobId], references: [id], onDelete: Cascade)
+
+  @@index([wireJobId, observedAt])
+  @@index([wireJobId, toState, confirmedAt])
+}
+
+model WireOperatorSpend {
+  id                String                 @id @default(cuid())
+  wireJobId         String
+  actionType        WireOperatorActionType
+  txHash            String                 @unique
+  nativeAsset       WireReserveAsset
+  gasUsed           BigInt
+  effectiveGasPrice BigInt
+  nativeAmountSpent BigInt
+  recordedAt        DateTime               @default(now())
+
+  wireJob WireJob @relation(fields: [wireJobId], references: [id], onDelete: Cascade)
+
+  @@index([wireJobId, recordedAt])
+  @@index([actionType, recordedAt])
+}
+
+model WireWebhookOutbox {
+  id             String                    @id @default(cuid())
+  eventId        String                    @unique
+  wireJobId      String
+  eventType      String
+  state          WireContractState
+  contractState  WireContractState
+  payloadJson    Json
+  deliveryStatus WireWebhookDeliveryStatus @default(PENDING)
+  attemptCount   Int                       @default(0)
+  lastAttemptAt  DateTime?
+  nextAttemptAt  DateTime?
+  deliveredAt    DateTime?
+  lastError      String?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+
+  wireJob WireJob @relation(fields: [wireJobId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryStatus, nextAttemptAt])
+  @@index([wireJobId, createdAt])
 }

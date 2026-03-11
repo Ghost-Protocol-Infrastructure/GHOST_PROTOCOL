@@ -9,7 +9,7 @@ const FALLBACK_GHOST_PREFERRED_CHAIN_ID = 8453;
 const SUPPORTED_GHOST_CHAIN_IDS = new Set<number>([8453, 84532]);
 
 export const GHOST_CREDIT_PRICE_WEI: bigint = 10_000_000_000_000n;
-export const GHOST_PROTOCOL_FEE_BPS = 250;
+export const GHOST_PROTOCOL_FEE_BPS = 500;
 
 const resolvePreferredChainId = (rawChainId: string | undefined): number => {
   const trimmed = rawChainId?.trim();

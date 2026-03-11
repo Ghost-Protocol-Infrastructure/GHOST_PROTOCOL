@@ -33,12 +33,12 @@ describe("merchant settlement helpers", () => {
   it("converts gross credits into gross, fee, and net wei using the locked credit price", () => {
     const result = calculateSettlementAmounts({
       grossCredits: 4n,
-      feeBps: 250,
+      feeBps: 500,
     });
 
     assert.equal(result.creditPriceWei, 10_000_000_000_000n);
     assert.equal(result.grossWei, 40_000_000_000_000n);
-    assert.equal(result.feeWei, 1_000_000_000_000n);
-    assert.equal(result.netWei, 39_000_000_000_000n);
+    assert.equal(result.feeWei, 2_000_000_000_000n);
+    assert.equal(result.netWei, 38_000_000_000_000n);
   });
 });

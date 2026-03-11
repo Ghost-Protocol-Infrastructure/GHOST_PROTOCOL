@@ -124,6 +124,58 @@ type AgentGatewayConfigResponse = {
   config: AgentGatewayConfigRecord;
 };
 
+type WireJobPricingAmount = {
+  asset: string;
+  amount: string;
+  decimals: number;
+  bps?: number;
+  chainId?: number;
+};
+
+type WireJobOperatorStatus = {
+  createStatus: string | null;
+  fundStatus: string | null;
+  confirmationStatus: string | null;
+  reconcileStatus: string | null;
+  retryCount: number | null;
+  nextRetryAt: string | null;
+  lastError: string | null;
+};
+
+type WireJobListItem = {
+  id: string;
+  jobId: string;
+  quoteId: string;
+  chainId: number;
+  state: string;
+  contractState: string;
+  terminalDisposition: string | null;
+  clientAddress: string;
+  providerAddress: string;
+  evaluatorAddress: string;
+  contractAddress: string | null;
+  contractJobId: string | null;
+  createTxHash: string | null;
+  fundTxHash: string | null;
+  terminalTxHash: string | null;
+  metadataUri: string | null;
+  createdAt: string;
+  updatedAt: string;
+  pricing: {
+    principal: WireJobPricingAmount;
+    protocolFee: WireJobPricingAmount;
+    networkReserve: WireJobPricingAmount;
+  };
+  operator: WireJobOperatorStatus;
+};
+
+type WireJobsResponse = {
+  ok: boolean;
+  apiVersion: number;
+  items: WireJobListItem[];
+  nextCursor: string | null;
+};
+
 const EMPTY_SETTLEMENT_SUMMARY: MerchantSettlementSummaryRecord = {
   scope: {
     ownerAddress: null,
@@ -196,6 +248,7 @@ const SDK_SECURITY_NOTICE =
 
 const DEFAULT_CANARY_PATH = "/ghostgate/canary";
 const DEFAULT_MERCHANT_CANARY_HISTORY_LIMIT = 8;
+const DEFAULT_MERCHANT_WIRE_JOB_LIMIT = 8;
 const DEFAULT_MERCHANT_DELEGATED_SIGNER_MAX_ACTIVE = 2;
 const DEFAULT_MERCHANT_REVOKED_SIGNER_HISTORY_VISIBLE = false;
 const GATEWAY_READINESS_POLL_INTERVAL_MS = 10_000;
@@ -395,6 +448,30 @@ const formatWeiToFixedEth = (value: bigint): string => {
   return `${ethValue.toFixed(decimals)} ETH`;
 };
 
+const formatAtomicAmount = (value: string, decimals: number, maxFractionDigits: number): string => {
+  const parsed = parseNullableDecimalBigInt(value);
+  if (parsed == null) return "0";
+
+  const negative = parsed < 0n;
+  const absolute = negative ? -parsed : parsed;
+  const divisor = 10n ** BigInt(decimals);
+  const whole = absolute / divisor;
+  const fraction = absolute % divisor;
+
+  if (maxFractionDigits <= 0) {
+    return `${negative ? "-" : ""}${whole.toString()}`;
+  }
+
+  const padded = fraction.toString().padStart(decimals, "0");
+  const trimmed = padded.slice(0, Math.min(decimals, maxFractionDigits)).replace(/0+$/, "");
+  return `${negative ? "-" : ""}${whole.toString()}${trimmed.length > 0 ? `.${trimmed}` : ""}`;
+};
+
+const formatWireUsdcAmount = (value: string): string => `${formatAtomicAmount(value, 6, 2)} USDC`;
+const formatWireEthAmount = (value: string): string => `${formatAtomicAmount(value, 18, 6)} ETH`;
+const formatShortHash = (value: string | null | undefined): string =>
+  value && value.length > 12 ? `${value.slice(0, 6)}...${value.slice(-4)}` : value ?? "--";
+
 type SyncCreditsResponse = {
   userAddress: string;
   credits: string;
@@ -515,6 +592,9 @@ function DashboardPageContent() {
   const [showRevokedMerchantDelegatedSignerHistory, setShowRevokedMerchantDelegatedSignerHistory] = useState(
     DEFAULT_MERCHANT_REVOKED_SIGNER_HISTORY_VISIBLE,
   );
+  const [merchantWireJobs, setMerchantWireJobs] = useState<WireJobListItem[]>([]);
+  const [isLoadingMerchantWireJobs, setIsLoadingMerchantWireJobs] = useState(false);
+  const [merchantWireJobsError, setMerchantWireJobsError] = useState<string | null>(null);
   const [consumerGatewayReadinessStatus, setConsumerGatewayReadinessStatus] = useState<GatewayReadinessStatus | null>(null);
   const [consumerGatewayLastCheckedAt, setConsumerGatewayLastCheckedAt] = useState<string | null>(null);
   const [consumerGatewayLastPassedAt, setConsumerGatewayLastPassedAt] = useState<string | null>(null);
@@ -788,6 +868,97 @@ function DashboardPageContent() {
         activeSignerCount: typeof payload.activeSignerCount === "number" ? payload.activeSignerCount : 0,
         signers,
       };
+    },
+    [],
+  );
+
+  const fetchMerchantWireJobs = useCallback(
+    async (participantAddress: string): Promise<WireJobListItem[]> => {
+      const params = new URLSearchParams({
+        participant: participantAddress.toLowerCase(),
+        limit: String(DEFAULT_MERCHANT_WIRE_JOB_LIMIT),
+      });
+      const response = await fetch(`/api/wire/jobs?${params.toString()}`, {
+        cache: "no-store",
+        headers: {
+          "cache-control": "no-cache",
+        },
+      });
+
+      const payload = (await response.json()) as Partial<WireJobsResponse> & {
+        code?: number;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(typeof payload.error === "string" ? payload.error : "Failed to load GhostWire jobs.");
+      }
+
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      return items
+        .map((entry): WireJobListItem | null => {
+          if (!entry || typeof entry !== "object") return null;
+          const row = entry as Record<string, unknown>;
+          if (typeof row.id !== "string" || typeof row.jobId !== "string" || typeof row.quoteId !== "string") {
+            return null;
+          }
+
+          const pricing =
+            typeof row.pricing === "object" && row.pricing !== null ? (row.pricing as Record<string, unknown>) : {};
+          const principal =
+            typeof pricing.principal === "object" && pricing.principal !== null
+              ? (pricing.principal as WireJobPricingAmount)
+              : null;
+          const protocolFee =
+            typeof pricing.protocolFee === "object" && pricing.protocolFee !== null
+              ? (pricing.protocolFee as WireJobPricingAmount)
+              : null;
+          const networkReserve =
+            typeof pricing.networkReserve === "object" && pricing.networkReserve !== null
+              ? (pricing.networkReserve as WireJobPricingAmount)
+              : null;
+          const operator =
+            typeof row.operator === "object" && row.operator !== null ? (row.operator as WireJobOperatorStatus) : null;
+
+          if (!principal || !protocolFee || !networkReserve || !operator) {
+            return null;
+          }
+
+          return {
+            id: row.id,
+            jobId: row.jobId,
+            quoteId: row.quoteId,
+            chainId: typeof row.chainId === "number" ? row.chainId : 0,
+            state: typeof row.state === "string" ? row.state : "OPEN",
+            contractState: typeof row.contractState === "string" ? row.contractState : "OPEN",
+            terminalDisposition: typeof row.terminalDisposition === "string" ? row.terminalDisposition : null,
+            clientAddress: typeof row.clientAddress === "string" ? row.clientAddress : "",
+            providerAddress: typeof row.providerAddress === "string" ? row.providerAddress : "",
+            evaluatorAddress: typeof row.evaluatorAddress === "string" ? row.evaluatorAddress : "",
+            contractAddress: typeof row.contractAddress === "string" ? row.contractAddress : null,
+            contractJobId: typeof row.contractJobId === "string" ? row.contractJobId : null,
+            createTxHash: typeof row.createTxHash === "string" ? row.createTxHash : null,
+            fundTxHash: typeof row.fundTxHash === "string" ? row.fundTxHash : null,
+            terminalTxHash: typeof row.terminalTxHash === "string" ? row.terminalTxHash : null,
+            metadataUri: typeof row.metadataUri === "string" ? row.metadataUri : null,
+            createdAt: typeof row.createdAt === "string" ? row.createdAt : new Date().toISOString(),
+            updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : new Date().toISOString(),
+            pricing: {
+              principal,
+              protocolFee,
+              networkReserve,
+            },
+            operator: {
+              createStatus: typeof operator.createStatus === "string" ? operator.createStatus : null,
+              fundStatus: typeof operator.fundStatus === "string" ? operator.fundStatus : null,
+              confirmationStatus: typeof operator.confirmationStatus === "string" ? operator.confirmationStatus : null,
+              reconcileStatus: typeof operator.reconcileStatus === "string" ? operator.reconcileStatus : null,
+              retryCount: typeof operator.retryCount === "number" ? operator.retryCount : null,
+              nextRetryAt: typeof operator.nextRetryAt === "string" ? operator.nextRetryAt : null,
+              lastError: typeof operator.lastError === "string" ? operator.lastError : null,
+            },
+          };
+        })
+        .filter((entry): entry is WireJobListItem => entry != null);
     },
     [],
   );
@@ -1275,6 +1446,39 @@ print("outcome:", outcome)`,
       active = false;
     };
   }, [fetchAgentGatewayDelegatedSigners, selectedOwnedAgentId, showMerchantView]);
+
+  useEffect(() => {
+    if (!showMerchantView || !selectedOwnedAgent?.owner) {
+      setMerchantWireJobs([]);
+      setMerchantWireJobsError(null);
+      setIsLoadingMerchantWireJobs(false);
+      return;
+    }
+
+    let active = true;
+
+    const loadMerchantWireJobs = async () => {
+      setIsLoadingMerchantWireJobs(true);
+      setMerchantWireJobsError(null);
+      try {
+        const jobs = await fetchMerchantWireJobs(selectedOwnedAgent.owner);
+        if (!active) return;
+        setMerchantWireJobs(jobs);
+      } catch (error) {
+        if (!active) return;
+        setMerchantWireJobs([]);
+        setMerchantWireJobsError(getErrorMessage(error, "Failed to load GhostWire jobs."));
+      } finally {
+        if (active) setIsLoadingMerchantWireJobs(false);
+      }
+    };
+
+    void loadMerchantWireJobs();
+
+    return () => {
+      active = false;
+    };
+  }, [fetchMerchantWireJobs, selectedOwnedAgent, showMerchantView]);
 
   useEffect(() => {
     if (!showMerchantView || !selectedOwnedAgentId) return;
@@ -1790,6 +1994,37 @@ def my_agent():
     () => formatWeiToFixedEth(merchantVaultBalanceWei),
     [merchantVaultBalanceWei],
   );
+  const merchantWireJobSummary = useMemo(() => {
+    return merchantWireJobs.reduce(
+      (summary, job) => {
+        if (job.contractState === "OPEN") summary.open += 1;
+        if (job.contractState === "FUNDED") summary.funded += 1;
+        if (job.contractState === "SUBMITTED") summary.submitted += 1;
+        if (job.contractState === "COMPLETED" || job.contractState === "REJECTED" || job.contractState === "EXPIRED") {
+          summary.terminal += 1;
+        }
+
+        const statuses = [
+          job.operator.createStatus,
+          job.operator.fundStatus,
+          job.operator.confirmationStatus,
+          job.operator.reconcileStatus,
+        ];
+        if (statuses.some((status) => status !== "SUCCEEDED") || Boolean(job.operator.lastError)) {
+          summary.backlog += 1;
+        }
+
+        return summary;
+      },
+      {
+        open: 0,
+        funded: 0,
+        submitted: 0,
+        terminal: 0,
+        backlog: 0,
+      },
+    );
+  }, [merchantWireJobs]);
 
   const merchantOwnsSelectedAgent = Boolean(
     address &&
@@ -2413,6 +2648,127 @@ def my_agent():
                       </p>
                     )}
                   </div>
+                </div>
+
+                <div className="mt-4 border border-neutral-900 bg-neutral-900 p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
+                        GhostWire Jobs // Read Only
+                      </p>
+                      <p className="mt-1 text-xs text-neutral-600">
+                        Recent wire-mode jobs involving the selected owner address. API/SDK remains the write surface in v1.
+                      </p>
+                    </div>
+                    {isLoadingMerchantWireJobs && (
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-neutral-500 font-bold">
+                        Loading GhostWire backlog...
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+                    <div className="border border-neutral-800 bg-neutral-950 p-3">
+                      <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">Open</p>
+                      <p className="mt-1 text-lg text-neutral-200 font-mono">{merchantWireJobSummary.open}</p>
+                    </div>
+                    <div className="border border-neutral-800 bg-neutral-950 p-3">
+                      <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">Funded</p>
+                      <p className="mt-1 text-lg text-neutral-200 font-mono">{merchantWireJobSummary.funded}</p>
+                    </div>
+                    <div className="border border-neutral-800 bg-neutral-950 p-3">
+                      <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">Submitted</p>
+                      <p className="mt-1 text-lg text-neutral-200 font-mono">{merchantWireJobSummary.submitted}</p>
+                    </div>
+                    <div className="border border-neutral-800 bg-neutral-950 p-3">
+                      <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">Terminal</p>
+                      <p className="mt-1 text-lg text-neutral-200 font-mono">{merchantWireJobSummary.terminal}</p>
+                    </div>
+                    <div className="border border-neutral-800 bg-neutral-950 p-3">
+                      <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">Backlog</p>
+                      <p className={`mt-1 text-lg font-mono ${merchantWireJobSummary.backlog > 0 ? "text-amber-300" : "text-neutral-200"}`}>
+                        {merchantWireJobSummary.backlog}
+                      </p>
+                    </div>
+                  </div>
+
+                  {merchantWireJobsError && (
+                    <p className="mt-4 text-xs text-red-500">{merchantWireJobsError}</p>
+                  )}
+
+                  {!merchantWireJobsError && !isLoadingMerchantWireJobs && merchantWireJobs.length === 0 && (
+                    <p className="mt-4 text-xs text-neutral-600">
+                      No GhostWire jobs recorded yet for the selected owner address.
+                    </p>
+                  )}
+
+                  {merchantWireJobs.length > 0 && (
+                    <div className="mt-4 space-y-3">
+                      {merchantWireJobs.map((job) => (
+                        <div key={job.jobId} className="border border-neutral-800 bg-neutral-950 p-3">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
+                                {job.jobId}
+                              </p>
+                              <p className="mt-1 text-sm text-neutral-300 font-mono">
+                                {job.contractState}
+                                {job.terminalDisposition ? ` // ${job.terminalDisposition}` : ""}
+                              </p>
+                              <p className="mt-1 text-[11px] text-neutral-600">
+                                Quote {job.quoteId} // Updated {formatRelativeTimeFromIso(job.updatedAt)}
+                              </p>
+                            </div>
+                            <div className="text-left sm:text-right">
+                              <p className="text-sm text-neutral-200 font-mono">
+                                {formatWireUsdcAmount(job.pricing.principal.amount)}
+                              </p>
+                              <p className="mt-1 text-[11px] text-neutral-600">
+                                Fee {formatWireUsdcAmount(job.pricing.protocolFee.amount)} // Reserve{" "}
+                                {formatWireEthAmount(job.pricing.networkReserve.amount)}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
+                            <div className="border border-neutral-900 bg-neutral-900 p-3">
+                              <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
+                                Contract Artifacts
+                              </p>
+                              <p className="mt-2 text-[11px] text-neutral-500">Contract: {formatShortHash(job.contractAddress)}</p>
+                              <p className="mt-1 text-[11px] text-neutral-500">Job Ref: {job.contractJobId ?? "--"}</p>
+                            </div>
+                            <div className="border border-neutral-900 bg-neutral-900 p-3">
+                              <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
+                                Recorded Tx Hashes
+                              </p>
+                              <p className="mt-2 text-[11px] text-neutral-500">Create: {formatShortHash(job.createTxHash)}</p>
+                              <p className="mt-1 text-[11px] text-neutral-500">Fund: {formatShortHash(job.fundTxHash)}</p>
+                            </div>
+                            <div className="border border-neutral-900 bg-neutral-900 p-3">
+                              <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
+                                Operator
+                              </p>
+                              <p className="mt-2 text-[11px] text-neutral-500">
+                                Create {job.operator.createStatus ?? "--"} // Fund {job.operator.fundStatus ?? "--"}
+                              </p>
+                              <p className="mt-1 text-[11px] text-neutral-500">
+                                Confirm {job.operator.confirmationStatus ?? "--"} // Reconcile {job.operator.reconcileStatus ?? "--"}
+                              </p>
+                              {job.operator.lastError && (
+                                <p className="mt-2 text-[11px] text-amber-300">{job.operator.lastError}</p>
+                              )}
+                              {job.operator.nextRetryAt && (
+                                <p className="mt-1 text-[11px] text-neutral-600">
+                                  Next retry {formatRelativeTimeFromIso(job.operator.nextRetryAt)}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-4 border border-neutral-900 bg-neutral-900 p-3">
