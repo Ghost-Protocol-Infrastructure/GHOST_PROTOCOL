@@ -1,7 +1,7 @@
 ---
 name: openclaw-ghost-pay
-description: Discover Ghost payment requirements and execute paid GhostGate calls through x402-compatible EIP-712 envelopes.
-metadata: {"author":"Ghost Protocol Infrastructure","version":"0.1.0","runtime":"node","requires_env":["GHOST_SIGNER_PRIVATE_KEY"],"safety":"server-only"}
+description: Discover Ghost payment requirements, execute GhostGate Express payments, and use GhostWire quote/status helpers.
+metadata: {"author":"Ghost Protocol Infrastructure","version":"1.1.0","runtime":"node","requires_env":["GHOST_SIGNER_PRIVATE_KEY"],"safety":"server-only"}
 ---
 
 # OpenClaw Ghost Pay Skill
