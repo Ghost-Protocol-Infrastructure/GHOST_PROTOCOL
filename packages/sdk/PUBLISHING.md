@@ -2,16 +2,37 @@
 
 This package is published from `packages/sdk`.
 
-## Prerequisites
+## Trusted Publishing (Recommended)
 
-1. You are logged into npm with publish rights for the `@ghostgate` scope.
-2. `npm whoami` returns the expected npm account.
-3. `npm access ls-packages ghostgate` shows access to `@ghostgate/sdk`.
-4. Local repo is clean other than intended changes.
+npm trusted publishing is configured through GitHub OIDC and does not require OTP or an npm token in CI.
 
-## Preflight
+### One-time npm setup
 
-Run from repo root:
+In npm package settings for `@ghostgate/sdk`, add a trusted publisher with:
+
+1. Provider: `GitHub Actions`
+2. Owner: `Ghost-Protocol-Infrastructure`
+3. Repository: `GHOST_PROTOCOL`
+4. Workflow file: `publish-node-sdk.yml`
+5. Environment name: `npm`
+
+This must match `.github/workflows/publish-node-sdk.yml` exactly.
+
+### Publish methods
+
+1. Tag-based release (recommended):
+
+```bash
+git tag sdk-v0.1.3
+git push origin sdk-v0.1.3
+```
+
+2. Manual run:
+Run the `Publish Node SDK` workflow from GitHub Actions with `npm_tag=latest` (or another dist-tag).
+
+### Preflight
+
+Run from repo root before triggering publish:
 
 ```bash
 npm run build:sdk
@@ -19,29 +40,7 @@ npm run typecheck
 npm run lint
 ```
 
-Optional tarball check:
-
-```bash
-npm pack ./packages/sdk
-```
-
-Inspect the tarball contents, then delete it.
-
-## First Public Release
-
-Run from `packages/sdk`:
-
-```bash
-npm publish --access public
-```
-
-Recommended for stronger supply-chain metadata when supported by your npm account/environment:
-
-```bash
-npm publish --access public --provenance
-```
-
-## Post-Publish Verification
+### Post-publish verification
 
 ```bash
 npm view @ghostgate/sdk version
@@ -49,7 +48,7 @@ npm view @ghostgate/sdk dist-tags
 npm view @ghostgate/sdk repository.url
 ```
 
-Then test a clean install:
+Then smoke test:
 
 ```bash
 mkdir -p /tmp/ghostgate-sdk-smoke
@@ -58,20 +57,10 @@ npm init -y
 npm install @ghostgate/sdk
 ```
 
-## Release Hygiene
+## Manual Local Publish (Fallback)
 
-For the first external release:
-
-1. Keep version at `0.1.0` only if the API should be treated as pre-1.0.
-2. Bump version before each publish:
+If trusted publishing is unavailable, publish from `packages/sdk` using npm CLI auth:
 
 ```bash
-npm version patch
-```
-
-3. Push the version tag after publish:
-
-```bash
-git push
-git push --tags
+npm publish --access public --provenance
 ```
