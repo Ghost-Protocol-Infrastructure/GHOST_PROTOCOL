@@ -18,11 +18,12 @@ from urllib.parse import quote
 
 import requests
 from eth_account import Account
-from eth_account.messages import encode_typed_data
+from eth_account.messages import encode_defunct, encode_typed_data
 
 
 ConnectResult = dict[str, Any]
 TelemetryResult = dict[str, Any]
+ActivateResult = dict[str, Any]
 
 
 class HeartbeatController:
@@ -45,6 +46,11 @@ class GhostGate:
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 60.0
     DEFAULT_AUTH_MODE = "ghost-eip712"
     DEFAULT_X402_SCHEME = "ghost-eip712-credit-v1"
+    DEFAULT_ACTIVATE_CANARY_PATH = "/health"
+    DEFAULT_ACTIVATE_CANARY_METHOD = "GET"
+    DEFAULT_ACTIVATE_SIGNER_LABEL = "sdk-auto"
+    MERCHANT_GATEWAY_AUTH_SCOPE = "agent_gateway"
+    MERCHANT_GATEWAY_AUTH_VERSION = "1"
     DOMAIN_NAME = "GhostGate"
     DOMAIN_VERSION = "1"
 
@@ -80,6 +86,7 @@ class GhostGate:
         self.private_key = private_key or os.getenv("GHOST_SIGNER_PRIVATE_KEY") or os.getenv("PRIVATE_KEY")
         if not self.private_key:
             raise ValueError("A signing private key is required (private_key arg or GHOST_SIGNER_PRIVATE_KEY/PRIVATE_KEY).")
+        self._activate_heartbeat: Optional[HeartbeatController] = None
 
     @property
     def is_connected(self) -> bool:
@@ -271,6 +278,106 @@ class GhostGate:
 
         return HeartbeatController(stop)
 
+    def activate(
+        self,
+        agent_id: str,
+        service_slug: str,
+        endpoint_url: str,
+        canary_path: str = DEFAULT_ACTIVATE_CANARY_PATH,
+        canary_method: str = DEFAULT_ACTIVATE_CANARY_METHOD,
+        signer_label: str = DEFAULT_ACTIVATE_SIGNER_LABEL,
+    ) -> ActivateResult:
+        """Configures, verifies, registers delegated signer, and starts heartbeat."""
+        normalized_agent_id = self._normalize_optional_string(agent_id)
+        normalized_service_slug = self._normalize_optional_string(service_slug)
+        normalized_endpoint_url = self._normalize_optional_string(endpoint_url)
+        normalized_canary_path = self._normalize_optional_string(canary_path) or self.DEFAULT_ACTIVATE_CANARY_PATH
+        normalized_canary_method = (self._normalize_optional_string(canary_method) or self.DEFAULT_ACTIVATE_CANARY_METHOD).upper()
+        normalized_signer_label = self._normalize_optional_string(signer_label) or self.DEFAULT_ACTIVATE_SIGNER_LABEL
+
+        if not normalized_agent_id:
+            raise ValueError("[activate:validate] agent_id is required.")
+        if not normalized_service_slug:
+            raise ValueError("[activate:validate] service_slug is required.")
+        if not normalized_endpoint_url:
+            raise ValueError("[activate:validate] endpoint_url is required.")
+        if not normalized_canary_path.startswith("/"):
+            raise ValueError("[activate:validate] canary_path must start with '/'.")
+        if normalized_canary_method != "GET":
+            raise ValueError("[activate:validate] canary_method must be GET.")
+
+        indexed_owner = self._fetch_gateway_owner_address(normalized_agent_id)
+        signer_address = Account.from_key(self.private_key).address.lower()
+        if signer_address != indexed_owner:
+            raise ValueError(
+                f"[activate:owner] private_key address {signer_address} does not match indexed owner {indexed_owner} for agent {normalized_agent_id}."
+            )
+
+        config_payload = self._post_gateway_signed_write(
+            action="config",
+            path="/api/agent-gateway/config",
+            agent_id=normalized_agent_id,
+            service_slug=normalized_service_slug,
+            owner_address=indexed_owner,
+            body={
+                "endpointUrl": normalized_endpoint_url,
+                "canaryPath": normalized_canary_path,
+                "canaryMethod": "GET",
+            },
+        )
+
+        verify_payload = self._post_gateway_signed_write(
+            action="verify",
+            path="/api/agent-gateway/verify",
+            agent_id=normalized_agent_id,
+            service_slug=normalized_service_slug,
+            owner_address=indexed_owner,
+            body={},
+        )
+        readiness_status = verify_payload.get("readinessStatus")
+        if verify_payload.get("verified") is not True or readiness_status != "LIVE":
+            details = []
+            if isinstance(verify_payload.get("error"), str):
+                details.append(f"error={verify_payload['error']}")
+            if isinstance(verify_payload.get("canaryUrl"), str):
+                details.append(f"canaryUrl={verify_payload['canaryUrl']}")
+            if isinstance(verify_payload.get("statusCode"), int):
+                details.append(f"statusCode={verify_payload['statusCode']}")
+            if isinstance(verify_payload.get("latencyMs"), (int, float)):
+                details.append(f"latencyMs={int(verify_payload['latencyMs'])}")
+            suffix = f" ({', '.join(details)})" if details else ""
+            raise ValueError(f"[activate:verify] canary verification did not reach LIVE readiness{suffix}.")
+
+        signer_registration = self._post_gateway_signed_write(
+            action="delegated_signer_register",
+            path="/api/agent-gateway/delegated-signers/register",
+            agent_id=normalized_agent_id,
+            service_slug=normalized_service_slug,
+            owner_address=indexed_owner,
+            body={
+                "signerAddress": signer_address,
+                "label": normalized_signer_label,
+            },
+        )
+
+        if self._activate_heartbeat:
+            self._activate_heartbeat.stop()
+        self._activate_heartbeat = self.start_heartbeat(
+            agent_id=normalized_agent_id,
+            service_slug=normalized_service_slug,
+            immediate=False,
+        )
+
+        config_result = config_payload.get("config") if isinstance(config_payload.get("config"), dict) else {}
+        return {
+            "status": "LIVE",
+            "readiness": "LIVE",
+            "config": config_result,
+            "verify": verify_payload,
+            "signerRegistration": signer_registration,
+            "heartbeat": self._activate_heartbeat,
+        }
+
     def guard(
         self,
         cost: int,
@@ -305,6 +412,120 @@ class GhostGate:
             "timestamp": int(time.time()),
             "nonce": uuid.uuid4().hex,
         }
+
+    def _create_merchant_gateway_auth_payload(
+        self,
+        *,
+        action: str,
+        agent_id: str,
+        owner_address: str,
+        actor_address: str,
+        service_slug: str,
+    ) -> dict[str, Any]:
+        return {
+            "scope": self.MERCHANT_GATEWAY_AUTH_SCOPE,
+            "version": self.MERCHANT_GATEWAY_AUTH_VERSION,
+            "action": action,
+            "agentId": agent_id,
+            "ownerAddress": owner_address.lower(),
+            "actorAddress": actor_address.lower(),
+            "serviceSlug": service_slug,
+            "nonce": uuid.uuid4().hex,
+            "issuedAt": int(time.time()),
+        }
+
+    @staticmethod
+    def _build_merchant_gateway_auth_message(payload: dict[str, Any]) -> str:
+        return "\n".join(
+            [
+                "Ghost Protocol Merchant Gateway Authorization",
+                f"scope:{payload['scope']}",
+                f"version:{payload['version']}",
+                f"action:{payload['action']}",
+                f"agentId:{payload['agentId']}",
+                f"serviceSlug:{payload['serviceSlug']}",
+                f"ownerAddress:{payload['ownerAddress']}",
+                f"actorAddress:{payload['actorAddress']}",
+                f"issuedAt:{payload['issuedAt']}",
+                f"nonce:{payload['nonce']}",
+            ]
+        )
+
+    def _fetch_gateway_owner_address(self, agent_id: str) -> str:
+        endpoint = f"{self.base_url}/api/agent-gateway/config"
+        try:
+            response = requests.get(
+                endpoint,
+                params={"agentId": agent_id},
+                headers={"accept": "application/json, text/plain;q=0.9, */*;q=0.8"},
+                timeout=self.timeout_seconds,
+            )
+        except requests.RequestException as error:
+            raise ValueError(f"[activate:config_lookup] failed to load gateway owner config: {error}") from error
+
+        payload = self._parse_response_payload(response)
+        if not response.ok:
+            raise ValueError(
+                f"[activate:config_lookup] {self._extract_payload_error(payload, 'Failed to load gateway owner config.')}"
+            )
+
+        if not isinstance(payload, dict):
+            raise ValueError("[activate:config_lookup] invalid gateway config payload.")
+        config = payload.get("config")
+        if not isinstance(config, dict):
+            raise ValueError("[activate:config_lookup] gateway config payload missing config.")
+        owner = config.get("ownerAddress")
+        if not isinstance(owner, str) or not owner.strip():
+            raise ValueError("[activate:config_lookup] gateway config payload missing ownerAddress.")
+        return owner.strip().lower()
+
+    def _post_gateway_signed_write(
+        self,
+        *,
+        action: str,
+        path: str,
+        agent_id: str,
+        service_slug: str,
+        owner_address: str,
+        body: dict[str, Any],
+    ) -> dict[str, Any]:
+        actor_address = owner_address.lower()
+        auth_payload = self._create_merchant_gateway_auth_payload(
+            action=action,
+            agent_id=agent_id,
+            owner_address=owner_address,
+            actor_address=actor_address,
+            service_slug=service_slug,
+        )
+        auth_message = self._build_merchant_gateway_auth_message(auth_payload)
+        auth_signature = Account.sign_message(encode_defunct(text=auth_message), private_key=self.private_key).signature.hex()
+
+        endpoint = f"{self.base_url}{path}"
+        request_body = {
+            "agentId": agent_id,
+            "ownerAddress": owner_address.lower(),
+            "actorAddress": actor_address,
+            "serviceSlug": service_slug,
+            "authPayload": auth_payload,
+            "authSignature": auth_signature,
+            **body,
+        }
+        try:
+            response = requests.post(
+                endpoint,
+                json=request_body,
+                headers={"accept": "application/json, text/plain;q=0.9, */*;q=0.8"},
+                timeout=self.timeout_seconds,
+            )
+        except requests.RequestException as error:
+            raise ValueError(f"[activate:{action}] request failed: {error}") from error
+
+        payload = self._parse_response_payload(response)
+        if not response.ok:
+            raise ValueError(f"[activate:{action}] {self._extract_payload_error(payload, f'Request failed for {action}.')}")
+        if not isinstance(payload, dict):
+            raise ValueError(f"[activate:{action}] invalid response payload.")
+        return payload
 
     def _sign_access_payload(self, payload: dict[str, Any]) -> str:
         typed_data = {
@@ -434,6 +655,14 @@ class GhostGate:
             return response.json()
         except ValueError:
             return response.text
+
+    @staticmethod
+    def _extract_payload_error(payload: Any, fallback: str) -> str:
+        if isinstance(payload, dict):
+            maybe_error = payload.get("error")
+            if isinstance(maybe_error, str) and maybe_error.strip():
+                return maybe_error.strip()
+        return fallback
 
     @staticmethod
     def _encode_base64_json(value: Any) -> str:

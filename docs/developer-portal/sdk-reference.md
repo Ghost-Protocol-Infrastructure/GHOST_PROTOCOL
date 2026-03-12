@@ -19,6 +19,29 @@ Exposed tools:
 - `get_agent_details` -> `/api/agents?q=...`
 - `get_payment_requirements` -> `/api/pricing?service=...`
 
+## Merchant quick start (zero -> LIVE)
+
+### Node (Express mode onboarding)
+
+```ts
+import { GhostMerchant } from "@ghostgate/sdk";
+
+const merchant = new GhostMerchant({ ownerPrivateKey: process.env.GHOST_OWNER_PRIVATE_KEY as `0x${string}`, serviceSlug: "agent-2212" });
+const activation = await merchant.activate({ agentId: "2212", serviceSlug: "agent-2212", endpointUrl: "https://merchant.example.com", canaryPath: "/health" });
+console.log(activation.readiness); // LIVE
+```
+
+### Python (Express mode onboarding)
+
+```python
+import os
+from ghostgate import GhostGate
+
+merchant = GhostGate(private_key=os.environ["GHOST_OWNER_PRIVATE_KEY"], service_slug="agent-2212")
+activation = merchant.activate(agent_id="2212", service_slug="agent-2212", endpoint_url="https://merchant.example.com", canary_path="/health")
+print(activation["readiness"])  # LIVE
+```
+
 ## Node.js SDK (`@ghostgate/sdk`)
 
 ### Import
@@ -101,6 +124,30 @@ Sends consumer success/failure telemetry to `/api/telemetry/outcome`.
 #### `startHeartbeat(options?): { stop(): void }`
 
 Starts best-effort recurring `pulse()` calls. Default interval is `60000ms`.
+
+#### `activate(options): Promise<ActivateResult>`
+
+One-call merchant onboarding helper that runs:
+1. `POST /api/agent-gateway/config`
+2. `POST /api/agent-gateway/verify`
+3. `POST /api/agent-gateway/delegated-signers/register`
+4. starts heartbeat (`startHeartbeat` equivalent)
+
+```ts
+type ActivateResult = {
+  status: "LIVE";
+  readiness: "LIVE";
+  config: { ownerAddress: string; readinessStatus: "UNCONFIGURED" | "CONFIGURED" | "LIVE" | "DEGRADED" };
+  verify: unknown;
+  signerRegistration: unknown;
+  heartbeat: { stop(): void };
+};
+```
+
+Notes:
+- `ownerPrivateKey` must be provided in `GhostMerchant` config and must match the indexed owner wallet for `agentId`.
+- Delegated signer registration is idempotent (`alreadyActive: true` is treated as success).
+- `canaryMethod` currently supports `GET` only.
 
 #### `isConnected: boolean` (getter)
 
@@ -222,6 +269,19 @@ Starts periodic best-effort `pulse()` calls in a background thread.
 controller = gate.start_heartbeat(service_slug="agent-2212", interval_seconds=60)
 controller.stop()
 ```
+
+#### `activate(agent_id, service_slug, endpoint_url, canary_path="/health", canary_method="GET", signer_label="sdk-auto") -> ActivateResult`
+
+One-call merchant onboarding helper that runs:
+1. `POST /api/agent-gateway/config`
+2. `POST /api/agent-gateway/verify`
+3. `POST /api/agent-gateway/delegated-signers/register`
+4. starts heartbeat (`start_heartbeat` equivalent)
+
+Notes:
+- `private_key` must match the indexed owner wallet for the supplied `agent_id`.
+- Delegated signer registration is idempotent (`alreadyActive: true` is treated as success).
+- `canary_method` currently supports `GET` only.
 
 #### `guard(cost: int, *, service: Optional[str] = None, method: str = "GET")`
 

@@ -66,6 +66,63 @@ export type CanaryPayload = {
 
 export type GhostMerchantConfig = GhostFulfillmentMerchantConfig & {
   serviceSlug: string;
+  ownerPrivateKey?: `0x${string}`;
+};
+
+type MerchantGatewayAuthAction = "config" | "verify" | "delegated_signer_register";
+
+type MerchantGatewayAuthPayload = {
+  scope: "agent_gateway";
+  version: "1";
+  action: MerchantGatewayAuthAction;
+  agentId: string;
+  ownerAddress: string;
+  actorAddress: string;
+  serviceSlug: string;
+  nonce: string;
+  issuedAt: number;
+};
+
+type MerchantGatewayConfigResponse = {
+  configured: boolean;
+  config: {
+    ownerAddress: string;
+    readinessStatus: "UNCONFIGURED" | "CONFIGURED" | "LIVE" | "DEGRADED";
+  };
+};
+
+type MerchantGatewayVerifyResponse = {
+  verified?: boolean;
+  readinessStatus?: "UNCONFIGURED" | "CONFIGURED" | "LIVE" | "DEGRADED";
+  error?: string;
+  canaryUrl?: string;
+  statusCode?: number | null;
+  latencyMs?: number | null;
+};
+
+type MerchantGatewayDelegatedSignerRegisterResponse = {
+  ok?: boolean;
+  created?: boolean;
+  alreadyActive?: boolean;
+  error?: string;
+};
+
+export type MerchantActivateOptions = {
+  agentId: string;
+  serviceSlug: string;
+  endpointUrl: string;
+  canaryPath?: string;
+  canaryMethod?: string;
+  signerLabel?: string;
+};
+
+export type ActivateResult = {
+  status: "LIVE";
+  readiness: "LIVE";
+  config: MerchantGatewayConfigResponse["config"];
+  verify: MerchantGatewayVerifyResponse;
+  signerRegistration: MerchantGatewayDelegatedSignerRegisterResponse;
+  heartbeat: HeartbeatController;
 };
 
 const DEFAULT_BASE_URL = "https://ghostprotocol.cc";
@@ -75,6 +132,11 @@ const DEFAULT_CREDIT_COST = 1;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 60_000;
 const DEFAULT_AUTH_MODE: "ghost-eip712" | "x402" = "ghost-eip712";
 const DEFAULT_X402_SCHEME = "ghost-eip712-credit-v1";
+const DEFAULT_ACTIVATE_CANARY_PATH = "/health";
+const DEFAULT_ACTIVATE_CANARY_METHOD = "GET";
+const DEFAULT_ACTIVATE_SIGNER_LABEL = "sdk-auto";
+const MERCHANT_GATEWAY_AUTH_SCOPE = "agent_gateway" as const;
+const MERCHANT_GATEWAY_AUTH_VERSION = "1" as const;
 
 const ACCESS_TYPES = {
   Access: [
@@ -146,6 +208,47 @@ const buildCanaryHeaders = (): Record<string, string> => ({
   "cache-control": "no-store",
   "content-type": "application/json; charset=utf-8",
 });
+
+const assertPrivateKey = (value: `0x${string}` | null | undefined, name: string): `0x${string}` => {
+  if (!value || !/^0x[a-fA-F0-9]{64}$/.test(value)) {
+    throw new Error(`${name} must be a 0x-prefixed 32-byte hex private key.`);
+  }
+  return value;
+};
+
+const normalizeAddressLower = (value: string): string => value.trim().toLowerCase();
+
+const createMerchantGatewayAuthPayload = (input: {
+  action: MerchantGatewayAuthAction;
+  agentId: string;
+  ownerAddress: string;
+  actorAddress: string;
+  serviceSlug: string;
+}): MerchantGatewayAuthPayload => ({
+  scope: MERCHANT_GATEWAY_AUTH_SCOPE,
+  version: MERCHANT_GATEWAY_AUTH_VERSION,
+  action: input.action,
+  agentId: input.agentId,
+  ownerAddress: normalizeAddressLower(input.ownerAddress),
+  actorAddress: normalizeAddressLower(input.actorAddress),
+  serviceSlug: input.serviceSlug,
+  nonce: randomUUID().replace(/-/g, ""),
+  issuedAt: Math.floor(Date.now() / 1000),
+});
+
+const buildMerchantGatewayAuthMessage = (payload: MerchantGatewayAuthPayload): string =>
+  [
+    "Ghost Protocol Merchant Gateway Authorization",
+    `scope:${payload.scope}`,
+    `version:${payload.version}`,
+    `action:${payload.action}`,
+    `agentId:${payload.agentId}`,
+    `serviceSlug:${payload.serviceSlug}`,
+    `ownerAddress:${payload.ownerAddress}`,
+    `actorAddress:${payload.actorAddress}`,
+    `issuedAt:${payload.issuedAt}`,
+    `nonce:${payload.nonce}`,
+  ].join("\n");
 
 export const buildCanaryPayload = (serviceSlug: string): CanaryPayload => {
   const normalized = normalizeOptionalString(serviceSlug);
@@ -416,6 +519,11 @@ export class GhostAgent {
 
 export class GhostMerchant extends GhostFulfillmentMerchant {
   private readonly merchantServiceSlug: string;
+  private readonly merchantBaseUrl: string;
+  private readonly ownerPrivateKey: `0x${string}` | null;
+  private readonly ownerAddress: string | null;
+  private readonly delegatedSignerAddress: string | null;
+  private heartbeatController: HeartbeatController | null = null;
 
   constructor(config: GhostMerchantConfig) {
     super(config);
@@ -424,6 +532,12 @@ export class GhostMerchant extends GhostFulfillmentMerchant {
       throw new Error("GhostMerchant.serviceSlug is required.");
     }
     this.merchantServiceSlug = normalizedServiceSlug;
+    this.merchantBaseUrl = normalizeBaseUrl(config.baseUrl ?? DEFAULT_BASE_URL);
+    this.ownerPrivateKey = config.ownerPrivateKey ? assertPrivateKey(config.ownerPrivateKey, "ownerPrivateKey") : null;
+    this.ownerAddress = this.ownerPrivateKey ? privateKeyToAccount(this.ownerPrivateKey).address.toLowerCase() : null;
+    this.delegatedSignerAddress = config.delegatedPrivateKey
+      ? privateKeyToAccount(assertPrivateKey(config.delegatedPrivateKey, "delegatedPrivateKey")).address.toLowerCase()
+      : null;
   }
 
   canaryPayload(): CanaryPayload {
@@ -432,6 +546,199 @@ export class GhostMerchant extends GhostFulfillmentMerchant {
 
   canaryHandler() {
     return createCanaryHandler(this.merchantServiceSlug);
+  }
+
+  async activate(options: MerchantActivateOptions): Promise<ActivateResult> {
+    const agentId = normalizeOptionalString(options.agentId);
+    const serviceSlug = normalizeOptionalString(options.serviceSlug);
+    const endpointUrl = normalizeOptionalString(options.endpointUrl);
+    const canaryPath = normalizeOptionalString(options.canaryPath) ?? DEFAULT_ACTIVATE_CANARY_PATH;
+    const canaryMethod = (normalizeOptionalString(options.canaryMethod) ?? DEFAULT_ACTIVATE_CANARY_METHOD).toUpperCase();
+    const signerLabel = normalizeOptionalString(options.signerLabel) ?? DEFAULT_ACTIVATE_SIGNER_LABEL;
+
+    if (!agentId) throw new Error("[activate:validate] agentId is required.");
+    if (!serviceSlug) throw new Error("[activate:validate] serviceSlug is required.");
+    if (!endpointUrl) throw new Error("[activate:validate] endpointUrl is required.");
+    if (!canaryPath.startsWith("/")) {
+      throw new Error("[activate:validate] canaryPath must start with '/'.");
+    }
+    if (canaryMethod !== "GET") {
+      throw new Error("[activate:validate] canaryMethod must be GET.");
+    }
+    if (!this.ownerPrivateKey || !this.ownerAddress) {
+      throw new Error(
+        "[activate:owner] ownerPrivateKey is required on GhostMerchant config and must match the indexed agent owner.",
+      );
+    }
+
+    const ownerConfig = await this.fetchGatewayOwnerConfig(agentId);
+    const indexedOwnerAddress = normalizeAddressLower(ownerConfig.config.ownerAddress);
+    if (indexedOwnerAddress !== this.ownerAddress) {
+      throw new Error(
+        `[activate:owner] ownerPrivateKey address ${this.ownerAddress} does not match indexed owner ${indexedOwnerAddress} for agent ${agentId}.`,
+      );
+    }
+
+    const configPayload = (await this.postMerchantSignedWrite("config", {
+      path: "/api/agent-gateway/config",
+      agentId,
+      serviceSlug,
+      ownerAddress: indexedOwnerAddress,
+      body: {
+        endpointUrl,
+        canaryPath,
+        canaryMethod: "GET",
+      },
+    })) as { config?: MerchantGatewayConfigResponse["config"] };
+
+    const verifyPayload = (await this.postMerchantSignedWrite("verify", {
+      path: "/api/agent-gateway/verify",
+      agentId,
+      serviceSlug,
+      ownerAddress: indexedOwnerAddress,
+      body: {},
+    })) as MerchantGatewayVerifyResponse;
+
+    const readiness = verifyPayload.readinessStatus;
+    if (verifyPayload.verified !== true || readiness !== "LIVE") {
+      const detailParts = [
+        verifyPayload.error ? `error=${verifyPayload.error}` : null,
+        verifyPayload.canaryUrl ? `canaryUrl=${verifyPayload.canaryUrl}` : null,
+        typeof verifyPayload.statusCode === "number" ? `statusCode=${verifyPayload.statusCode}` : null,
+        typeof verifyPayload.latencyMs === "number" ? `latencyMs=${verifyPayload.latencyMs}` : null,
+      ].filter(Boolean);
+      throw new Error(
+        `[activate:verify] canary verification did not reach LIVE readiness${detailParts.length ? ` (${detailParts.join(", ")})` : ""}.`,
+      );
+    }
+
+    const signerAddress = this.delegatedSignerAddress ?? indexedOwnerAddress;
+    const signerRegistration = (await this.postMerchantSignedWrite("delegated_signer_register", {
+      path: "/api/agent-gateway/delegated-signers/register",
+      agentId,
+      serviceSlug,
+      ownerAddress: indexedOwnerAddress,
+      body: {
+        signerAddress,
+        label: signerLabel,
+      },
+    })) as MerchantGatewayDelegatedSignerRegisterResponse;
+
+    this.heartbeatController?.stop();
+    const heartbeatAgent = new GhostAgent({
+      baseUrl: this.merchantBaseUrl,
+      agentId,
+      serviceSlug,
+    });
+    this.heartbeatController = heartbeatAgent.startHeartbeat({
+      agentId,
+      serviceSlug,
+      immediate: false,
+    });
+
+    return {
+      status: "LIVE",
+      readiness: "LIVE",
+      config: configPayload.config ?? ownerConfig.config,
+      verify: verifyPayload,
+      signerRegistration,
+      heartbeat: this.heartbeatController,
+    };
+  }
+
+  private async fetchGatewayOwnerConfig(agentId: string): Promise<MerchantGatewayConfigResponse> {
+    const params = new URLSearchParams({ agentId });
+    const endpoint = `${this.merchantBaseUrl}/api/agent-gateway/config?${params.toString()}`;
+    const response = await fetch(endpoint, {
+      method: "GET",
+      headers: {
+        accept: "application/json, text/plain;q=0.9, */*;q=0.8",
+      },
+      cache: "no-store",
+    });
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      const message = this.extractApiErrorMessage(payload, "Failed to load gateway owner config.");
+      throw new Error(`[activate:config_lookup] ${message}`);
+    }
+    const config =
+      typeof payload === "object" &&
+      payload !== null &&
+      "config" in payload &&
+      typeof (payload as { config?: unknown }).config === "object" &&
+      (payload as { config?: unknown }).config !== null
+        ? ((payload as { config: MerchantGatewayConfigResponse["config"] }).config)
+        : null;
+    if (!config || !normalizeOptionalString(config.ownerAddress)) {
+      throw new Error("[activate:config_lookup] gateway config response missing ownerAddress.");
+    }
+    return {
+      configured:
+        typeof payload === "object" && payload !== null && "configured" in payload
+          ? Boolean((payload as { configured?: unknown }).configured)
+          : false,
+      config,
+    };
+  }
+
+  private async postMerchantSignedWrite(
+    action: MerchantGatewayAuthAction,
+    input: {
+      path: string;
+      agentId: string;
+      serviceSlug: string;
+      ownerAddress: string;
+      body: Record<string, unknown>;
+    },
+  ): Promise<unknown> {
+    const ownerKey = assertPrivateKey(this.ownerPrivateKey, "ownerPrivateKey");
+    const ownerAddress = normalizeAddressLower(input.ownerAddress);
+    const authPayload = createMerchantGatewayAuthPayload({
+      action,
+      agentId: input.agentId,
+      ownerAddress,
+      actorAddress: ownerAddress,
+      serviceSlug: input.serviceSlug,
+    });
+    const account = privateKeyToAccount(ownerKey);
+    const authSignature = await account.signMessage({
+      message: buildMerchantGatewayAuthMessage(authPayload),
+    });
+
+    const endpoint = `${this.merchantBaseUrl}${input.path}`;
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/plain;q=0.9, */*;q=0.8",
+      },
+      body: JSON.stringify({
+        agentId: input.agentId,
+        ownerAddress,
+        actorAddress: ownerAddress,
+        serviceSlug: input.serviceSlug,
+        authPayload,
+        authSignature,
+        ...input.body,
+      }),
+      cache: "no-store",
+    });
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      const message = this.extractApiErrorMessage(payload, `Request failed for ${action}.`);
+      throw new Error(`[activate:${action}] ${message}`);
+    }
+    return payload;
+  }
+
+  private extractApiErrorMessage(payload: unknown, fallback: string): string {
+    if (typeof payload === "object" && payload !== null && "error" in payload) {
+      const maybeError = (payload as { error?: unknown }).error;
+      if (typeof maybeError === "string" && maybeError.trim().length > 0) {
+        return maybeError.trim();
+      }
+    }
+    return fallback;
   }
 }
 
