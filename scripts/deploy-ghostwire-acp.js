@@ -32,6 +32,39 @@ const normalizePrivateKey = (raw) => {
   return trimmed.startsWith("0x") ? trimmed : `0x${trimmed}`;
 };
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function readDeploymentSnapshot(contract, attempts = 5) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const [livePaymentToken, livePlatformFeeBp, liveTreasury] = await Promise.all([
+        contract.paymentToken(),
+        contract.platformFeeBP(),
+        contract.platformTreasury(),
+      ]);
+      return {
+        paymentToken: livePaymentToken,
+        platformFeeBP: livePlatformFeeBp.toString(),
+        platformTreasury: liveTreasury,
+      };
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) {
+        const delayMs = 1000 * attempt;
+        console.warn(
+          `Post-deploy readback attempt ${attempt}/${attempts} failed. Retrying in ${delayMs}ms...`,
+          error?.shortMessage ?? error?.message ?? error,
+        );
+        await sleep(delayMs);
+        continue;
+      }
+    }
+  }
+
+  throw lastError ?? new Error("Post-deploy readback failed without error details.");
+}
+
 async function loadArtifact() {
   const artifactRaw = await readFile(ARTIFACT_PATH, "utf8");
   const artifact = JSON.parse(artifactRaw);
@@ -114,16 +147,12 @@ async function main() {
   console.log(`AgenticCommerce deployed at: ${address}`);
   if (txHash) console.log(`Deployment tx: ${txHash}`);
 
-  const livePaymentToken = await contract.paymentToken();
-  const livePlatformFeeBp = await contract.platformFeeBP();
-  const liveTreasury = await contract.platformTreasury();
+  const liveState = await readDeploymentSnapshot(contract);
   console.log(
     JSON.stringify(
       {
         contractAddress: address,
-        paymentToken: livePaymentToken,
-        platformFeeBP: livePlatformFeeBp.toString(),
-        platformTreasury: liveTreasury,
+        ...liveState,
       },
       null,
       2,

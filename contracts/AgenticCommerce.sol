@@ -3,22 +3,28 @@
 //   repo: t54-labs/ERC-ACP
 //   commit: 17f948b38c6d184571e4e23e1a2b459796f6ca2a
 //   path: contracts/AgenticCommerce.sol
-pragma solidity ^0.8.20;
+pragma solidity 0.8.34;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title AgenticCommerce
  * @dev ERC-8183-style job escrow with evaluator attestation.
- * GhostWire v1 pins this implementation directly and keeps platform fee at 0.
+ * GhostWire v1 pins this implementation directly and uses bounded platform fees.
  */
-contract AgenticCommerce is AccessControl, ReentrancyGuard {
+contract AgenticCommerce is AccessControl, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
+    uint256 public constant MAX_PLATFORM_FEE_BP = 1000;
+    uint256 public constant MAX_EXPIRY_WINDOW = 90 days;
+    uint256 public constant SUBMITTED_EVALUATION_GRACE = 15 minutes;
+    uint256 public constant MAX_DESCRIPTION_BYTES = 512;
 
     enum JobStatus {
         Open,
@@ -45,6 +51,7 @@ contract AgenticCommerce is AccessControl, ReentrancyGuard {
     address public platformTreasury;
 
     mapping(uint256 => Job) public jobs;
+    mapping(uint256 => uint256) public jobFeeBpsAtFunding;
     uint256 public jobCounter;
 
     event JobCreated(
@@ -63,15 +70,22 @@ contract AgenticCommerce is AccessControl, ReentrancyGuard {
     event JobExpired(uint256 indexed jobId);
     event PaymentReleased(uint256 indexed jobId, address indexed provider, uint256 amount);
     event Refunded(uint256 indexed jobId, address indexed client, uint256 amount);
+    event PlatformFeeUpdated(uint256 feeBP, address treasury);
 
     error InvalidJob();
     error WrongStatus();
     error Unauthorized();
     error ZeroAddress();
     error ExpiryTooShort();
+    error ExpiryTooLong();
     error ZeroBudget();
     error BudgetMismatch();
     error ProviderNotSet();
+    error JobAlreadyExpired();
+    error JobNotExpired();
+    error InvalidFeeBasisPoints();
+    error InexactTokenTransfer();
+    error DescriptionTooLong();
 
     constructor(address paymentToken_, address treasury_) {
         if (paymentToken_ == address(0) || treasury_ == address(0)) revert ZeroAddress();
@@ -79,13 +93,23 @@ contract AgenticCommerce is AccessControl, ReentrancyGuard {
         platformTreasury = treasury_;
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(ADMIN_ROLE, msg.sender);
+        _grantRole(OPERATOR_ROLE, msg.sender);
     }
 
     function setPlatformFee(uint256 feeBP_, address treasury_) external onlyRole(ADMIN_ROLE) {
         if (treasury_ == address(0)) revert ZeroAddress();
-        if (feeBP_ > 10000) revert InvalidJob();
+        if (feeBP_ > MAX_PLATFORM_FEE_BP) revert InvalidFeeBasisPoints();
         platformFeeBP = feeBP_;
         platformTreasury = treasury_;
+        emit PlatformFeeUpdated(feeBP_, treasury_);
+    }
+
+    function pause() external onlyRole(ADMIN_ROLE) {
+        _pause();
+    }
+
+    function unpause() external onlyRole(ADMIN_ROLE) {
+        _unpause();
     }
 
     function createJob(
@@ -93,9 +117,11 @@ contract AgenticCommerce is AccessControl, ReentrancyGuard {
         address evaluator,
         uint256 expiredAt,
         string calldata description
-    ) external returns (uint256 jobId) {
+    ) external whenNotPaused returns (uint256 jobId) {
         if (evaluator == address(0)) revert ZeroAddress();
         if (expiredAt <= block.timestamp + 5 minutes) revert ExpiryTooShort();
+        if (expiredAt > block.timestamp + MAX_EXPIRY_WINDOW) revert ExpiryTooLong();
+        if (bytes(description).length > MAX_DESCRIPTION_BYTES) revert DescriptionTooLong();
         jobId = ++jobCounter;
         jobs[jobId] = Job({
             id: jobId,
@@ -111,7 +137,7 @@ contract AgenticCommerce is AccessControl, ReentrancyGuard {
         return jobId;
     }
 
-    function setProvider(uint256 jobId, address provider_) external {
+    function setProvider(uint256 jobId, address provider_) external whenNotPaused {
         Job storage job = jobs[jobId];
         if (job.id == 0) revert InvalidJob();
         if (job.status != JobStatus.Open) revert WrongStatus();
@@ -122,45 +148,54 @@ contract AgenticCommerce is AccessControl, ReentrancyGuard {
         emit ProviderSet(jobId, provider_);
     }
 
-    function setBudget(uint256 jobId, uint256 amount) external {
+    function setBudget(uint256 jobId, uint256 amount) external whenNotPaused {
         Job storage job = jobs[jobId];
         if (job.id == 0) revert InvalidJob();
         if (job.status != JobStatus.Open) revert WrongStatus();
-        if (msg.sender != job.client && msg.sender != job.provider) revert Unauthorized();
+        if (msg.sender != job.client) revert Unauthorized();
+        if (amount == 0) revert ZeroBudget();
         job.budget = amount;
         emit BudgetSet(jobId, amount);
     }
 
-    function fund(uint256 jobId, uint256 expectedBudget) external nonReentrant {
+    function fund(uint256 jobId, uint256 expectedBudget) external nonReentrant whenNotPaused {
         Job storage job = jobs[jobId];
         if (job.id == 0) revert InvalidJob();
         if (job.status != JobStatus.Open) revert WrongStatus();
         if (msg.sender != job.client) revert Unauthorized();
         if (job.provider == address(0)) revert ProviderNotSet();
         if (job.budget == 0) revert ZeroBudget();
+        if (block.timestamp >= job.expiredAt) revert JobAlreadyExpired();
         if (job.budget != expectedBudget) revert BudgetMismatch();
+
+        uint256 balanceBefore = paymentToken.balanceOf(address(this));
         job.status = JobStatus.Funded;
+        jobFeeBpsAtFunding[jobId] = platformFeeBP;
         paymentToken.safeTransferFrom(job.client, address(this), job.budget);
+        uint256 received = paymentToken.balanceOf(address(this)) - balanceBefore;
+        if (received != job.budget) revert InexactTokenTransfer();
         emit JobFunded(jobId, job.client, job.budget);
     }
 
-    function submit(uint256 jobId, bytes32 deliverable) external {
+    function submit(uint256 jobId, bytes32 deliverable) external whenNotPaused {
         Job storage job = jobs[jobId];
         if (job.id == 0) revert InvalidJob();
         if (job.status != JobStatus.Funded) revert WrongStatus();
         if (msg.sender != job.provider) revert Unauthorized();
+        if (block.timestamp >= job.expiredAt) revert JobAlreadyExpired();
         job.status = JobStatus.Submitted;
         emit JobSubmitted(jobId, msg.sender, deliverable);
     }
 
-    function complete(uint256 jobId, bytes32 reason) external nonReentrant {
+    function complete(uint256 jobId, bytes32 reason) external nonReentrant whenNotPaused {
         Job storage job = jobs[jobId];
         if (job.id == 0) revert InvalidJob();
         if (job.status != JobStatus.Submitted) revert WrongStatus();
         if (msg.sender != job.evaluator) revert Unauthorized();
+        if (block.timestamp >= job.expiredAt + SUBMITTED_EVALUATION_GRACE) revert JobAlreadyExpired();
         job.status = JobStatus.Completed;
         uint256 amount = job.budget;
-        uint256 fee = (amount * platformFeeBP) / 10000;
+        uint256 fee = (amount * jobFeeBpsAtFunding[jobId]) / 10000;
         uint256 net = amount - fee;
         if (fee > 0) {
             paymentToken.safeTransfer(platformTreasury, fee);
@@ -172,19 +207,19 @@ contract AgenticCommerce is AccessControl, ReentrancyGuard {
         emit PaymentReleased(jobId, job.provider, net);
     }
 
-    function reject(uint256 jobId, bytes32 reason) external nonReentrant {
+    function reject(uint256 jobId, bytes32 reason) external nonReentrant whenNotPaused {
         Job storage job = jobs[jobId];
         if (job.id == 0) revert InvalidJob();
         if (job.status == JobStatus.Open) {
             if (msg.sender != job.client) revert Unauthorized();
-        } else if (job.status == JobStatus.Funded || job.status == JobStatus.Submitted) {
+        } else if (job.status == JobStatus.Submitted) {
             if (msg.sender != job.evaluator) revert Unauthorized();
         } else {
             revert WrongStatus();
         }
         JobStatus prev = job.status;
         job.status = JobStatus.Rejected;
-        if ((prev == JobStatus.Funded || prev == JobStatus.Submitted) && job.budget > 0) {
+        if (prev == JobStatus.Submitted && job.budget > 0) {
             paymentToken.safeTransfer(job.client, job.budget);
             emit Refunded(jobId, job.client, job.budget);
         }
@@ -195,7 +230,12 @@ contract AgenticCommerce is AccessControl, ReentrancyGuard {
         Job storage job = jobs[jobId];
         if (job.id == 0) revert InvalidJob();
         if (job.status != JobStatus.Funded && job.status != JobStatus.Submitted) revert WrongStatus();
-        if (block.timestamp < job.expiredAt) revert WrongStatus();
+        if (!_canClaimRefund(msg.sender, job.client, job.evaluator)) revert Unauthorized();
+        if (job.status == JobStatus.Funded) {
+            if (block.timestamp < job.expiredAt) revert JobNotExpired();
+        } else {
+            if (block.timestamp < job.expiredAt + SUBMITTED_EVALUATION_GRACE) revert JobNotExpired();
+        }
         job.status = JobStatus.Expired;
         if (job.budget > 0) {
             paymentToken.safeTransfer(job.client, job.budget);
@@ -206,5 +246,13 @@ contract AgenticCommerce is AccessControl, ReentrancyGuard {
 
     function getJob(uint256 jobId) external view returns (Job memory) {
         return jobs[jobId];
+    }
+
+    function _canClaimRefund(address caller, address client, address evaluator) internal view returns (bool) {
+        return
+            caller == client ||
+            caller == evaluator ||
+            hasRole(ADMIN_ROLE, caller) ||
+            hasRole(OPERATOR_ROLE, caller);
     }
 }

@@ -248,11 +248,16 @@ const deriveTerminalSettlement = (input: {
   const unusedNetworkReserveRefund =
     actualNetworkSpend >= input.networkReserveAmount ? 0n : input.networkReserveAmount - actualNetworkSpend;
   const isCompleted = input.terminalDisposition === "COMPLETED";
+  const providerPayoutAmount = isCompleted
+    ? input.principalAmount > input.protocolFeeAmount
+      ? input.principalAmount - input.protocolFeeAmount
+      : 0n
+    : 0n;
 
   return {
     providerPayout: {
       asset: GHOSTWIRE_SUPPORTED_SETTLEMENT_ASSET,
-      amount: isCompleted ? input.principalAmount.toString() : "0",
+      amount: providerPayoutAmount.toString(),
       decimals: 6,
     },
     protocolRevenue: {

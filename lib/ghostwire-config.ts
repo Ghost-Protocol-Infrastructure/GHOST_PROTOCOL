@@ -15,6 +15,14 @@ const parsePositiveBigIntEnv = (raw: string | undefined, fallback: bigint): bigi
   return parsed > 0n ? parsed : fallback;
 };
 
+const parseBpsEnv = (raw: string | undefined, fallback: number, max: number): number => {
+  const trimmed = raw?.trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) return fallback;
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > max) return fallback;
+  return parsed;
+};
+
 export type GhostWireSupportedChainId = 8453 | 84532;
 export type GhostWireSettlementAsset = "USDC";
 export type GhostWireReserveAsset = "ETH";
@@ -23,7 +31,12 @@ export const GHOSTWIRE_SUPPORTED_MAINNET_CHAIN_ID: GhostWireSupportedChainId = 8
 export const GHOSTWIRE_SUPPORTED_TESTNET_CHAIN_ID: GhostWireSupportedChainId = 84532;
 export const GHOSTWIRE_SUPPORTED_SETTLEMENT_ASSET: GhostWireSettlementAsset = "USDC";
 export const GHOSTWIRE_SUPPORTED_RESERVE_ASSET: GhostWireReserveAsset = "ETH";
-export const GHOSTWIRE_PROTOCOL_FEE_BPS = 250;
+export const GHOSTWIRE_MAX_PLATFORM_FEE_BPS = 1000;
+export const GHOSTWIRE_PROTOCOL_FEE_BPS = parseBpsEnv(
+  process.env.GHOSTWIRE_PROTOCOL_FEE_BPS,
+  250,
+  GHOSTWIRE_MAX_PLATFORM_FEE_BPS,
+);
 export const GHOSTWIRE_ERC8183_PINNED_REPOSITORY = "t54-labs/ERC-ACP";
 export const GHOSTWIRE_ERC8183_PINNED_CONTRACT = "contracts/AgenticCommerce.sol";
 export const GHOSTWIRE_ERC8183_PINNED_COMMIT = "17f948b38c6d184571e4e23e1a2b459796f6ca2a";

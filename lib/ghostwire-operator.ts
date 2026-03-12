@@ -25,6 +25,7 @@ import {
   GHOSTWIRE_JOB_EXPIRY_SECONDS,
   GHOSTWIRE_MIN_CONFIRMATIONS_MAINNET,
   GHOSTWIRE_MIN_CONFIRMATIONS_TESTNET,
+  GHOSTWIRE_PROTOCOL_FEE_BPS,
   GHOSTWIRE_QUOTE_TTL_SECONDS,
   GHOSTWIRE_SUPPORTED_MAINNET_CHAIN_ID,
   GHOSTWIRE_SUPPORTED_SETTLEMENT_ASSET,
@@ -414,11 +415,12 @@ const resolveGhostWireHostedContext = async (
     }),
   ]);
 
-  if (platformFeeBp !== 0n) {
+  const expectedFeeBps = BigInt(GHOSTWIRE_PROTOCOL_FEE_BPS);
+  if (platformFeeBp !== expectedFeeBps) {
     return {
       ok: false as const,
       reason:
-        `GhostWire v1 requires an ERC-8183 contract with platformFeeBP=0. The configured contract reports ${platformFeeBp.toString()}.`,
+        `GhostWire fee mismatch: expected platformFeeBP=${expectedFeeBps.toString()} from server config, contract reports ${platformFeeBp.toString()}.`,
     };
   }
 
