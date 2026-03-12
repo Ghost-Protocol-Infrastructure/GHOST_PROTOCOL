@@ -18,6 +18,8 @@ Exposed tools:
 - `list_agents` -> `/api/agents`
 - `get_agent_details` -> `/api/agents?q=...`
 - `get_payment_requirements` -> `/api/pricing?service=...`
+- `get_wire_quote` -> `POST /api/wire/quote`
+- `get_wire_job_status` -> `GET /api/wire/jobs/[jobId]`
 
 ## Merchant quick start (zero -> LIVE)
 

@@ -2713,10 +2713,10 @@ def my_agent():
                               </p>
                               <p className="mt-1 text-sm text-neutral-300 font-mono">
                                 {job.contractState}
-                                {job.terminalDisposition ? ` // ${job.terminalDisposition}` : ""}
+                                {job.terminalDisposition ? ` | ${job.terminalDisposition}` : ""}
                               </p>
                               <p className="mt-1 text-[11px] text-neutral-600">
-                                Quote {job.quoteId} // Updated {formatRelativeTimeFromIso(job.updatedAt)}
+                                Quote {job.quoteId} {"|"} Updated {formatRelativeTimeFromIso(job.updatedAt)}
                               </p>
                             </div>
                             <div className="text-left sm:text-right">
@@ -2724,7 +2724,7 @@ def my_agent():
                                 {formatWireUsdcAmount(job.pricing.principal.amount)}
                               </p>
                               <p className="mt-1 text-[11px] text-neutral-600">
-                                Fee {formatWireUsdcAmount(job.pricing.protocolFee.amount)} // Reserve{" "}
+                                Fee {formatWireUsdcAmount(job.pricing.protocolFee.amount)} {"|"} Reserve{" "}
                                 {formatWireEthAmount(job.pricing.networkReserve.amount)}
                               </p>
                             </div>
@@ -2750,10 +2750,11 @@ def my_agent():
                                 Operator
                               </p>
                               <p className="mt-2 text-[11px] text-neutral-500">
-                                Create {job.operator.createStatus ?? "--"} // Fund {job.operator.fundStatus ?? "--"}
+                                Create {job.operator.createStatus ?? "--"} {"|"} Fund {job.operator.fundStatus ?? "--"}
                               </p>
                               <p className="mt-1 text-[11px] text-neutral-500">
-                                Confirm {job.operator.confirmationStatus ?? "--"} // Reconcile {job.operator.reconcileStatus ?? "--"}
+                                Confirm {job.operator.confirmationStatus ?? "--"} {"|"} Reconcile{" "}
+                                {job.operator.reconcileStatus ?? "--"}
                               </p>
                               {job.operator.lastError && (
                                 <p className="mt-2 text-[11px] text-amber-300">{job.operator.lastError}</p>

@@ -50,6 +50,8 @@ Supported tools:
 - `list_agents`
 - `get_agent_details`
 - `get_payment_requirements`
+- `get_wire_quote`
+- `get_wire_job_status`
 
 Operational verification command:
 
@@ -97,6 +99,24 @@ Body:
 Returns:
 - `200` on pass (`verified=true`, `readinessStatus=LIVE`)
 - `422` on canary failure
+
+## `GET/POST /api/agent-gateway/recheck`
+
+Hosted canary recheck endpoint for bounded background readiness verification.
+
+Auth:
+- `Authorization: Bearer <GHOST_AGENT_GATEWAY_RECHECK_SECRET>`
+- or `x-agent-gateway-recheck-secret`
+
+Query/body controls:
+- `limit`
+- `dryRun`
+- `agentId` (optional single-agent targeting)
+
+Behavior:
+- degrades stale configs when needed
+- re-runs canary checks for selected `LIVE` / `DEGRADED` services
+- returns per-agent readiness outcomes and counters
 
 ## Delegated signer endpoints
 
@@ -169,36 +189,6 @@ Returns:
 
 ## `POST /api/fulfillment/capture`
 
-## Settlement operator endpoints
-
-### `POST /api/admin/settlement/allocate`
-
-Claims the next oldest batch of pending merchant earnings and submits it to GhostVault.
-Auth:
-- `Authorization: Bearer <GHOST_SETTLEMENT_OPERATOR_SECRET>`
-- or `x-ghost-settlement-operator-secret`
-
-### `POST /api/admin/settlement/reconcile`
-
-Reconciles submitted merchant earnings against on-chain `processedSettlementIds` and tx receipts.
-Auth:
-- `Authorization: Bearer <GHOST_SETTLEMENT_OPERATOR_SECRET>`
-- or `x-ghost-settlement-operator-secret`
-
-### `GET /api/admin/settlement/metrics`
-
-Returns pending, in-flight, confirmed, and failed settlement totals plus backlog age and drift diagnostics.
-Auth:
-- `Authorization: Bearer <GHOST_SETTLEMENT_SUPPORT_SECRET>`
-- or `x-ghost-settlement-support-secret`
-
-### `GET /api/admin/vault/preflight`
-
-Reports legacy GhostVault liability, accrued fees, and balance for legacy-vault verification after cutover.
-Auth:
-- `Authorization: Bearer <GHOST_SETTLEMENT_OPERATOR_SECRET>`
-- or `x-ghost-settlement-operator-secret`
-
 Capture a held ticket using merchant delegated signer proof.
 
 ### Request body
@@ -228,6 +218,122 @@ Capture a held ticket using merchant delegated signer proof.
 - `409 HOLD_EXPIRED`
 - `409 HOLD_NOT_ACTIVE`
 - `409 CAPTURE_CONFLICT`
+
+## Settlement operator endpoints
+
+### `POST /api/admin/settlement/allocate`
+
+Claims the next oldest batch of pending merchant earnings and submits it to GhostVault.
+Auth:
+- `Authorization: Bearer <GHOST_SETTLEMENT_OPERATOR_SECRET>`
+- or `x-ghost-settlement-operator-secret`
+
+### `POST /api/admin/settlement/reconcile`
+
+Reconciles submitted merchant earnings against on-chain `processedSettlementIds` and tx receipts.
+Auth:
+- `Authorization: Bearer <GHOST_SETTLEMENT_OPERATOR_SECRET>`
+- or `x-ghost-settlement-operator-secret`
+
+### `GET /api/admin/settlement/metrics`
+
+Returns pending, in-flight, confirmed, and failed settlement totals plus backlog age and drift diagnostics.
+Auth:
+- `Authorization: Bearer <GHOST_SETTLEMENT_SUPPORT_SECRET>`
+- or `x-ghost-settlement-support-secret`
+
+### `GET /api/admin/settlement/operator-health`
+
+Reads hosted settlement-operator wallet registration and gas-balance health against GhostVault.
+Auth:
+- `Authorization: Bearer <GHOST_SETTLEMENT_OPERATOR_SECRET>`
+- or `x-ghost-settlement-operator-secret`
+
+### `GET /api/admin/vault/preflight`
+
+Reports legacy GhostVault liability, accrued fees, and balance for legacy-vault verification after cutover.
+Auth:
+- `Authorization: Bearer <GHOST_SETTLEMENT_OPERATOR_SECRET>`
+- or `x-ghost-settlement-operator-secret`
+
+## GhostWire API
+
+### `POST /api/wire/quote`
+
+Creates a short-lived GhostWire quote.
+
+Request body:
+- `provider`
+- `evaluator`
+- `principalAmount`
+- `settlementAsset` (`USDC`)
+- `chainId`
+- `client` (optional)
+
+Returns:
+- `quoteId`
+- `expiresAt`
+- `pricing`
+- `confirmations`
+
+### `GET /api/wire/jobs`
+
+Lists GhostWire jobs.
+
+Query:
+- `limit`
+- `cursor`
+- `participant`
+- `state`
+
+Returns:
+- `items`
+- `nextCursor`
+
+### `POST /api/wire/jobs`
+
+Creates a GhostWire job from a quote and enqueues hosted execution.
+
+Auth:
+- `Authorization: Bearer <GHOSTWIRE_EXEC_SECRET>`
+- or `x-ghostwire-exec-secret`
+
+Request body:
+- `quoteId`
+- `client`
+- `provider`
+- `evaluator`
+- `specHash`
+- `metadataUri` (optional)
+- `webhookUrl` + `webhookSecret` (optional, both-or-neither)
+
+Returns:
+- `jobId`
+- `quoteId`
+- `chainId`
+- `state`
+- `contractState`
+- `pricing`
+- `operator`
+
+### `GET /api/wire/jobs/[jobId]`
+
+Returns one GhostWire job snapshot by `jobId`.
+
+### `GET/POST /api/admin/wire/operator`
+
+Hosted GhostWire operator inspection/execute endpoint.
+
+Auth:
+- `Authorization: Bearer <GHOSTWIRE_OPERATOR_SECRET>`
+- or `x-ghostwire-operator-secret`
+
+`GET`:
+- returns current GhostWire workflow/webhook backlog snapshot
+
+`POST`:
+- optionally records `createTxHash` / `fundTxHash` pairs for known jobs
+- runs one hosted operator tick
 
 ## `GET/POST /api/fulfillment/expire-sweep`
 

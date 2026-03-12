@@ -1,6 +1,6 @@
-# GhostWire Implementation Spec (Draft)
+# GhostWire Implementation Spec
 
-Status: Draft, not yet implemented
+Status: Active, implementation in progress
 Depends on: `GHOSTWIRE_PRODUCT_SPEC.md`
 Scope: Persistence, worker orchestration, reconciliation, webhook delivery, and settlement derivation for GhostWire v1
 

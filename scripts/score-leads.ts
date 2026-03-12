@@ -1,5 +1,6 @@
 import { createPublicClient, fallback, getAddress, http, type Address } from "viem";
 import { base } from "viem/chains";
+import { statusIndicatesClaimed } from "../lib/agent-claim";
 import { prisma } from "../lib/db";
 
 type AgentIndexMode = "erc8004" | "olas";
@@ -250,12 +251,6 @@ const resolveTxSourceAddress = (
     }
   }
   return null;
-};
-
-const statusIndicatesClaimed = (status: string): boolean => {
-  const normalized = status.trim().toLowerCase();
-  if (normalized.length === 0) return false;
-  return normalized.includes("claimed") || normalized.includes("verified") || normalized.includes("monetized");
 };
 
 const getTier = (txCount: number, isClaimed: boolean): AgentTier => {

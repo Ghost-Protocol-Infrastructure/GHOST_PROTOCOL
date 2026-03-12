@@ -39,17 +39,8 @@ const getGhostWireOperatorSecret = (): string | null =>
   normalizeSecret(process.env.GHOSTWIRE_OPERATOR_SECRET) ??
   normalizeSecret(process.env.GHOST_WIRE_OPERATOR_SECRET);
 
-const getGhostWireSupportSecret = (): string | null =>
-  normalizeSecret(process.env.GHOSTWIRE_SUPPORT_SECRET) ?? normalizeSecret(process.env.GHOST_WIRE_SUPPORT_SECRET);
-
 export const isGhostWireOperatorAuthorized = (request: NextRequest): boolean => {
   const provided = getProvidedSecret(request, "x-ghostwire-operator-secret");
   const expected = getGhostWireOperatorSecret();
-  return safeSecretEquals(provided, expected);
-};
-
-export const isGhostWireSupportAuthorized = (request: NextRequest): boolean => {
-  const provided = getProvidedSecret(request, "x-ghostwire-support-secret");
-  const expected = getGhostWireSupportSecret();
   return safeSecretEquals(provided, expected);
 };

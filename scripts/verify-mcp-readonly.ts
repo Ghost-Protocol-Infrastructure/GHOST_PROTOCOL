@@ -45,7 +45,7 @@ const timedFetch = async (input: string, init?: RequestInit): Promise<{ response
 const expectJson = async <T>(response: Response, context: string): Promise<T> => {
   try {
     return (await response.json()) as T;
-  } catch (error) {
+  } catch {
     throw new Error(`${context}: expected JSON response but received non-JSON payload`);
   }
 };

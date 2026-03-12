@@ -8,6 +8,7 @@ import {
   SnapshotStatus,
   type TxMetricSource,
 } from "@prisma/client";
+import { statusIndicatesClaimed } from "../lib/agent-claim";
 import { prisma } from "../lib/db";
 
 type AgentIndexMode = "erc8004" | "olas";
@@ -348,12 +349,6 @@ const toAgentTxSourceKind = (sourceKind: ResolvedTxSourceKind | null): AgentTxSo
   if (sourceKind === "owner") return "OWNER";
   if (sourceKind === "creator") return "CREATOR";
   return "UNRESOLVED";
-};
-
-const statusIndicatesClaimed = (status: string): boolean => {
-  const normalized = status.trim().toLowerCase();
-  if (normalized.length === 0) return false;
-  return normalized.includes("claimed") || normalized.includes("verified") || normalized.includes("monetized");
 };
 
 const getTier = (txCount: number, isClaimed: boolean): AgentTier => {

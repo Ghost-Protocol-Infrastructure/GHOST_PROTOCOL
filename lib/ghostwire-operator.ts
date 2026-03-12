@@ -1,6 +1,5 @@
 import {
   type WireTerminalDisposition,
-  type WireWebhookDeliveryStatus,
   type WireWorkflowStatus,
 } from "@prisma/client";
 import {
@@ -25,8 +24,10 @@ import {
   GHOSTWIRE_JOB_EXPIRY_SECONDS,
   GHOSTWIRE_MIN_CONFIRMATIONS_MAINNET,
   GHOSTWIRE_MIN_CONFIRMATIONS_TESTNET,
+  GHOSTWIRE_MAX_EXPIRY_WINDOW_SECONDS,
   GHOSTWIRE_PROTOCOL_FEE_BPS,
   GHOSTWIRE_QUOTE_TTL_SECONDS,
+  GHOSTWIRE_SUBMITTED_EVALUATION_GRACE_SECONDS,
   GHOSTWIRE_SUPPORTED_MAINNET_CHAIN_ID,
   GHOSTWIRE_SUPPORTED_SETTLEMENT_ASSET,
   GHOSTWIRE_SUPPORTED_TESTNET_CHAIN_ID,
@@ -461,10 +462,6 @@ const parseJobCreatedEvent = (job: GhostWirePendingJob, logs: readonly unknown[]
   const rawJobId = match?.args.jobId;
   return typeof rawJobId === "bigint" ? rawJobId.toString() : null;
 };
-
-type GhostWireOnchainJob = Awaited<
-  ReturnType<ReturnType<typeof createGhostWirePublicClient>["readContract"]>
->;
 
 const normalizeGhostWireErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : "GhostWire on-chain operation failed.";
@@ -1303,11 +1300,6 @@ const reconcileWireJobPostFundingLifecycle = async (job: GhostWirePendingJob) =>
   const onchainState = mapGhostWireContractStatus(onchainJob.status);
 
   if (job.terminalTxHash) {
-    const latestLifecycleEvent = await getLatestGhostWireLifecycleEvent({
-      chainId,
-      contractAddress: getAddress(job.contractAddress),
-      contractJobId: job.contractJobId,
-    });
     const terminalTxHash = normalizeHash(job.terminalTxHash);
     if (!terminalTxHash) {
       const result = await markManualReview(job.id, "reconcile", "GhostWire terminal transaction hash is malformed.");
@@ -1683,6 +1675,8 @@ export const resolveGhostWireOperatorSnapshot = async (input?: {
       settlementAsset: GHOSTWIRE_SUPPORTED_SETTLEMENT_ASSET,
       quoteTtlSeconds: GHOSTWIRE_QUOTE_TTL_SECONDS,
       jobExpirySeconds: GHOSTWIRE_JOB_EXPIRY_SECONDS,
+      maxExpiryWindowSeconds: GHOSTWIRE_MAX_EXPIRY_WINDOW_SECONDS,
+      submittedEvaluationGraceSeconds: GHOSTWIRE_SUBMITTED_EVALUATION_GRACE_SECONDS,
       operatorMode: "hosted-create-fund-reconcile-terminal",
       contractSurface: {
         repository: GHOSTWIRE_ERC8183_PINNED_REPOSITORY,
@@ -1757,20 +1751,3 @@ export const resolveGhostWireOperatorSnapshot = async (input?: {
     },
   };
 };
-
-export const markGhostWireWebhookDeliveryStatus = async (input: {
-  eventId: string;
-  deliveryStatus: WireWebhookDeliveryStatus;
-  lastError?: string | null;
-  deliveredAt?: Date | null;
-  nextAttemptAt?: Date | null;
-  incrementAttemptCount?: boolean;
-}) =>
-  updateWireWebhookOutboxDelivery({
-    eventId: input.eventId,
-    deliveryStatus: input.deliveryStatus,
-    lastError: input.lastError,
-    deliveredAt: input.deliveredAt,
-    nextAttemptAt: input.nextAttemptAt,
-    incrementAttemptCount: input.incrementAttemptCount,
-  });

@@ -95,7 +95,10 @@ const parsePositiveIntEnv = (raw: string | undefined, fallback: number): number 
 const getFulfillmentHoldTtlMs = (): number => parsePositiveIntEnv(process.env.GHOST_FULFILLMENT_HOLD_TTL_MS, DEFAULT_HOLD_TTL_MS);
 
 const getFulfillmentWalletHoldCap = (): number =>
-  parsePositiveIntEnv(process.env.GHOST_FULFILLMENT_WALLET_HOLD_CAP, DEFAULT_WALLET_HOLD_CAP);
+  parsePositiveIntEnv(
+    process.env.GHOST_FULFILLMENT_WALLET_HOLD_CAP ?? process.env.GHOST_FULFILLMENT_WALLET_SERVICE_HOLD_CAP,
+    DEFAULT_WALLET_HOLD_CAP,
+  );
 
 const normalizeProtocolSignerPrivateKey = (raw: string | undefined): `0x${string}` | null => {
   const trimmed = raw?.trim().toLowerCase();

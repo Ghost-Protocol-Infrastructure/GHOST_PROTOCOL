@@ -42,8 +42,6 @@ const buildWireTerminalWebhookEventId = (
     ? `wire_job_terminal_webhook:${jobId}:${state}:${txHash.toLowerCase()}`
     : `wire_job_terminal_webhook:${jobId}:${state}`;
 
-const serializeBigInt = (value: bigint | null | undefined): string | null => (value == null ? null : value.toString());
-
 const calculateProtocolFeeAmount = (principalAmount: bigint): bigint =>
   (principalAmount * BigInt(GHOSTWIRE_PROTOCOL_FEE_BPS)) / 10_000n;
 

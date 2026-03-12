@@ -73,7 +73,7 @@ Complete these steps in order for each merchant agent.
 | Variable | Default | Purpose |
 |---|---|---|
 | `GHOST_FULFILLMENT_HOLD_TTL_MS` | `60000` | Hold TTL used in ticket issuance. |
-| `GHOST_FULFILLMENT_WALLET_HOLD_CAP` | `3` | Max active held tickets per wallet. |
+| `GHOST_FULFILLMENT_WALLET_HOLD_CAP` | `3` | Max active held tickets per wallet. Legacy alias `GHOST_FULFILLMENT_WALLET_SERVICE_HOLD_CAP` is still honored for backwards compatibility. |
 | `GHOST_FULFILLMENT_RATE_LIMIT_WINDOW_MS` | `60000` | Shared rate-limit window. |
 | `GHOST_FULFILLMENT_RATE_LIMIT_TICKET_PER_WINDOW` | `120` | Ticket route limit. |
 | `GHOST_FULFILLMENT_RATE_LIMIT_CAPTURE_PER_WINDOW` | `180` | Capture route limit. |

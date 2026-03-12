@@ -16,6 +16,8 @@ type JsonRpcRequest = {
   params?: Record<string, unknown> | null;
 };
 
+type JsonRecord = Record<string, unknown>;
+
 const TOOL_DEFINITIONS = [
   {
     name: "list_agents",
@@ -93,6 +95,8 @@ const parsePositiveInt = (raw: string | undefined, fallback: number): number => 
 };
 
 const normalizeString = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
+const isJsonRecord = (value: unknown): value is JsonRecord =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const clampInteger = (value: unknown, fallback: number, min: number, max: number): number => {
   const parsed = Number.parseInt(String(value ?? ""), 10);
@@ -144,7 +148,7 @@ const toToolResponse = (value: unknown): Record<string, unknown> => ({
 const resolveBaseUrl = (request: NextRequest): string =>
   (process.env.GHOST_MCP_BASE_URL?.trim() || request.nextUrl.origin).replace(/\/+$/, "");
 
-const fetchJson = async (baseUrl: string, path: string, timeoutMs: number, init?: RequestInit): Promise<any> => {
+const fetchJson = async (baseUrl: string, path: string, timeoutMs: number, init?: RequestInit): Promise<unknown> => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -194,16 +198,17 @@ const toolListAgents = async (
   if (query) params.set("q", query);
 
   const payload = await fetchJson(context.baseUrl, `/api/agents?${params.toString()}`, context.timeoutMs);
-  const agents = Array.isArray(payload.agents) ? payload.agents : [];
+  const payloadRecord = isJsonRecord(payload) ? payload : {};
+  const agents = Array.isArray(payloadRecord.agents) ? payloadRecord.agents.filter(isJsonRecord) : [];
 
   return toToolResponse({
     source: `${context.baseUrl}/api/agents?${params.toString()}`,
-    page: payload.page ?? page,
-    limit: payload.limit ?? limit,
-    filteredTotal: payload.filteredTotal ?? agents.length,
-    totalAgents: payload.totalAgents ?? agents.length,
-    activatedAgents: payload.activatedAgents ?? 0,
-    agents: agents.map((agent: any) => ({
+    page: payloadRecord.page ?? page,
+    limit: payloadRecord.limit ?? limit,
+    filteredTotal: payloadRecord.filteredTotal ?? agents.length,
+    totalAgents: payloadRecord.totalAgents ?? agents.length,
+    activatedAgents: payloadRecord.activatedAgents ?? 0,
+    agents: agents.map((agent) => ({
       rank: agent.rank ?? null,
       agentId: agent.agentId ?? null,
       name: agent.name ?? null,
@@ -230,12 +235,13 @@ const toolGetAgentDetails = async (
     page: "1",
   });
   const payload = await fetchJson(context.baseUrl, `/api/agents?${params.toString()}`, context.timeoutMs);
-  const agents = Array.isArray(payload.agents) ? payload.agents : [];
+  const payloadRecord = isJsonRecord(payload) ? payload : {};
+  const agents = Array.isArray(payloadRecord.agents) ? payloadRecord.agents.filter(isJsonRecord) : [];
   const normalizedAgentId = agentId.toLowerCase();
 
   const match =
-    agents.find((agent: any) => String(agent.agentId || "").toLowerCase() === normalizedAgentId) ??
-    agents.find((agent: any) => String(agent.address || "").toLowerCase() === normalizedAgentId) ??
+    agents.find((agent) => String(agent.agentId || "").toLowerCase() === normalizedAgentId) ??
+    agents.find((agent) => String(agent.address || "").toLowerCase() === normalizedAgentId) ??
     agents[0];
 
   if (!match) {
@@ -272,17 +278,20 @@ const toolGetPaymentRequirements = async (
 
   const params = new URLSearchParams({ service: serviceSlug });
   const payload = await fetchJson(context.baseUrl, `/api/pricing?${params.toString()}`, context.timeoutMs);
+  const payloadRecord = isJsonRecord(payload) ? payload : {};
+  const service = isJsonRecord(payloadRecord.service) ? payloadRecord.service : null;
+  const gate = isJsonRecord(payloadRecord.gate) ? payloadRecord.gate : null;
 
   return toToolResponse({
     source: `${context.baseUrl}/api/pricing?${params.toString()}`,
     serviceSlug,
     gateEndpoint: `${context.baseUrl}/api/gate/${encodeURIComponent(serviceSlug)}`,
-    preferredChainId: payload.preferredChainId ?? null,
-    creditPriceWei: payload.creditPriceWei ?? null,
-    requestCostCredits: payload.service?.cost ?? payload.gate?.defaultRequestCreditCost ?? null,
-    requestCostSource: payload.service?.source ?? "default",
-    x402CompatibilityEnabled: payload.gate?.x402CompatibilityEnabled ?? false,
-    x402Scheme: payload.gate?.x402Scheme ?? "ghost-eip712-credit-v1",
+    preferredChainId: payloadRecord.preferredChainId ?? null,
+    creditPriceWei: payloadRecord.creditPriceWei ?? null,
+    requestCostCredits: service?.cost ?? gate?.defaultRequestCreditCost ?? null,
+    requestCostSource: service?.source ?? "default",
+    x402CompatibilityEnabled: gate?.x402CompatibilityEnabled ?? false,
+    x402Scheme: gate?.x402Scheme ?? "ghost-eip712-credit-v1",
   });
 };
 

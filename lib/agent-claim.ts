@@ -10,7 +10,7 @@ export const statusIndicatesClaimed = (status: string | null | undefined): boole
   return CLAIMED_STATUS_TOKENS.some((token) => normalized.includes(token));
 };
 
-export const tierIndicatesClaimed = (tier: string | null | undefined): boolean =>
+const tierIndicatesClaimed = (tier: string | null | undefined): boolean =>
   tier === "WHALE" || tier === "ACTIVE";
 
 export const isClaimedAgent = ({
