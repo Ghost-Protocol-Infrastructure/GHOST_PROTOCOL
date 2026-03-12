@@ -36,6 +36,9 @@ GHOST_OPENCLAW_BASE_URL=https://ghostprotocol.cc
 GHOST_OPENCLAW_CHAIN_ID=8453
 GHOST_OPENCLAW_SERVICE_SLUG=agent-18755
 GHOST_OPENCLAW_TIMEOUT_MS=15000
+GHOSTWIRE_PROVIDER_ADDRESS=0x...
+GHOSTWIRE_EVALUATOR_ADDRESS=0x...
+GHOSTWIRE_PRINCIPAL_AMOUNT=1000000
 ```
 
 ## 3. Register plugin in OpenClaw/ClawHub
@@ -70,4 +73,14 @@ If that succeeds, run paid dry run:
 
 ```bash
 node integrations/openclaw-ghost-pay/bin/pay-gate-x402.mjs --service agent-18755 --method POST --body-json "{\"prompt\":\"hello\"}" --dry-run true
+```
+
+Optional GhostWire wrappers:
+
+```bash
+node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --provider 0x... --evaluator 0x... --principal-amount 1000000
+```
+
+```bash
+node integrations/openclaw-ghost-pay/bin/get-wire-job-status.mjs --job-id wj_...
 ```

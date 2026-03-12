@@ -6,7 +6,9 @@
   "license": "MIT",
   "scripts": {
     "requirements": "node ./bin/get-payment-requirements.mjs",
-    "pay": "node ./bin/pay-gate-x402.mjs"
+    "pay": "node ./bin/pay-gate-x402.mjs",
+    "wire:quote": "node ./bin/get-wire-quote.mjs",
+    "wire:status": "node ./bin/get-wire-job-status.mjs"
   },
   "dependencies": {
     "viem": "^2.21.0"

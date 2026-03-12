@@ -21,10 +21,12 @@ Tool list:
 - `list_agents`
 - `get_agent_details`
 - `get_payment_requirements`
+- `get_wire_quote`
+- `get_wire_job_status`
 
 Scope statement:
 
-- "Read-only MCP server for agent discovery and pricing requirements. No settlement, ticket issuance, wallet actions, or state mutation."
+- "MCP server for agent discovery, pricing requirements, and GhostWire quote/status helpers. No settlement execution, ticket issuance, or wallet actions."
 
 ## Directory targets
 
@@ -70,3 +72,5 @@ It verifies:
 5. MCP JSON-RPC `tools/call` for:
    - `list_agents`
    - `get_payment_requirements`
+   - `get_wire_quote`
+   - `get_wire_job_status`

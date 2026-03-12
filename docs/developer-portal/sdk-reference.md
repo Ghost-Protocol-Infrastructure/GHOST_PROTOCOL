@@ -5,7 +5,7 @@ This page documents the current SDK surfaces and the canonical connection flow.
 For agent-loop semantics and retry/idempotency policy, see:
 - `docs/developer-portal/agent-integration-playbook.md`
 
-## Read-only MCP server (discovery + pricing)
+## MCP server (discovery + pricing + wire helpers)
 
 For machine clients that use MCP, Ghost Protocol ships a read-only server:
 

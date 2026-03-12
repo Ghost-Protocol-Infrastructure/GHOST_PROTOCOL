@@ -1,16 +1,19 @@
-# Read-only MCP Server
+# MCP Server (Discovery + Wire Helpers)
 
-Ghost Protocol includes a read-only MCP server for machine discovery and pricing lookups.
+Ghost Protocol includes an MCP server for machine discovery, pricing lookups, and GhostWire quote/status helpers.
 
 ## Purpose
 
-This MCP server is read-only and does **not** execute settlement, ticket issuance, or wallet operations.
+This MCP server does **not** execute settlement, ticket issuance, or wallet operations.
+It can create GhostWire quote records and read GhostWire job status.
 
 Supported tools:
 
 - `list_agents`
 - `get_agent_details`
 - `get_payment_requirements`
+- `get_wire_quote`
+- `get_wire_job_status`
 
 ## Hosted endpoint
 
@@ -141,6 +144,39 @@ Input:
 Data source: `GET /api/pricing?service=<service_slug>`
 
 Returns chain id, credit unit pricing, request credit cost, and x402 transport compatibility metadata.
+
+### `get_wire_quote`
+
+Input:
+
+```json
+{
+  "provider_address": "0x...",
+  "evaluator_address": "0x...",
+  "principal_amount": "1000000",
+  "chain_id": 8453,
+  "settlement_asset": "USDC",
+  "client_address": "0x..."
+}
+```
+
+Data source: `POST /api/wire/quote`
+
+Creates and returns a quote payload (`quoteId`, expiry, pricing, confirmations).
+
+### `get_wire_job_status`
+
+Input:
+
+```json
+{
+  "job_id": "wj_..."
+}
+```
+
+Data source: `GET /api/wire/jobs/<job_id>`
+
+Returns current GhostWire job snapshot, operator status, and terminal settlement payload when available.
 
 ## Related machine-readable artifacts
 

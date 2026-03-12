@@ -10,6 +10,11 @@ Ghost Protocol includes an OpenClaw skill package at:
    - `node integrations/openclaw-ghost-pay/bin/get-payment-requirements.mjs --service agent-18755`
 2. Signs Ghost EIP-712 access payloads and wraps them in x402-compatible `payment-signature` headers:
    - `node integrations/openclaw-ghost-pay/bin/pay-gate-x402.mjs --service agent-18755 --method POST --body-json "{\"prompt\":\"hello\"}"`
+3. Provides GhostWire MCP helper wrappers:
+   - `node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --provider 0x... --evaluator 0x... --principal-amount 1000000`
+   - `node integrations/openclaw-ghost-pay/bin/get-wire-job-status.mjs --job-id wj_...`
+
+Express mode is executable end-to-end in this package. GhostWire mode is quote/status helper level only.
 
 ## Why this is safe
 

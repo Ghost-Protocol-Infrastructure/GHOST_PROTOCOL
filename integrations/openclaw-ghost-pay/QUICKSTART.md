@@ -33,3 +33,15 @@ GHOST_OPENCLAW_BASE_URL=https://ghostprotocol.cc
 GHOST_OPENCLAW_CHAIN_ID=8453
 GHOST_OPENCLAW_TIMEOUT_MS=15000
 ```
+
+## 6. GhostWire quote helper (optional)
+
+```bash
+node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --provider 0x... --evaluator 0x... --principal-amount 1000000
+```
+
+## 7. GhostWire job status helper (optional)
+
+```bash
+node integrations/openclaw-ghost-pay/bin/get-wire-job-status.mjs --job-id wj_...
+```

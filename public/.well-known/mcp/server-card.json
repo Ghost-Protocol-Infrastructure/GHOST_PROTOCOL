@@ -1,7 +1,7 @@
 {
   "serverInfo": {
     "name": "ghost-protocol-readonly-mcp",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "authentication": {
     "required": false,
@@ -63,6 +63,62 @@
         },
         "required": [
           "service_slug"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_wire_quote",
+      "description": "Create a GhostWire quote for a potential escrow job.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "provider_address": {
+            "type": "string",
+            "description": "Provider wallet address."
+          },
+          "evaluator_address": {
+            "type": "string",
+            "description": "Evaluator wallet address."
+          },
+          "principal_amount": {
+            "type": "string",
+            "description": "USDC amount in atomic units (6 decimals)."
+          },
+          "chain_id": {
+            "type": "integer",
+            "description": "Target chain id (8453 for Base mainnet)."
+          },
+          "settlement_asset": {
+            "type": "string",
+            "description": "Settlement asset symbol. Default USDC."
+          },
+          "client_address": {
+            "type": "string",
+            "description": "Optional client wallet address."
+          }
+        },
+        "required": [
+          "provider_address",
+          "evaluator_address",
+          "principal_amount"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_wire_job_status",
+      "description": "Fetch current status for one GhostWire job by job_id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "GhostWire job id (example: wj_...)."
+          }
+        },
+        "required": [
+          "job_id"
         ],
         "additionalProperties": false
       }

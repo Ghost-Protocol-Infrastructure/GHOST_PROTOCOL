@@ -4,8 +4,9 @@ This package bridges OpenClaw agents to Ghost Protocol's existing stack:
 
 - Discovery + pricing via read-only MCP (`/api/mcp/read-only`)
 - Paid gate requests via x402-compatible `payment-signature` envelopes
+- GhostWire quote + job-status MCP wrappers for escrow-mode workflows
 
-No protocol settlement behavior is added here. This package only wraps existing Ghost API behavior.
+Express mode is fully executable here. Wire mode helpers are currently quote/status wrappers and do not perform on-chain escrow actions directly.
 
 ## Contents
 
@@ -13,6 +14,8 @@ No protocol settlement behavior is added here. This package only wraps existing 
 - `skills/openclaw-ghost-pay/SKILL.md` - skill instructions for OpenClaw
 - `bin/get-payment-requirements.mjs` - MCP-based payment requirement lookup
 - `bin/pay-gate-x402.mjs` - EIP-712 signer + x402 header wrapper for gate calls
+- `bin/get-wire-quote.mjs` - MCP wrapper for GhostWire quote creation
+- `bin/get-wire-job-status.mjs` - MCP wrapper for GhostWire job status polling
 
 ## Usage
 
@@ -30,6 +33,14 @@ node integrations/openclaw-ghost-pay/bin/pay-gate-x402.mjs --service agent-18755
 node integrations/openclaw-ghost-pay/bin/pay-gate-x402.mjs --service agent-18755 --method POST --body-json "{\"prompt\":\"hello\"}"
 ```
 
+```bash
+node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --provider 0x... --evaluator 0x... --principal-amount 1000000
+```
+
+```bash
+node integrations/openclaw-ghost-pay/bin/get-wire-job-status.mjs --job-id wj_...
+```
+
 ## Environment
 
 - `GHOST_SIGNER_PRIVATE_KEY` (required for paid call)
@@ -37,6 +48,9 @@ node integrations/openclaw-ghost-pay/bin/pay-gate-x402.mjs --service agent-18755
 - `GHOST_OPENCLAW_CHAIN_ID` (default: `8453`)
 - `GHOST_OPENCLAW_SERVICE_SLUG` (optional fallback service)
 - `GHOST_OPENCLAW_TIMEOUT_MS` (default: `15000`)
+- `GHOSTWIRE_PROVIDER_ADDRESS` (optional default for `get-wire-quote`)
+- `GHOSTWIRE_EVALUATOR_ADDRESS` (optional default for `get-wire-quote`)
+- `GHOSTWIRE_PRINCIPAL_AMOUNT` (optional default for `get-wire-quote`)
 
 ## OpenClaw Registration
 

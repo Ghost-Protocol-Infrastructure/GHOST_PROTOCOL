@@ -12,18 +12,20 @@ Use this profile when submitting Ghost Protocol to MCP/server directories.
 
 ## Short description
 
-Read-only MCP server for GhostRank discovery and GhostGate payment requirement lookups.
+MCP server for GhostRank discovery, GhostGate payment requirement lookups, and GhostWire quote/status helpers.
 
 ## Long description
 
 Ghost Protocol provides machine-native infrastructure for autonomous-agent discovery and monetization.  
-This MCP server is intentionally read-only and exposes three tools:
+This MCP server exposes five tools:
 
 - `list_agents`
 - `get_agent_details`
 - `get_payment_requirements`
+- `get_wire_quote`
+- `get_wire_job_status`
 
-It supports agent discovery and pricing introspection without exposing any state-mutating settlement operations.
+It supports agent discovery, pricing introspection, and GhostWire quote/status workflows without exposing settlement execution operations.
 
 ## Tool scope / safety statement
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const SERVER_NAME = "ghost-protocol-readonly-mcp";
-const SERVER_VERSION = "0.1.0";
+const SERVER_VERSION = "0.3.0";
 const DEFAULT_BASE_URL = "https://ghostprotocol.cc";
 const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_LIST_LIMIT = 250;
@@ -111,16 +111,29 @@ function clampInteger(value, fallback, min, max) {
   return Math.max(min, Math.min(max, Math.trunc(parsed)));
 }
 
-async function fetchJson(path) {
+function parsePositiveAtomicAmount(value) {
+  const normalized = normalizeString(value);
+  if (!/^\d+$/.test(normalized)) return "";
+  if (normalized === "0") return "";
+  return normalized;
+}
+
+async function fetchJson(path, init = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    const method = normalizeString(init.method || "GET") || "GET";
+    const inputHeaders = init.headers && typeof init.headers === "object" ? init.headers : {};
+    const headers = {
+      accept: "application/json",
+      "cache-control": "no-store",
+      ...inputHeaders,
+    };
+
     const response = await fetch(`${baseUrl}${path}`, {
-      method: "GET",
-      headers: {
-        accept: "application/json",
-        "cache-control": "no-store",
-      },
+      ...init,
+      method,
+      headers,
       signal: controller.signal,
     });
 
@@ -244,6 +257,63 @@ async function toolGetPaymentRequirements(argumentsObject = {}) {
   return toToolResponse(requirements);
 }
 
+async function toolGetWireQuote(argumentsObject = {}) {
+  const providerAddress = normalizeString(argumentsObject.provider_address);
+  const evaluatorAddress = normalizeString(argumentsObject.evaluator_address);
+  const principalAmount = parsePositiveAtomicAmount(argumentsObject.principal_amount);
+  const chainId = clampInteger(argumentsObject.chain_id, 8453, 1, 10_000_000);
+  const settlementAsset = normalizeString(argumentsObject.settlement_asset) || "USDC";
+  const clientAddress = normalizeString(argumentsObject.client_address);
+
+  if (!providerAddress || !evaluatorAddress || !principalAmount) {
+    throw new Error("provider_address, evaluator_address, and positive principal_amount are required.");
+  }
+
+  const payload = await fetchJson("/api/wire/quote", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      provider: providerAddress,
+      evaluator: evaluatorAddress,
+      client: clientAddress || undefined,
+      principalAmount,
+      settlementAsset,
+      chainId,
+    }),
+  });
+
+  return toToolResponse({
+    source: `${baseUrl}/api/wire/quote`,
+    request: {
+      providerAddress,
+      evaluatorAddress,
+      clientAddress: clientAddress || null,
+      principalAmount,
+      settlementAsset,
+      chainId,
+    },
+    quote: payload,
+  });
+}
+
+async function toolGetWireJobStatus(argumentsObject = {}) {
+  const jobId = normalizeString(argumentsObject.job_id);
+  if (!jobId) {
+    throw new Error("job_id is required.");
+  }
+
+  const encodedJobId = encodeURIComponent(jobId);
+  const payload = await fetchJson(`/api/wire/jobs/${encodedJobId}`);
+
+  return toToolResponse({
+    source: `${baseUrl}/api/wire/jobs/${encodedJobId}`,
+    jobId,
+    status: payload,
+  });
+}
+
 const TOOL_DEFINITIONS = [
   {
     name: "list_agents",
@@ -282,6 +352,35 @@ const TOOL_DEFINITIONS = [
       additionalProperties: false,
     },
   },
+  {
+    name: "get_wire_quote",
+    description: "Create a GhostWire quote for a potential escrow job.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        provider_address: { type: "string", description: "Provider wallet address." },
+        evaluator_address: { type: "string", description: "Evaluator wallet address." },
+        principal_amount: { type: "string", description: "USDC amount in atomic units (6 decimals)." },
+        chain_id: { type: "integer", description: "Target chain id (8453 for Base mainnet)." },
+        settlement_asset: { type: "string", description: "Settlement asset symbol. Default USDC." },
+        client_address: { type: "string", description: "Optional client wallet address." },
+      },
+      required: ["provider_address", "evaluator_address", "principal_amount"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_wire_job_status",
+    description: "Fetch current status for one GhostWire job by job_id.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        job_id: { type: "string", description: "GhostWire job id (example: wj_...)." },
+      },
+      required: ["job_id"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 async function handleToolCall(params) {
@@ -291,6 +390,8 @@ async function handleToolCall(params) {
   if (toolName === "list_agents") return toolListAgents(args);
   if (toolName === "get_agent_details") return toolGetAgentDetails(args);
   if (toolName === "get_payment_requirements") return toolGetPaymentRequirements(args);
+  if (toolName === "get_wire_quote") return toolGetWireQuote(args);
+  if (toolName === "get_wire_job_status") return toolGetWireJobStatus(args);
   throw new Error(`Unsupported tool '${toolName}'.`);
 }
 

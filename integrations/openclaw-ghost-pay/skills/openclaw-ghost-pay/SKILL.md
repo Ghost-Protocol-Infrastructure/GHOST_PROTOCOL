@@ -10,6 +10,9 @@ Use this skill when an agent must:
 
 1. Query authoritative payment requirements for a service.
 2. Execute a paid request against GhostGate with x402-compatible transport headers.
+3. Optionally create and inspect GhostWire quote/job status through MCP wrappers.
+
+This skill executes Express mode payments. GhostWire support here is quote/status helper level only.
 
 ## Required Environment
 
@@ -41,6 +44,18 @@ node integrations/openclaw-ghost-pay/bin/pay-gate-x402.mjs --service agent-18755
 ```
 
 This signs the Ghost EIP-712 `Access` payload and wraps it in `payment-signature` with scheme `ghost-eip712-credit-v1`.
+
+## Step 3 (Optional): Create GhostWire Quote
+
+```bash
+node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --provider 0x... --evaluator 0x... --principal-amount 1000000
+```
+
+## Step 4 (Optional): Poll GhostWire Job Status
+
+```bash
+node integrations/openclaw-ghost-pay/bin/get-wire-job-status.mjs --job-id wj_... --wait-terminal true
+```
 
 ## Safe Usage Rules
 

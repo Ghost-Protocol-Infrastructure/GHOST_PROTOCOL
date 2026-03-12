@@ -1,7 +1,7 @@
 {
   "name": "ghost-protocol-readonly-mcp",
-  "version": "0.2.0",
-  "description": "Read-only Ghost Protocol MCP server for agent discovery and payment requirement lookup.",
+  "version": "0.3.0",
+  "description": "Ghost Protocol MCP server for agent discovery, payment requirement lookup, and GhostWire quote/status helpers.",
   "transport": {
     "type": "jsonrpc-http",
     "url": "https://ghostprotocol.cc/api/mcp/read-only"
@@ -18,6 +18,14 @@
     {
       "name": "get_payment_requirements",
       "description": "Fetch authoritative payment requirements for a service slug."
+    },
+    {
+      "name": "get_wire_quote",
+      "description": "Create a GhostWire quote for a potential escrow job."
+    },
+    {
+      "name": "get_wire_job_status",
+      "description": "Fetch current status for one GhostWire job by job_id."
     }
   ],
   "artifacts": {

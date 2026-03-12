@@ -108,6 +108,8 @@ const run = async (): Promise<void> => {
   assert(metadataToolNames.has("list_agents"), "MCP metadata missing list_agents tool");
   assert(metadataToolNames.has("get_agent_details"), "MCP metadata missing get_agent_details tool");
   assert(metadataToolNames.has("get_payment_requirements"), "MCP metadata missing get_payment_requirements tool");
+  assert(metadataToolNames.has("get_wire_quote"), "MCP metadata missing get_wire_quote tool");
+  assert(metadataToolNames.has("get_wire_job_status"), "MCP metadata missing get_wire_job_status tool");
   console.log(`[ok] metadata (${metadataResult.elapsedMs}ms)`);
 
   const manifestResult = await timedFetch(`${baseUrl}/.well-known/mcp.json`, {
@@ -133,6 +135,8 @@ const run = async (): Promise<void> => {
   assert(manifestToolNames.has("list_agents"), "MCP manifest missing list_agents tool");
   assert(manifestToolNames.has("get_agent_details"), "MCP manifest missing get_agent_details tool");
   assert(manifestToolNames.has("get_payment_requirements"), "MCP manifest missing get_payment_requirements tool");
+  assert(manifestToolNames.has("get_wire_quote"), "MCP manifest missing get_wire_quote tool");
+  assert(manifestToolNames.has("get_wire_job_status"), "MCP manifest missing get_wire_job_status tool");
   console.log(`[ok] manifest (${manifestResult.elapsedMs}ms)`);
 
   const initializeResponse = await rpcCall(1, "initialize", { protocolVersion: "2024-11-05" });
@@ -149,6 +153,8 @@ const run = async (): Promise<void> => {
   assert(toolsListNames.has("list_agents"), "tools/list missing list_agents");
   assert(toolsListNames.has("get_agent_details"), "tools/list missing get_agent_details");
   assert(toolsListNames.has("get_payment_requirements"), "tools/list missing get_payment_requirements");
+  assert(toolsListNames.has("get_wire_quote"), "tools/list missing get_wire_quote");
+  assert(toolsListNames.has("get_wire_job_status"), "tools/list missing get_wire_job_status");
 
   const listAgentsResponse = await rpcCall(3, "tools/call", {
     name: "list_agents",

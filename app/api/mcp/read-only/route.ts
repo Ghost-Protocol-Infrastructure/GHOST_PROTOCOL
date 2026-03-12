@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 const SERVER_NAME = "ghost-protocol-readonly-mcp";
-const SERVER_VERSION = "0.2.0";
+const SERVER_VERSION = "0.3.0";
 const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_LIST_LIMIT = 250;
 
@@ -54,6 +54,35 @@ const TOOL_DEFINITIONS = [
       additionalProperties: false,
     },
   },
+  {
+    name: "get_wire_quote",
+    description: "Create a GhostWire quote for a potential escrow job.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        provider_address: { type: "string", description: "Provider wallet address." },
+        evaluator_address: { type: "string", description: "Evaluator wallet address." },
+        principal_amount: { type: "string", description: "USDC amount in atomic units (6 decimals)." },
+        chain_id: { type: "integer", description: "Target chain id (8453 for Base mainnet)." },
+        settlement_asset: { type: "string", description: "Settlement asset symbol. Default USDC." },
+        client_address: { type: "string", description: "Optional client wallet address." },
+      },
+      required: ["provider_address", "evaluator_address", "principal_amount"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_wire_job_status",
+    description: "Fetch current status for one GhostWire job by job_id.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        job_id: { type: "string", description: "GhostWire job id (example: wj_...)." },
+      },
+      required: ["job_id"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 const parsePositiveInt = (raw: string | undefined, fallback: number): number => {
@@ -69,6 +98,13 @@ const clampInteger = (value: unknown, fallback: number, min: number, max: number
   const parsed = Number.parseInt(String(value ?? ""), 10);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(max, Math.trunc(parsed)));
+};
+
+const parsePositiveAtomicAmount = (value: unknown): string => {
+  const normalized = normalizeString(value);
+  if (!/^\d+$/.test(normalized)) return "";
+  if (normalized === "0") return "";
+  return normalized;
 };
 
 const noStoreJson = (body: unknown, status = 200): NextResponse =>
@@ -108,16 +144,22 @@ const toToolResponse = (value: unknown): Record<string, unknown> => ({
 const resolveBaseUrl = (request: NextRequest): string =>
   (process.env.GHOST_MCP_BASE_URL?.trim() || request.nextUrl.origin).replace(/\/+$/, "");
 
-const fetchJson = async (baseUrl: string, path: string, timeoutMs: number): Promise<any> => {
+const fetchJson = async (baseUrl: string, path: string, timeoutMs: number, init?: RequestInit): Promise<any> => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    const method = normalizeString(init?.method || "GET") || "GET";
+    const inputHeaders = (init?.headers || {}) as Record<string, string>;
+    const headers: Record<string, string> = {
+      accept: "application/json",
+      "cache-control": "no-store",
+      ...inputHeaders,
+    };
+
     const response = await fetch(`${baseUrl}${path}`, {
-      method: "GET",
-      headers: {
-        accept: "application/json",
-        "cache-control": "no-store",
-      },
+      ...init,
+      method,
+      headers,
       signal: controller.signal,
     });
 
@@ -244,6 +286,73 @@ const toolGetPaymentRequirements = async (
   });
 };
 
+const toolGetWireQuote = async (
+  argumentsObject: Record<string, unknown>,
+  context: { baseUrl: string; timeoutMs: number },
+): Promise<Record<string, unknown>> => {
+  const providerAddress = normalizeString(argumentsObject.provider_address);
+  const evaluatorAddress = normalizeString(argumentsObject.evaluator_address);
+  const principalAmount = parsePositiveAtomicAmount(argumentsObject.principal_amount);
+  const chainId = clampInteger(argumentsObject.chain_id, 8453, 1, 10_000_000);
+  const settlementAsset = normalizeString(argumentsObject.settlement_asset) || "USDC";
+  const clientAddress = normalizeString(argumentsObject.client_address);
+
+  if (!providerAddress || !evaluatorAddress || !principalAmount) {
+    throw new Error("provider_address, evaluator_address, and positive principal_amount are required.");
+  }
+
+  const payload = await fetchJson(
+    context.baseUrl,
+    "/api/wire/quote",
+    context.timeoutMs,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        provider: providerAddress,
+        evaluator: evaluatorAddress,
+        client: clientAddress || undefined,
+        principalAmount,
+        settlementAsset,
+        chainId,
+      }),
+    },
+  );
+
+  return toToolResponse({
+    source: `${context.baseUrl}/api/wire/quote`,
+    request: {
+      providerAddress,
+      evaluatorAddress,
+      clientAddress: clientAddress || null,
+      principalAmount,
+      settlementAsset,
+      chainId,
+    },
+    quote: payload,
+  });
+};
+
+const toolGetWireJobStatus = async (
+  argumentsObject: Record<string, unknown>,
+  context: { baseUrl: string; timeoutMs: number },
+): Promise<Record<string, unknown>> => {
+  const jobId = normalizeString(argumentsObject.job_id);
+  if (!jobId) {
+    throw new Error("job_id is required.");
+  }
+
+  const payload = await fetchJson(context.baseUrl, `/api/wire/jobs/${encodeURIComponent(jobId)}`, context.timeoutMs);
+
+  return toToolResponse({
+    source: `${context.baseUrl}/api/wire/jobs/${encodeURIComponent(jobId)}`,
+    jobId,
+    status: payload,
+  });
+};
+
 const handleToolCall = async (
   params: Record<string, unknown> | null | undefined,
   context: { baseUrl: string; timeoutMs: number },
@@ -257,6 +366,8 @@ const handleToolCall = async (
   if (toolName === "list_agents") return toolListAgents(args, context);
   if (toolName === "get_agent_details") return toolGetAgentDetails(args, context);
   if (toolName === "get_payment_requirements") return toolGetPaymentRequirements(args, context);
+  if (toolName === "get_wire_quote") return toolGetWireQuote(args, context);
+  if (toolName === "get_wire_job_status") return toolGetWireJobStatus(args, context);
   throw new Error(`Unsupported tool '${toolName}'.`);
 };
 
