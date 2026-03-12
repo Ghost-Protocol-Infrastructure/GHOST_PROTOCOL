@@ -39,6 +39,9 @@ GHOST_OPENCLAW_TIMEOUT_MS=15000
 GHOSTWIRE_PROVIDER_ADDRESS=0x...
 GHOSTWIRE_EVALUATOR_ADDRESS=0x...
 GHOSTWIRE_PRINCIPAL_AMOUNT=1000000
+GHOSTWIRE_CLIENT_ADDRESS=0x...
+GHOSTWIRE_SPEC_HASH=0x...
+GHOSTWIRE_EXEC_SECRET=...
 ```
 
 ## 3. Register plugin in OpenClaw/ClawHub
@@ -79,6 +82,10 @@ Optional GhostWire wrappers:
 
 ```bash
 node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --provider 0x... --evaluator 0x... --principal-amount 1000000
+```
+
+```bash
+node integrations/openclaw-ghost-pay/bin/create-wire-job-from-quote.mjs --quote-id wq_... --client 0x... --provider 0x... --evaluator 0x... --spec-hash 0x...
 ```
 
 ```bash

@@ -1,7 +1,7 @@
 ---
 name: openclaw-ghost-pay
-description: Discover Ghost payment requirements, execute GhostGate Express payments, and use GhostWire quote/status helpers.
-metadata: {"author":"Ghost Protocol Infrastructure","version":"1.1.0","runtime":"node","requires_env":["GHOST_SIGNER_PRIVATE_KEY"],"safety":"server-only"}
+description: Discover Ghost payment requirements, execute GhostGate Express payments, and run GhostWire quote/create/status flows with execution controls.
+metadata: {"author":"Ghost Protocol Infrastructure","version":"1.2.0","runtime":"node","requires_env":["GHOST_SIGNER_PRIVATE_KEY"],"safety":"server-only"}
 ---
 
 # OpenClaw Ghost Pay Skill
@@ -10,9 +10,9 @@ Use this skill when an agent must:
 
 1. Query authoritative payment requirements for a service.
 2. Execute a paid request against GhostGate with x402-compatible transport headers.
-3. Optionally create and inspect GhostWire quote/job status through MCP wrappers.
+3. Optionally run GhostWire quote/create/status flow for escrow-mode jobs.
 
-This skill executes Express mode payments. GhostWire support here is quote/status helper level only.
+This skill executes Express mode payments and can request GhostWire job creation using guarded execution secrets.
 
 ## Required Environment
 
@@ -21,6 +21,7 @@ This skill executes Express mode payments. GhostWire support here is quote/statu
 - `GHOST_OPENCLAW_CHAIN_ID` (optional, default: `8453`)
 - `GHOST_OPENCLAW_SERVICE_SLUG` (optional convenience default)
 - `GHOST_OPENCLAW_TIMEOUT_MS` (optional, default: `15000`)
+- `GHOSTWIRE_EXEC_SECRET` (required for wire job creation)
 
 Never put private keys in prompts, code blocks, or frontend output.
 
@@ -51,7 +52,13 @@ This signs the Ghost EIP-712 `Access` payload and wraps it in `payment-signature
 node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --provider 0x... --evaluator 0x... --principal-amount 1000000
 ```
 
-## Step 4 (Optional): Poll GhostWire Job Status
+## Step 4 (Optional): Create GhostWire Job from Quote
+
+```bash
+node integrations/openclaw-ghost-pay/bin/create-wire-job-from-quote.mjs --quote-id wq_... --client 0x... --provider 0x... --evaluator 0x... --spec-hash 0x...
+```
+
+## Step 5 (Optional): Poll GhostWire Job Status
 
 ```bash
 node integrations/openclaw-ghost-pay/bin/get-wire-job-status.mjs --job-id wj_... --wait-terminal true

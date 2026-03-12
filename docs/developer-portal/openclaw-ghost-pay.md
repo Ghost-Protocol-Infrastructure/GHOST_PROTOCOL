@@ -10,11 +10,12 @@ Ghost Protocol includes an OpenClaw skill package at:
    - `node integrations/openclaw-ghost-pay/bin/get-payment-requirements.mjs --service agent-18755`
 2. Signs Ghost EIP-712 access payloads and wraps them in x402-compatible `payment-signature` headers:
    - `node integrations/openclaw-ghost-pay/bin/pay-gate-x402.mjs --service agent-18755 --method POST --body-json "{\"prompt\":\"hello\"}"`
-3. Provides GhostWire MCP helper wrappers:
+3. Provides GhostWire quote/create/status tooling:
    - `node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --provider 0x... --evaluator 0x... --principal-amount 1000000`
+   - `node integrations/openclaw-ghost-pay/bin/create-wire-job-from-quote.mjs --quote-id wq_... --client 0x... --provider 0x... --evaluator 0x... --spec-hash 0x...`
    - `node integrations/openclaw-ghost-pay/bin/get-wire-job-status.mjs --job-id wj_...`
 
-Express mode is executable end-to-end in this package. GhostWire mode is quote/status helper level only.
+Express mode is executable end-to-end in this package. GhostWire execution uses guarded API access (`GHOSTWIRE_EXEC_SECRET`) with operator-side policy controls.
 
 ## Why this is safe
 
@@ -29,6 +30,7 @@ Express mode is executable end-to-end in this package. GhostWire mode is quote/s
 - `GHOST_OPENCLAW_BASE_URL` (default `https://ghostprotocol.cc`)
 - `GHOST_OPENCLAW_CHAIN_ID` (default `8453`)
 - `GHOST_OPENCLAW_TIMEOUT_MS` (default `15000`)
+- `GHOSTWIRE_EXEC_SECRET` (required for wire create command)
 
 Use trusted runtime secrets only.
 

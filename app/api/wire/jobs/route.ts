@@ -1,6 +1,12 @@
 import { NextRequest } from "next/server";
 import { type WireContractState } from "@prisma/client";
 import { parsePositiveIntBounded } from "@/lib/fulfillment-route";
+import { prisma } from "@/lib/db";
+import {
+  isGhostWireExecAuthorized,
+  isGhostWireExecSecretConfigured,
+} from "@/lib/ghostwire-exec-auth";
+import { evaluateGhostWireExecutionPolicy } from "@/lib/ghostwire-exec-policy";
 import {
   createWireJobFromQuote,
   listWireJobs,
@@ -68,6 +74,28 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  if (!isGhostWireExecSecretConfigured()) {
+    return ghostWireJson(
+      {
+        code: 503,
+        error: "GhostWire execution secret is not configured.",
+        errorCode: "GHOSTWIRE_EXEC_NOT_CONFIGURED",
+      },
+      503,
+    );
+  }
+
+  if (!isGhostWireExecAuthorized(request)) {
+    return ghostWireJson(
+      {
+        code: 401,
+        error: "Unauthorized GhostWire execution request.",
+        errorCode: "UNAUTHORIZED_GHOSTWIRE_EXEC",
+      },
+      401,
+    );
+  }
+
   const parsed = await parseGhostWireJsonBody(request);
   if (!parsed.ok) {
     return ghostWireJson(
@@ -113,6 +141,47 @@ export async function POST(request: NextRequest) {
         errorCode: "INVALID_WIRE_WEBHOOK_CONFIG",
       },
       400,
+    );
+  }
+
+  try {
+    const quote = await prisma.wireQuote.findUnique({
+      where: { quoteId },
+      select: {
+        quoteId: true,
+        principalAmount: true,
+      },
+    });
+    if (!quote) {
+      return ghostWireJson({ code: 404, error: "Wire quote not found.", errorCode: "WIRE_QUOTE_NOT_FOUND" }, 404);
+    }
+
+    const policyCheck = await evaluateGhostWireExecutionPolicy({
+      clientAddress: client,
+      providerAddress: provider,
+      evaluatorAddress: evaluator,
+      principalAmountAtomic: quote.principalAmount,
+    });
+    if (!policyCheck.ok) {
+      return ghostWireJson(
+        {
+          code: policyCheck.failure.status,
+          error: policyCheck.failure.error,
+          errorCode: policyCheck.failure.errorCode,
+          details: policyCheck.failure.details,
+        },
+        policyCheck.failure.status,
+      );
+    }
+  } catch (error) {
+    console.error("Failed to evaluate GhostWire execution policy.", error);
+    return ghostWireJson(
+      {
+        code: 500,
+        error: "Failed to evaluate GhostWire execution policy.",
+        errorCode: "GHOSTWIRE_EXEC_POLICY_EVALUATION_FAILED",
+      },
+      500,
     );
   }
 

@@ -40,7 +40,19 @@ GHOST_OPENCLAW_TIMEOUT_MS=15000
 node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --provider 0x... --evaluator 0x... --principal-amount 1000000
 ```
 
-## 7. GhostWire job status helper (optional)
+## 7. GhostWire create from quote (optional)
+
+```bash
+node integrations/openclaw-ghost-pay/bin/create-wire-job-from-quote.mjs --quote-id wq_... --client 0x... --provider 0x... --evaluator 0x... --spec-hash 0x...
+```
+
+Requires:
+
+```bash
+GHOSTWIRE_EXEC_SECRET=...
+```
+
+## 8. GhostWire job status helper (optional)
 
 ```bash
 node integrations/openclaw-ghost-pay/bin/get-wire-job-status.mjs --job-id wj_...

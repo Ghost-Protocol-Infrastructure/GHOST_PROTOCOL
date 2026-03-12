@@ -4,9 +4,9 @@ This package bridges OpenClaw agents to Ghost Protocol's existing stack:
 
 - Discovery + pricing via read-only MCP (`/api/mcp/read-only`)
 - Paid gate requests via x402-compatible `payment-signature` envelopes
-- GhostWire quote + job-status MCP wrappers for escrow-mode workflows
+- GhostWire quote + guarded job-create + job-status flows for escrow-mode workflows
 
-Express mode is fully executable here. Wire mode helpers are currently quote/status wrappers and do not perform on-chain escrow actions directly.
+Express mode is fully executable here. Wire mode execution is available through guarded GhostWire APIs (`/api/wire/jobs`) and runs through GhostWire operator reconciliation.
 
 ## Contents
 
@@ -15,6 +15,7 @@ Express mode is fully executable here. Wire mode helpers are currently quote/sta
 - `bin/get-payment-requirements.mjs` - MCP-based payment requirement lookup
 - `bin/pay-gate-x402.mjs` - EIP-712 signer + x402 header wrapper for gate calls
 - `bin/get-wire-quote.mjs` - MCP wrapper for GhostWire quote creation
+- `bin/create-wire-job-from-quote.mjs` - guarded GhostWire job creation from an issued quote
 - `bin/get-wire-job-status.mjs` - MCP wrapper for GhostWire job status polling
 
 ## Usage
@@ -38,6 +39,10 @@ node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --provider 0x... --e
 ```
 
 ```bash
+node integrations/openclaw-ghost-pay/bin/create-wire-job-from-quote.mjs --quote-id wq_... --client 0x... --provider 0x... --evaluator 0x... --spec-hash 0x...
+```
+
+```bash
 node integrations/openclaw-ghost-pay/bin/get-wire-job-status.mjs --job-id wj_...
 ```
 
@@ -51,6 +56,11 @@ node integrations/openclaw-ghost-pay/bin/get-wire-job-status.mjs --job-id wj_...
 - `GHOSTWIRE_PROVIDER_ADDRESS` (optional default for `get-wire-quote`)
 - `GHOSTWIRE_EVALUATOR_ADDRESS` (optional default for `get-wire-quote`)
 - `GHOSTWIRE_PRINCIPAL_AMOUNT` (optional default for `get-wire-quote`)
+- `GHOSTWIRE_EXEC_SECRET` (required for `create-wire-job-from-quote`)
+- `GHOSTWIRE_CLIENT_ADDRESS` (optional default for wire create)
+- `GHOSTWIRE_SPEC_HASH` (optional default for wire create, required by API)
+- `GHOSTWIRE_METADATA_URI` (optional)
+- `GHOSTWIRE_WEBHOOK_URL` + `GHOSTWIRE_WEBHOOK_SECRET` (optional pair)
 
 ## OpenClaw Registration
 
