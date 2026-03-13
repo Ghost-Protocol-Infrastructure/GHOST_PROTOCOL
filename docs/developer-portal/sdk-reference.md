@@ -151,6 +151,48 @@ Notes:
 - Delegated signer registration is idempotent (`alreadyActive: true` is treated as success).
 - `canaryMethod` currently supports `GET` only.
 
+#### Hosted GhostWire helpers
+
+#### `createWireQuote(input): Promise<WireQuoteResult>`
+
+Calls `POST /api/wire/quote`.
+
+Use this to request a short-lived Hosted GhostWire quote before job creation.
+
+#### `createWireJob(input): Promise<WireJobCreateResult>`
+
+Calls `POST /api/wire/jobs`.
+
+Notes:
+- requires `execSecret` or `GHOSTWIRE_EXEC_SECRET`
+- `metadataUri` is the recommended deliverable locator for Hosted GhostWire v1
+- Ghost remains the hosted on-chain client in this model
+
+#### `getWireJob(jobId): Promise<WireJobResult>`
+
+Calls `GET /api/wire/jobs/[jobId]`.
+
+The returned `job.deliverable` block is the launch-friendly summary for consumer retrieval.
+
+#### `waitForWireTerminal(jobId, options?): Promise<WireJobSnapshot>`
+
+Polls Hosted GhostWire until the job reaches a terminal state:
+
+- `COMPLETED`
+- `REJECTED`
+- `EXPIRED`
+
+#### `getWireDeliverable(jobId): Promise<WireDeliverableResult>`
+
+Consumer convenience helper for Hosted GhostWire.
+
+Flow:
+
+1. fetches the GhostWire job
+2. checks that it is `COMPLETED`
+3. resolves the deliverable locator from `job.deliverable.locatorUrl` or `metadataUri`
+4. fetches the merchant-controlled deliverable
+
 #### `isConnected: boolean` (getter)
 
 Returns `true` after successful `connect()`.
@@ -176,6 +218,26 @@ const sdk = new GhostAgent({
 const result = await sdk.connect();
 await sdk.pulse();
 await sdk.outcome({ success: true, statusCode: 200 });
+
+const quote = await sdk.createWireQuote({
+  provider: "0xprovider...",
+  evaluator: "0xevaluator...",
+  principalAmount: "1000000",
+  chainId: 8453,
+});
+
+const job = await sdk.createWireJob({
+  quoteId: quote.quoteId!,
+  client: "0xclient...",
+  provider: "0xprovider...",
+  evaluator: "0xevaluator...",
+  specHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  metadataUri: "https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123",
+  execSecret: process.env.GHOSTWIRE_EXEC_SECRET,
+});
+
+const terminalJob = await sdk.waitForWireTerminal(job.jobId!);
+const deliverable = await sdk.getWireDeliverable(terminalJob.jobId);
 ```
 
 ## Python SDK (`sdks/python/ghostgate.py`)
@@ -285,6 +347,32 @@ Notes:
 - Delegated signer registration is idempotent (`alreadyActive: true` is treated as success).
 - `canary_method` currently supports `GET` only.
 
+#### Hosted GhostWire helpers
+
+#### `create_wire_quote(provider, evaluator, principal_amount, chain_id=8453, client=None) -> WireQuoteResult`
+
+Calls `POST /api/wire/quote`.
+
+#### `create_wire_job(quote_id, client, provider, evaluator, spec_hash, metadata_uri=None, webhook_url=None, webhook_secret=None, exec_secret=None) -> WireJobResult`
+
+Calls `POST /api/wire/jobs`.
+
+Notes:
+- requires `exec_secret` or `GHOSTWIRE_EXEC_SECRET`
+- `metadata_uri` is the recommended deliverable locator for Hosted GhostWire v1
+
+#### `get_wire_job(job_id) -> WireJobResult`
+
+Calls `GET /api/wire/jobs/[jobId]`.
+
+#### `wait_for_wire_terminal(job_id, interval_seconds=5.0, timeout_seconds=300.0) -> dict`
+
+Polls Hosted GhostWire until the job reaches terminal state.
+
+#### `get_wire_deliverable(job_id) -> WireDeliverableResult`
+
+Fetches the completed GhostWire job, resolves the deliverable locator, and retrieves the merchant-controlled payload.
+
 #### `guard(cost: int, *, service: Optional[str] = None, method: str = "GET")`
 
 Decorator that verifies access with Ghost Gate before running your handler.
@@ -297,6 +385,7 @@ Decorator that verifies access with Ghost Gate before running your handler.
 ### Python example
 
 ```python
+import os
 from ghostgate import GhostGate
 
 gate = GhostGate(
@@ -318,6 +407,26 @@ heartbeat = gate.start_heartbeat(service_slug="agent-2212", interval_seconds=60)
 @gate.guard(cost=1, service="agent-2212", method="POST")
 def handler():
     return {"ok": True}
+
+quote = gate.create_wire_quote(
+    provider="0xprovider...",
+    evaluator="0xevaluator...",
+    principal_amount="1000000",
+    chain_id=8453,
+)
+
+job = gate.create_wire_job(
+    quote_id=quote["quoteId"],
+    client="0xclient...",
+    provider="0xprovider...",
+    evaluator="0xevaluator...",
+    spec_hash="0x" + ("aa" * 32),
+    metadata_uri="https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123",
+    exec_secret=os.environ["GHOSTWIRE_EXEC_SECRET"],
+)
+
+terminal = gate.wait_for_wire_terminal(job["jobId"])
+deliverable = gate.get_wire_deliverable(terminal["jobId"])
 ```
 
 For platform integrations, use service slug format `agent-<agentId>` (example: `agent-2212`).

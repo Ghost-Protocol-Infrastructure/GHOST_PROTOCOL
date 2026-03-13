@@ -125,6 +125,113 @@ export type ActivateResult = {
   heartbeat: HeartbeatController;
 };
 
+export type WirePricingAmount = {
+  asset: string;
+  amount: string;
+  decimals: number;
+  bps?: number;
+  chainId?: number;
+};
+
+export type WireQuoteResult = {
+  ok: boolean;
+  endpoint: string;
+  status: number;
+  payload: unknown;
+  quoteId: string | null;
+  expiresAt: string | null;
+};
+
+export type WireJobCreateInput = {
+  quoteId: string;
+  client: `0x${string}` | string;
+  provider: `0x${string}` | string;
+  evaluator: `0x${string}` | string;
+  specHash: `0x${string}` | string;
+  metadataUri?: string | null;
+  webhookUrl?: string | null;
+  webhookSecret?: string | null;
+  execSecret?: string | null;
+};
+
+export type WireJobCreateResult = {
+  ok: boolean;
+  endpoint: string;
+  status: number;
+  payload: unknown;
+  jobId: string | null;
+};
+
+export type WireJobSnapshot = {
+  id: string;
+  jobId: string;
+  quoteId: string;
+  chainId: number;
+  jobExpiresAt: string;
+  state: string;
+  contractState: string;
+  terminalDisposition: string | null;
+  clientAddress: string;
+  providerAddress: string;
+  evaluatorAddress: string;
+  specHash: string;
+  metadataUri: string | null;
+  contractAddress: string | null;
+  contractJobId: string | null;
+  createTxHash: string | null;
+  fundTxHash: string | null;
+  terminalTxHash: string | null;
+  createdAt: string;
+  updatedAt: string;
+  pricing: {
+    principal: WirePricingAmount;
+    protocolFee: WirePricingAmount;
+    networkReserve: WirePricingAmount;
+  };
+  operator: {
+    createStatus: string | null;
+    fundStatus: string | null;
+    confirmationStatus: string | null;
+    reconcileStatus: string | null;
+    retryCount: number | null;
+    nextRetryAt: string | null;
+    lastError: string | null;
+    manualReviewRequired?: boolean | null;
+    manualReviewReason?: string | null;
+  };
+  settlement?: unknown;
+  deliverable?: {
+    available: boolean;
+    locatorUrl: string | null;
+    mode: "merchant_locator" | "none";
+    state: "READY" | "PENDING" | "UNCONFIGURED";
+  };
+};
+
+export type WireJobResult = {
+  ok: boolean;
+  endpoint: string;
+  status: number;
+  payload: unknown;
+  job: WireJobSnapshot | null;
+};
+
+export type WireDeliverableResult = {
+  ok: boolean;
+  endpoint: string;
+  status: number;
+  job: WireJobSnapshot;
+  contentType: string | null;
+  bodyJson: unknown | null;
+  bodyText: string | null;
+  sourceUrl: string;
+};
+
+export type WireCompletionWaitOptions = {
+  intervalMs?: number;
+  timeoutMs?: number;
+};
+
 const DEFAULT_BASE_URL = "https://ghostprotocol.cc";
 const DEFAULT_CHAIN_ID = 8453;
 const DEFAULT_SERVICE_SLUG = "connect";
@@ -166,6 +273,14 @@ const parsePayload = async (response: Response): Promise<unknown> => {
   }
 };
 
+const parseTextPayload = async (response: Response): Promise<string | null> => {
+  try {
+    return await response.text();
+  } catch {
+    return null;
+  }
+};
+
 const encodeBase64Json = (value: unknown): string => Buffer.from(JSON.stringify(value), "utf8").toString("base64");
 
 const decodeBase64Json = (value: string | null): unknown | null => {
@@ -182,6 +297,24 @@ const deriveAgentId = (serviceSlug: string | null): string | null => {
   if (!serviceSlug) return null;
   const match = /^agent-(.+)$/i.exec(serviceSlug);
   return match?.[1] ?? null;
+};
+
+const resolveWireExecSecret = (explicitSecret?: string | null): string | null =>
+  normalizeOptionalString(explicitSecret) ?? normalizeOptionalString(process.env.GHOSTWIRE_EXEC_SECRET);
+
+const resolveWireDeliverableLocator = (job: WireJobSnapshot): string | null => {
+  const summaryLocator = normalizeOptionalString(job.deliverable?.locatorUrl ?? null);
+  if (summaryLocator) return summaryLocator;
+
+  const metadataLocator = normalizeOptionalString(job.metadataUri);
+  if (!metadataLocator) return null;
+
+  try {
+    const parsed = new URL(metadataLocator);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
 };
 
 const toOptionalMetadata = (value: Record<string, unknown> | undefined): Record<string, unknown> | undefined =>
@@ -467,6 +600,198 @@ export class GhostAgent {
       endpoint,
       status: response.status,
       payload: await parsePayload(response),
+    };
+  }
+
+  async createWireQuote(input: {
+    provider: `0x${string}` | string;
+    evaluator: `0x${string}` | string;
+    principalAmount: string;
+    chainId?: number;
+    client?: `0x${string}` | string | null;
+  }): Promise<WireQuoteResult> {
+    const endpoint = `${this.baseUrl}/api/wire/quote`;
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/plain;q=0.9, */*;q=0.8",
+      },
+      body: JSON.stringify({
+        provider: input.provider,
+        evaluator: input.evaluator,
+        principalAmount: input.principalAmount,
+        settlementAsset: "USDC",
+        chainId: input.chainId ?? this.chainId,
+        ...(normalizeOptionalString(input.client ?? null) ? { client: input.client } : {}),
+      }),
+      cache: "no-store",
+    });
+    const payload = await parsePayload(response);
+    const record =
+      typeof payload === "object" && payload !== null && "quoteId" in payload
+        ? (payload as { quoteId?: unknown; expiresAt?: unknown })
+        : null;
+
+    return {
+      ok: response.ok,
+      endpoint,
+      status: response.status,
+      payload,
+      quoteId: typeof record?.quoteId === "string" ? record.quoteId : null,
+      expiresAt: typeof record?.expiresAt === "string" ? record.expiresAt : null,
+    };
+  }
+
+  async createWireJob(input: WireJobCreateInput): Promise<WireJobCreateResult> {
+    const execSecret = resolveWireExecSecret(input.execSecret);
+    if (!execSecret) {
+      throw new Error("createWireJob requires execSecret or GHOSTWIRE_EXEC_SECRET.");
+    }
+
+    const endpoint = `${this.baseUrl}/api/wire/jobs`;
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/plain;q=0.9, */*;q=0.8",
+        authorization: `Bearer ${execSecret}`,
+      },
+      body: JSON.stringify({
+        quoteId: input.quoteId,
+        client: input.client,
+        provider: input.provider,
+        evaluator: input.evaluator,
+        specHash: input.specHash,
+        ...(normalizeOptionalString(input.metadataUri ?? null) ? { metadataUri: input.metadataUri } : {}),
+        ...(normalizeOptionalString(input.webhookUrl ?? null) ? { webhookUrl: input.webhookUrl } : {}),
+        ...(normalizeOptionalString(input.webhookSecret ?? null) ? { webhookSecret: input.webhookSecret } : {}),
+      }),
+      cache: "no-store",
+    });
+    const payload = await parsePayload(response);
+    const record =
+      typeof payload === "object" && payload !== null && "jobId" in payload
+        ? (payload as { jobId?: unknown })
+        : null;
+
+    return {
+      ok: response.ok,
+      endpoint,
+      status: response.status,
+      payload,
+      jobId: typeof record?.jobId === "string" ? record.jobId : null,
+    };
+  }
+
+  async getWireJob(jobId: string): Promise<WireJobResult> {
+    const normalizedJobId = normalizeOptionalString(jobId);
+    if (!normalizedJobId) {
+      throw new Error("getWireJob(jobId) requires a non-empty GhostWire job id.");
+    }
+
+    const endpoint = `${this.baseUrl}/api/wire/jobs/${encodeURIComponent(normalizedJobId)}`;
+    const response = await fetch(endpoint, {
+      method: "GET",
+      headers: {
+        accept: "application/json, text/plain;q=0.9, */*;q=0.8",
+      },
+      cache: "no-store",
+    });
+    const payload = await parsePayload(response);
+    const job =
+      typeof payload === "object" &&
+      payload !== null &&
+      "job" in payload &&
+      typeof (payload as { job?: unknown }).job === "object" &&
+      (payload as { job?: unknown }).job !== null
+        ? ((payload as { job: WireJobSnapshot }).job)
+        : null;
+
+    return {
+      ok: response.ok,
+      endpoint,
+      status: response.status,
+      payload,
+      job,
+    };
+  }
+
+  async waitForWireTerminal(jobId: string, options: WireCompletionWaitOptions = {}): Promise<WireJobSnapshot> {
+    const intervalMs =
+      Number.isFinite(options.intervalMs) && (options.intervalMs ?? 0) > 0
+        ? Math.trunc(options.intervalMs as number)
+        : 5_000;
+    const timeoutMs =
+      Number.isFinite(options.timeoutMs) && (options.timeoutMs ?? 0) > 0
+        ? Math.trunc(options.timeoutMs as number)
+        : 5 * 60_000;
+    const startedAt = Date.now();
+
+    while (true) {
+      const result = await this.getWireJob(jobId);
+      if (!result.ok || !result.job) {
+        throw new Error(`waitForWireTerminal failed to fetch job ${jobId} (status ${result.status}).`);
+      }
+      if (["COMPLETED", "REJECTED", "EXPIRED"].includes(result.job.contractState)) {
+        return result.job;
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        throw new Error(`GhostWire job ${jobId} did not reach a terminal state before timeout.`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  }
+
+  async getWireDeliverable(jobId: string): Promise<WireDeliverableResult> {
+    const jobResult = await this.getWireJob(jobId);
+    if (!jobResult.ok || !jobResult.job) {
+      throw new Error(`getWireDeliverable failed to fetch job ${jobId} (status ${jobResult.status}).`);
+    }
+
+    const job = jobResult.job;
+    if (job.contractState !== "COMPLETED") {
+      throw new Error(`GhostWire job ${jobId} is not completed yet.`);
+    }
+
+    const sourceUrl = resolveWireDeliverableLocator(job);
+    if (!sourceUrl) {
+      throw new Error(`GhostWire job ${jobId} does not expose a deliverable locator.`);
+    }
+
+    const response = await fetch(sourceUrl, {
+      method: "GET",
+      headers: {
+        accept: "application/json, text/plain;q=0.9, */*;q=0.8",
+      },
+      cache: "no-store",
+    });
+    const contentType = normalizeOptionalString(response.headers.get("content-type"));
+    const bodyText = await parseTextPayload(response);
+    let bodyJson: unknown | null = null;
+    if (bodyText) {
+      try {
+        bodyJson = JSON.parse(bodyText) as unknown;
+      } catch {
+        bodyJson = null;
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        `GhostWire deliverable fetch failed for ${jobId} from ${sourceUrl} (status ${response.status}).`,
+      );
+    }
+
+    return {
+      ok: response.ok,
+      endpoint: sourceUrl,
+      status: response.status,
+      job,
+      contentType,
+      bodyJson,
+      bodyText,
+      sourceUrl,
     };
   }
 

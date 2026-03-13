@@ -1,0 +1,144 @@
+# Hosted GhostWire
+
+Hosted GhostWire is the current production GhostWire model.
+
+It is a managed ERC-8183 escrow rail:
+
+- Ghost hosts quote creation, job creation, funding, reconciliation, and webhook delivery.
+- Ghost's operator wallet is the on-chain client in Hosted mode.
+- Providers still deliver work.
+- Evaluators still finalize `complete` or `reject`.
+
+This is the launch surface for GhostWire today.
+
+Direct GhostWire, where the external customer wallet is the on-chain client, is a later Phase 1 slice and is not the current public product.
+
+## When to use Hosted GhostWire
+
+Use Hosted GhostWire when:
+
+- the job is high-value enough to justify escrow
+- the task is lower-frequency than GhostGate Express
+- you want managed operator handling instead of building your own ERC-8183 orchestration
+- you are comfortable with Ghost acting as the hosted escrow operator of record
+
+Use GhostGate Express when:
+
+- requests are cheap and frequent
+- you need sub-second API-style access
+- escrow would add unnecessary latency and complexity
+
+## Hosted model, in plain terms
+
+1. Your app asks Ghost for a quote.
+2. Your app creates a Hosted GhostWire job from that quote.
+3. Ghost's hosted operator creates and funds the on-chain ERC-8183 job.
+4. The provider does the work.
+5. The evaluator completes or rejects the job on-chain.
+6. Ghost reconciles the terminal state and emits webhooks.
+7. On completion, the provider receives principal minus fee and the treasury receives the protocol fee.
+
+## Merchant onboarding
+
+### Required role wallets
+
+- `provider` wallet
+  - receives payout on successful completion
+  - submits the deliverable hash on-chain
+- `evaluator` wallet
+  - calls `complete` or `reject` on-chain
+  - should be a separate wallet from settlement at production scale
+
+### Required merchant surfaces
+
+You need three things:
+
+1. A deliverable-producing service.
+2. A provider runtime that can submit the deliverable hash on-chain.
+3. A deliverable locator URL that the consumer can fetch after the job completes.
+
+For Hosted GhostWire v1, the deliverable locator is carried in `metadataUri`.
+
+Recommended pattern:
+
+- make `metadataUri` a merchant-controlled HTTPS endpoint
+- key it by `quoteId`, `jobId`, or another stable reference you already know at create time
+- return JSON or text
+
+Example:
+
+```text
+https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123
+```
+
+The consumer SDK can resolve that locator after the GhostWire job reaches `COMPLETED`.
+
+## Consumer flow
+
+### 1. Request a quote
+
+```ts
+import { GhostAgent } from "@ghostgate/sdk";
+
+const ghost = new GhostAgent({
+  baseUrl: "https://ghostprotocol.cc",
+  privateKey: process.env.GHOST_SIGNER_PRIVATE_KEY as `0x${string}`,
+});
+
+const quote = await ghost.createWireQuote({
+  provider: "0xprovider...",
+  evaluator: "0xevaluator...",
+  principalAmount: "1000000",
+  chainId: 8453,
+});
+```
+
+### 2. Create the hosted job
+
+```ts
+const job = await ghost.createWireJob({
+  quoteId: quote.quoteId!,
+  client: "0xclient...",
+  provider: "0xprovider...",
+  evaluator: "0xevaluator...",
+  specHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  metadataUri: "https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123",
+  execSecret: process.env.GHOSTWIRE_EXEC_SECRET,
+});
+```
+
+### 3. Wait for terminal state
+
+```ts
+const terminalJob = await ghost.waitForWireTerminal(job.jobId!);
+```
+
+### 4. Fetch the deliverable
+
+```ts
+const deliverable = await ghost.getWireDeliverable(job.jobId!);
+console.log(deliverable.bodyJson ?? deliverable.bodyText);
+```
+
+## Webhooks
+
+Ghost can emit lifecycle webhooks during Hosted GhostWire execution:
+
+- `wire.job.open`
+- `wire.job.funded`
+- `wire.job.submitted`
+- `wire.job.completed`
+- `wire.job.rejected`
+- `wire.job.expired`
+
+See:
+
+- [`ghostwire-webhooks.md`](./ghostwire-webhooks.md)
+
+## Important launch constraints
+
+- Hosted GhostWire is managed, not customer-native.
+- The hosted operator does not replace the provider or evaluator roles.
+- `metadataUri` should point to a merchant-controlled deliverable locator if you want consumer-friendly retrieval.
+- GhostWire is appropriate for managed beta / concierge / enterprise flows now.
+- Do not market Hosted GhostWire as Direct GhostWire.

@@ -1,4 +1,4 @@
-# Onboarding and Configuration (Gate + Fulfillment)
+# Onboarding and Configuration (Gate + Fulfillment + Hosted GhostWire)
 
 This guide documents the current onboarding path for the live codebase, including fulfillment.
 
@@ -8,7 +8,7 @@ For autonomous runtime behavior patterns (retry/idempotency/state handling), als
 
 ## 1. Choose Integration Path
 
-Ghost Protocol currently supports two production paths:
+Ghost Protocol currently supports three production paths:
 
 1. `Gate path` (signature-gated API access)
    - Endpoint family: `/api/gate/[service]`
@@ -16,6 +16,9 @@ Ghost Protocol currently supports two production paths:
 2. `Fulfillment path` (ticket -> merchant runtime -> capture)
    - Endpoint family: `/api/fulfillment/*`
    - Use this when consumers execute merchant-owned runtimes through Ghost Protocol settlement.
+3. `Hosted GhostWire path` (managed ERC-8183 escrow)
+   - Endpoint family: `/api/wire/*`
+   - Use this when job-level escrow matters more than low-latency API access and Ghost should host create/fund/reconcile.
 
 ## 2. Merchant Onboarding (Fulfillment)
 
@@ -56,6 +59,52 @@ Complete these steps in order for each merchant agent.
    - `FULFILLMENT_PATH` (merchant-bound request path, commonly `/ask`)
    - `FULFILLMENT_COST`
 
+## 3A. Hosted GhostWire onboarding
+
+Hosted GhostWire is the launch model for GhostWire today.
+
+Role model:
+
+- Ghost hosts quote creation, job creation, funding, reconciliation, and webhooks.
+- Ghost is the on-chain client in Hosted mode.
+- The provider still submits the deliverable hash on-chain.
+- The evaluator still finalizes `complete` or `reject` on-chain.
+
+### Merchant requirements
+
+1. Choose a provider wallet.
+   - receives successful payout
+   - must have enough ETH for `submit`
+2. Choose an evaluator wallet.
+   - finalizes `complete` or `reject`
+   - should be separate from your settlement key at production scale
+3. Expose a deliverable locator endpoint.
+   - Hosted GhostWire v1 uses `metadataUri` as the consumer-facing deliverable locator.
+   - Recommended pattern:
+
+```text
+https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123
+```
+
+4. Optionally configure GhostWire lifecycle webhooks.
+   - see `docs/developer-portal/ghostwire-webhooks.md`
+
+### Consumer requirements
+
+1. Request a quote from `POST /api/wire/quote`.
+2. Create the Hosted job from `POST /api/wire/jobs`.
+3. Provide `metadataUri` when you want the consumer SDK to resolve the final deliverable automatically after completion.
+4. Poll `GET /api/wire/jobs/[jobId]` or consume webhook events until the job reaches terminal state.
+
+### Hosted GhostWire runtime secrets
+
+| Variable | Used by | Required | Notes |
+|---|---|---|---|
+| `GHOSTWIRE_EXEC_SECRET` | `POST /api/wire/jobs` | Yes (hosted job creation) | Required for trusted callers creating Hosted GhostWire jobs. |
+| `GHOSTWIRE_OPERATOR_SECRET` | `/api/admin/wire/operator` | Yes (hosted operator) | Used by Ghost-hosted operator automation only. |
+
+Hosted GhostWire is a managed rollout surface, not a fully open customer-native rail.
+
 ## 4. Environment Variable Matrix
 
 ### 4.1 Required for fulfillment core flow
@@ -88,6 +137,19 @@ Complete these steps in order for each merchant agent.
 |---|---|---|---|
 | `GHOST_SETTLEMENT_OPERATOR_SECRET` | `/api/admin/settlement/allocate`, `/api/admin/settlement/reconcile`, `/api/admin/settlement/operator-health`, `/api/admin/vault/preflight` | Yes (hosted settlement automation) | Dedicated secret required. No fallback secret path. |
 | `GHOST_SETTLEMENT_SUPPORT_SECRET` | `/api/admin/settlement/metrics` | Recommended for ops/support | Supports bearer auth or `x-ghost-settlement-support-secret`. |
+
+### 4.4 Hosted GhostWire secrets
+
+| Variable | Used by | Required | Notes |
+|---|---|---|---|
+| `GHOSTWIRE_EXEC_SECRET` | `POST /api/wire/jobs` | Yes | Trusted caller auth for Hosted GhostWire job creation. |
+| `GHOSTWIRE_OPERATOR_SECRET` | `/api/admin/wire/operator` | Yes | Hosted operator inspection/execute auth. |
+
+### 4.5 Dashboard wallet connectivity
+
+| Variable | Used by | Required | Notes |
+|---|---|---|---|
+| `NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID` | Dashboard wallet connectivity (`app/providers.tsx`) | Yes for wallet-connect UX | If unset, RainbowKit/Reown falls back to a placeholder project id and wallet-connect flows will degrade. Set a real project id in local and production before launch. |
 
 ## 5. Production Readiness Checks
 

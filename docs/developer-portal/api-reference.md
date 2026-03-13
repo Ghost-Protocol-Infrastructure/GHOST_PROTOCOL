@@ -258,6 +258,12 @@ Auth:
 
 ## GhostWire API
 
+Hosted GhostWire is the current GhostWire launch surface.
+
+- Ghost hosts quote creation, job creation, funding, reconciliation, and webhooks.
+- Ghost is the on-chain client in Hosted mode.
+- `metadataUri` should be treated as the merchant-controlled deliverable locator when consumer-friendly retrieval is needed.
+
 ### `POST /api/wire/quote`
 
 Creates a short-lived GhostWire quote.
@@ -304,7 +310,9 @@ Request body:
 - `provider`
 - `evaluator`
 - `specHash`
-- `metadataUri` (optional)
+- `metadataUri` (optional, recommended)
+  - In Hosted GhostWire v1, use this as the merchant-controlled deliverable locator URL.
+  - Recommended shape: `https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123`
 - `webhookUrl` + `webhookSecret` (optional, both-or-neither)
 
 Returns:
@@ -319,6 +327,17 @@ Returns:
 ### `GET /api/wire/jobs/[jobId]`
 
 Returns one GhostWire job snapshot by `jobId`.
+
+Response notes:
+
+- `job.metadataUri` remains the raw stored locator value.
+- `job.deliverable` is the launch-friendly summary:
+  - `available`
+  - `locatorUrl`
+  - `mode`
+  - `state`
+
+When `job.contractState === "COMPLETED"` and `job.deliverable.available === true`, consumer SDKs can resolve the deliverable directly from the merchant locator.
 
 ### `GET/POST /api/admin/wire/operator`
 

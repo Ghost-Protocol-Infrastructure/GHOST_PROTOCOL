@@ -2654,10 +2654,10 @@ def my_agent():
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
-                        GhostWire Jobs // Read Only
+                        Hosted GhostWire // Backlog
                       </p>
                       <p className="mt-1 text-xs text-neutral-600">
-                        Recent wire-mode jobs involving the selected owner address. API/SDK remains the write surface in v1.
+                        Recent managed wire-mode jobs involving the selected owner address. Ghost hosts create/fund/reconcile in v1; providers still deliver and evaluators still finalize.
                       </p>
                     </div>
                     {isLoadingMerchantWireJobs && (
@@ -2737,6 +2737,9 @@ def my_agent():
                               </p>
                               <p className="mt-2 text-[11px] text-neutral-500">Contract: {formatShortHash(job.contractAddress)}</p>
                               <p className="mt-1 text-[11px] text-neutral-500">Job Ref: {job.contractJobId ?? "--"}</p>
+                              <p className="mt-1 text-[11px] text-neutral-500">
+                                Deliverable: {job.metadataUri ? "Locator Configured" : "Locator Unset"}
+                              </p>
                             </div>
                             <div className="border border-neutral-900 bg-neutral-900 p-3">
                               <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
@@ -2766,6 +2769,18 @@ def my_agent():
                               )}
                             </div>
                           </div>
+
+                          {job.metadataUri && (
+                            <div className="mt-3 border border-neutral-900 bg-neutral-900 p-3">
+                              <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
+                                Deliverable Locator
+                              </p>
+                              <p className="mt-2 break-all text-[11px] text-neutral-500 font-mono">{job.metadataUri}</p>
+                              <p className="mt-1 text-[11px] text-neutral-600">
+                                Consumers can resolve this deliverable after completion through the Hosted GhostWire SDK helpers.
+                              </p>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

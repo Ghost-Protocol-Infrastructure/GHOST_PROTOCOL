@@ -67,7 +67,38 @@ Important:
 - Request signed with the expected signer.
 - Gate endpoint target is correct: `/api/gate/<serviceSlug>`.
 
-## 7. Common Issues
+## 7. Hosted GhostWire (Managed Escrow Beta)
+
+Use Hosted GhostWire for higher-value jobs where escrow matters more than low-latency API access.
+
+Current model:
+
+- Ghost hosts quote creation, job creation, funding, reconciliation, and webhooks.
+- Ghost is the on-chain client in Hosted mode.
+- Provider and evaluator still act on-chain for delivery/finalization.
+
+Basic flow:
+
+1. Request a quote from `POST /api/wire/quote`.
+2. Create a job from `POST /api/wire/jobs`.
+3. Wait for Ghost's operator to move the job to `FUNDED`.
+4. Provider submits the deliverable hash on-chain.
+5. Evaluator completes or rejects on-chain.
+6. Consumer fetches the final job state from `GET /api/wire/jobs/[jobId]`.
+7. If `metadataUri` was configured as a deliverable locator, resolve the finished work through the Hosted GhostWire SDK helper.
+
+Recommended Hosted GhostWire deliverable pattern:
+
+- set `metadataUri` to a merchant-controlled HTTPS endpoint
+- key it by `quoteId`, `jobId`, or another stable reference
+- return JSON or text
+
+See:
+
+- [`docs/developer-portal/hosted-ghostwire.md`](./developer-portal/hosted-ghostwire.md)
+- [`docs/developer-portal/ghostwire-webhooks.md`](./developer-portal/ghostwire-webhooks.md)
+
+## 8. Common Issues
 
 - `Insufficient credits`: deposit ETH and retry.
 - `Service mismatch`: check `serviceSlug` exactly.
@@ -76,13 +107,13 @@ Important:
 - `Service not live`: verify gateway canary and confirm `readinessStatus=LIVE`.
 - `Unauthorized delegated signer`: ensure capture signer is active and matches merchant runtime key.
 
-## 8. Security Basics
+## 9. Security Basics
 
 - Never hardcode private keys in source.
 - Keep API keys and signer keys in environment variables or secret manager.
 - Rotate keys immediately if exposed.
 
-## 9. Recommended First Test
+## 10. Recommended First Test
 
 1. Choose one agent.
 2. Deposit a small amount.

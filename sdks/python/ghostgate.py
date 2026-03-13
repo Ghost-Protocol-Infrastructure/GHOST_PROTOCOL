@@ -24,6 +24,9 @@ from eth_account.messages import encode_defunct, encode_typed_data
 ConnectResult = dict[str, Any]
 TelemetryResult = dict[str, Any]
 ActivateResult = dict[str, Any]
+WireQuoteResult = dict[str, Any]
+WireJobResult = dict[str, Any]
+WireDeliverableResult = dict[str, Any]
 
 
 class HeartbeatController:
@@ -227,6 +230,186 @@ class GhostGate:
             payload=payload,
             timeout_seconds=timeout_seconds,
         )
+
+    def create_wire_quote(
+        self,
+        *,
+        provider: str,
+        evaluator: str,
+        principal_amount: str,
+        chain_id: Optional[int] = None,
+        client: Optional[str] = None,
+        timeout_seconds: Optional[float] = None,
+    ) -> WireQuoteResult:
+        endpoint = f"{self.base_url}/api/wire/quote"
+        response = requests.post(
+            endpoint,
+            json={
+                "provider": provider,
+                "evaluator": evaluator,
+                "principalAmount": principal_amount,
+                "settlementAsset": "USDC",
+                "chainId": chain_id or self.chain_id,
+                **({"client": client} if self._normalize_optional_string(client) else {}),
+            },
+            headers={"accept": "application/json, text/plain;q=0.9, */*;q=0.8"},
+            timeout=self._resolve_timeout(timeout_seconds),
+        )
+        payload = self._parse_response_payload(response)
+        return {
+            "ok": response.ok,
+            "endpoint": endpoint,
+            "status": response.status_code,
+            "payload": payload,
+            "quoteId": payload.get("quoteId") if isinstance(payload, dict) else None,
+            "expiresAt": payload.get("expiresAt") if isinstance(payload, dict) else None,
+        }
+
+    def create_wire_job(
+        self,
+        *,
+        quote_id: str,
+        client: str,
+        provider: str,
+        evaluator: str,
+        spec_hash: str,
+        metadata_uri: Optional[str] = None,
+        webhook_url: Optional[str] = None,
+        webhook_secret: Optional[str] = None,
+        exec_secret: Optional[str] = None,
+        timeout_seconds: Optional[float] = None,
+    ) -> WireJobResult:
+        resolved_exec_secret = self._normalize_optional_string(exec_secret) or self._normalize_optional_string(
+            os.getenv("GHOSTWIRE_EXEC_SECRET")
+        )
+        if not resolved_exec_secret:
+            raise ValueError("create_wire_job requires exec_secret or GHOSTWIRE_EXEC_SECRET.")
+
+        endpoint = f"{self.base_url}/api/wire/jobs"
+        response = requests.post(
+            endpoint,
+            json={
+                "quoteId": quote_id,
+                "client": client,
+                "provider": provider,
+                "evaluator": evaluator,
+                "specHash": spec_hash,
+                **({"metadataUri": metadata_uri} if self._normalize_optional_string(metadata_uri) else {}),
+                **({"webhookUrl": webhook_url} if self._normalize_optional_string(webhook_url) else {}),
+                **({"webhookSecret": webhook_secret} if self._normalize_optional_string(webhook_secret) else {}),
+            },
+            headers={
+                "accept": "application/json, text/plain;q=0.9, */*;q=0.8",
+                "Authorization": f"Bearer {resolved_exec_secret}",
+            },
+            timeout=self._resolve_timeout(timeout_seconds),
+        )
+        payload = self._parse_response_payload(response)
+        return {
+            "ok": response.ok,
+            "endpoint": endpoint,
+            "status": response.status_code,
+            "payload": payload,
+            "jobId": payload.get("jobId") if isinstance(payload, dict) else None,
+        }
+
+    def get_wire_job(self, job_id: str, *, timeout_seconds: Optional[float] = None) -> WireJobResult:
+        normalized_job_id = self._normalize_optional_string(job_id)
+        if not normalized_job_id:
+            raise ValueError("get_wire_job(job_id) requires a non-empty GhostWire job id.")
+
+        endpoint = f"{self.base_url}/api/wire/jobs/{quote(normalized_job_id, safe='')}"
+        response = requests.get(
+            endpoint,
+            headers={"accept": "application/json, text/plain;q=0.9, */*;q=0.8"},
+            timeout=self._resolve_timeout(timeout_seconds),
+        )
+        payload = self._parse_response_payload(response)
+        job = payload.get("job") if isinstance(payload, dict) and isinstance(payload.get("job"), dict) else None
+        return {
+            "ok": response.ok,
+            "endpoint": endpoint,
+            "status": response.status_code,
+            "payload": payload,
+            "job": job,
+        }
+
+    def wait_for_wire_terminal(
+        self,
+        job_id: str,
+        *,
+        interval_seconds: float = 5.0,
+        timeout_seconds: float = 300.0,
+    ) -> dict[str, Any]:
+        if interval_seconds <= 0:
+            raise ValueError("interval_seconds must be > 0.")
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be > 0.")
+
+        started_at = time.time()
+        while True:
+            result = self.get_wire_job(job_id, timeout_seconds=min(self.timeout_seconds, max(interval_seconds, 1.0)))
+            job = result.get("job")
+            if not result.get("ok") or not isinstance(job, dict):
+                raise ValueError(f"wait_for_wire_terminal failed to fetch job {job_id} (status {result.get('status')}).")
+
+            contract_state = str(job.get("contractState", "")).upper()
+            if contract_state in {"COMPLETED", "REJECTED", "EXPIRED"}:
+                return job
+
+            if time.time() - started_at >= timeout_seconds:
+                raise TimeoutError(f"GhostWire job {job_id} did not reach a terminal state before timeout.")
+
+            time.sleep(interval_seconds)
+
+    def get_wire_deliverable(
+        self,
+        job_id: str,
+        *,
+        timeout_seconds: Optional[float] = None,
+    ) -> WireDeliverableResult:
+        result = self.get_wire_job(job_id, timeout_seconds=timeout_seconds)
+        job = result.get("job")
+        if not result.get("ok") or not isinstance(job, dict):
+            raise ValueError(f"get_wire_deliverable failed to fetch job {job_id} (status {result.get('status')}).")
+
+        if str(job.get("contractState", "")).upper() != "COMPLETED":
+            raise ValueError(f"GhostWire job {job_id} is not completed yet.")
+
+        deliverable = job.get("deliverable") if isinstance(job.get("deliverable"), dict) else {}
+        locator = deliverable.get("locatorUrl") if isinstance(deliverable.get("locatorUrl"), str) else None
+        if not locator:
+            metadata_uri = job.get("metadataUri") if isinstance(job.get("metadataUri"), str) else None
+            locator = metadata_uri.strip() if metadata_uri and metadata_uri.strip() else None
+        if not locator:
+            raise ValueError(f"GhostWire job {job_id} does not expose a deliverable locator.")
+
+        response = requests.get(
+            locator,
+            headers={"accept": "application/json, text/plain;q=0.9, */*;q=0.8"},
+            timeout=self._resolve_timeout(timeout_seconds),
+        )
+        text = response.text
+        try:
+            body_json = response.json()
+        except ValueError:
+            body_json = None
+
+        if not response.ok:
+            raise ValueError(
+                f"GhostWire deliverable fetch failed for {job_id} from {locator} (status {response.status_code})."
+            )
+
+        return {
+            "ok": response.ok,
+            "endpoint": locator,
+            "status": response.status_code,
+            "job": job,
+            "contentType": response.headers.get("content-type"),
+            "bodyJson": body_json,
+            "bodyText": text,
+            "sourceUrl": locator,
+        }
 
     def start_heartbeat(
         self,

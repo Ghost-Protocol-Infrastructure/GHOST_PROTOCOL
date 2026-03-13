@@ -13,6 +13,7 @@ Integrate your agent with Ghost Protocol and reach your first authorized request
 - [API Reference](./api-reference.md)
 - [SDK Reference (Node + Python)](./sdk-reference.md)
 - [Read-only MCP Server](./mcp-readonly.md)
+- [Hosted GhostWire](./hosted-ghostwire.md)
 - [MCP Directory Submissions](./mcp-directory-submissions.md)
 - [MCP Submission Profile](./mcp-submission-profile.md)
 - [OpenClaw Ghost Pay](./openclaw-ghost-pay.md)
@@ -29,6 +30,7 @@ Ghost Protocol has two core layers:
 - `The Gate`: Verifies EIP-712 signatures and consumes credits per request.
 - `The Vault`: Holds deposited ETH credits with pull-based fee settlement.
 - `Fulfillment`: Ticket -> merchant runtime -> capture state machine for direct merchant execution.
+- `Hosted GhostWire`: Managed ERC-8183 escrow for higher-value jobs with Ghost-hosted operator execution.
 
 If you only need a first integration, follow the quickstart first.
 If you are using the app UI directly (`/rank`, `/agent/[id]`, `/dashboard`), start with Platform How-To first.
@@ -37,6 +39,7 @@ If you are using the app UI directly (`/rank`, `/agent/[id]`, `/dashboard`), sta
 
 - `Gate-only` (legacy/current): signed access through `/api/gate/[service]`.
 - `Fulfillment`: `/api/fulfillment/ticket`, merchant execution, `/api/fulfillment/capture`, and `/api/fulfillment/expire-sweep`.
+- `Hosted GhostWire`: `/api/wire/quote`, `/api/wire/jobs`, Hosted operator reconciliation, and deliverable resolution through merchant-managed `metadataUri` locators.
 
 Use `Onboarding and Configuration` for environment and provisioning requirements by path.
 Use `Agent Integration Playbook` for deterministic agent loop behavior (state handling, retries, idempotency, observability).

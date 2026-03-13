@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { getWireJobById, WireJobNotFoundError } from "@/lib/ghostwire-store";
+import { buildGhostWireDeliverableSummary } from "@/lib/ghostwire-deliverable";
 import { ghostWireJson } from "@/lib/ghostwire-route";
 
 export const runtime = "nodejs";
@@ -18,7 +19,14 @@ export async function GET(_: NextRequest, context: RouteContext) {
     return ghostWireJson({
       ok: true,
       apiVersion: 1,
-      job,
+      job: {
+        ...job,
+        deliverable: buildGhostWireDeliverableSummary({
+          jobId: job.jobId,
+          metadataUri: job.metadataUri,
+          contractState: job.contractState,
+        }),
+      },
     });
   } catch (error) {
     if (error instanceof WireJobNotFoundError) {

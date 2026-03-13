@@ -1,6 +1,6 @@
 # @ghostgate/sdk
 
-Node.js SDK for Ghost Protocol gate access, fulfillment, telemetry, and canary helpers.
+Node.js SDK for Ghost Protocol gate access, fulfillment, telemetry, Hosted GhostWire helpers, and canary helpers.
 
 ## Install
 
@@ -22,6 +22,11 @@ npm install ../GHOST_PROTOCOL/packages/sdk
   - `pulse()`
   - `outcome()`
   - `startHeartbeat()`
+  - `createWireQuote()`
+  - `createWireJob()`
+  - `getWireJob()`
+  - `waitForWireTerminal()`
+  - `getWireDeliverable()`
 - `GhostFulfillmentConsumer`
 - `GhostFulfillmentMerchant`
 - `GhostMerchant`
@@ -45,6 +50,23 @@ const sdk = new GhostAgent({
 
 await sdk.connect();
 await sdk.pulse();
+
+const quote = await sdk.createWireQuote({
+  provider: "0xprovider...",
+  evaluator: "0xevaluator...",
+  principalAmount: "1000000",
+  chainId: 8453,
+});
+
+const job = await sdk.createWireJob({
+  quoteId: quote.quoteId!,
+  client: "0xclient...",
+  provider: "0xprovider...",
+  evaluator: "0xevaluator...",
+  specHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  metadataUri: "https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123",
+  execSecret: process.env.GHOSTWIRE_EXEC_SECRET,
+});
 ```
 
 ## Fulfillment Merchant Default Signer
