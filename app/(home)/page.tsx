@@ -25,12 +25,17 @@ const formatWeiToEth = (rawWei: string): string => {
 
 const HomePage = () => {
   const ghostVaultAddress = process.env.NEXT_PUBLIC_GHOST_VAULT_ADDRESS?.trim() ?? '';
+  const ghostWireAddress = process.env.NEXT_PUBLIC_GHOSTWIRE_CONTRACT_ADDRESS?.trim() ?? '';
   const creditPriceWei = process.env.NEXT_PUBLIC_GHOST_CREDIT_PRICE_WEI?.trim() || CREDIT_PRICE_WEI_FALLBACK;
   const creditPriceEth = formatWeiToEth(creditPriceWei);
   const hasGhostVaultAddress = isHexAddress(ghostVaultAddress);
+  const hasGhostWireAddress = isHexAddress(ghostWireAddress);
   const vaultDisplay = hasGhostVaultAddress ? truncateAddress(ghostVaultAddress) : 'UNCONFIGURED';
+  const commerceDisplay = hasGhostWireAddress ? truncateAddress(ghostWireAddress) : 'UNCONFIGURED';
   const vaultHref = hasGhostVaultAddress ? `https://basescan.org/address/${ghostVaultAddress}` : null;
+  const commerceHref = hasGhostWireAddress ? `https://basescan.org/address/${ghostWireAddress}` : null;
   const [copiedVault, setCopiedVault] = React.useState(false);
+  const [copiedCommerce, setCopiedCommerce] = React.useState(false);
   const machineReadableSchemaJson = React.useMemo(
     () =>
       JSON.stringify({
@@ -66,6 +71,17 @@ const HomePage = () => {
       window.setTimeout(() => setCopiedVault(false), 1200);
     } catch {
       setCopiedVault(false);
+    }
+  };
+
+  const handleCopyCommerce = async () => {
+    if (!hasGhostWireAddress) return;
+    try {
+      await navigator.clipboard.writeText(ghostWireAddress);
+      setCopiedCommerce(true);
+      window.setTimeout(() => setCopiedCommerce(false), 1200);
+    } catch {
+      setCopiedCommerce(false);
     }
   };
 
@@ -165,34 +181,65 @@ const HomePage = () => {
                 We are the turnstile for agentic commerce. GhostGate provides the drop-in SDK to wrap any agent API behind a crypto-native paywall. Seamless credit deduction. Pull-based fee settlement. We build the rails for machines to pay machines.
               </p>
 
-              <div className="inline-flex w-full max-w-[620px] items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-neutral-500">
-                <span className="font-bold">VAULT CONTRACT:</span>
-                {vaultHref ? (
-                  <a
-                    href={vaultHref}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="font-mono text-neutral-300 transition-colors duration-150 hover:text-red-500"
-                  >
-                    {vaultDisplay}
-                  </a>
-                ) : (
-                  <span className="font-mono text-neutral-600">{vaultDisplay}</span>
-                )}
-                {hasGhostVaultAddress ? (
-                  <button
-                    type="button"
-                    onClick={handleCopyVault}
-                    className="inline-flex items-center justify-center text-neutral-500 transition-colors duration-150 hover:text-red-500"
-                    aria-label="Copy vault address"
-                    title={copiedVault ? "Copied" : "Copy to clipboard"}
-                  >
-                    <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2">
-                      <rect x="9" y="9" width="13" height="13" rx="1" />
-                      <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
-                    </svg>
-                  </button>
-                ) : null}
+              <div className="flex w-full max-w-[620px] flex-col gap-2 text-[11px] uppercase tracking-[0.16em] text-neutral-500">
+                <div className="inline-flex items-center gap-2">
+                  <span className="font-bold">VAULT CONTRACT:</span>
+                  {vaultHref ? (
+                    <a
+                      href={vaultHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-mono text-neutral-300 transition-colors duration-150 hover:text-red-500"
+                    >
+                      {vaultDisplay}
+                    </a>
+                  ) : (
+                    <span className="font-mono text-neutral-600">{vaultDisplay}</span>
+                  )}
+                  {hasGhostVaultAddress ? (
+                    <button
+                      type="button"
+                      onClick={handleCopyVault}
+                      className="inline-flex items-center justify-center text-neutral-500 transition-colors duration-150 hover:text-red-500"
+                      aria-label="Copy vault address"
+                      title={copiedVault ? "Copied" : "Copy to clipboard"}
+                    >
+                      <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2">
+                        <rect x="9" y="9" width="13" height="13" rx="1" />
+                        <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+                      </svg>
+                    </button>
+                  ) : null}
+                </div>
+                <div className="inline-flex items-center gap-2">
+                  <span className="font-bold">COMMERCE CONTRACT:</span>
+                  {commerceHref ? (
+                    <a
+                      href={commerceHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-mono text-neutral-300 transition-colors duration-150 hover:text-red-500"
+                    >
+                      {commerceDisplay}
+                    </a>
+                  ) : (
+                    <span className="font-mono text-neutral-600">{commerceDisplay}</span>
+                  )}
+                  {hasGhostWireAddress ? (
+                    <button
+                      type="button"
+                      onClick={handleCopyCommerce}
+                      className="inline-flex items-center justify-center text-neutral-500 transition-colors duration-150 hover:text-red-500"
+                      aria-label="Copy commerce contract address"
+                      title={copiedCommerce ? "Copied" : "Copy to clipboard"}
+                    >
+                      <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2">
+                        <rect x="9" y="9" width="13" height="13" rx="1" />
+                        <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+                      </svg>
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>

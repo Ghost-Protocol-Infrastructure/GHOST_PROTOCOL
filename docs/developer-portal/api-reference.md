@@ -275,6 +275,14 @@ Request body:
 - `settlementAsset` (`USDC`)
 - `chainId`
 - `client` (optional)
+- `providerAgentId` (optional, recommended for GhostRank attribution)
+- `providerServiceSlug` (optional, recommended for GhostRank attribution)
+
+Attribution behavior:
+- if `providerAgentId` is supplied, it must belong to the supplied `provider` wallet
+- if `providerServiceSlug` is supplied, it must resolve to the same provider ownership
+- if neither is supplied, Ghost attempts to auto-derive attribution from a unique provider-wallet-to-agent mapping
+- ambiguous provider-wallet mappings remain unattributed and will not count toward GhostRank
 
 Returns:
 - `quoteId`
@@ -310,10 +318,20 @@ Request body:
 - `provider`
 - `evaluator`
 - `specHash`
+- `providerAgentId` (optional override/debug parity with quote attribution)
+- `providerServiceSlug` (optional override/debug parity with quote attribution)
 - `metadataUri` (optional, recommended)
   - In Hosted GhostWire v1, use this as the merchant-controlled deliverable locator URL.
   - Recommended shape: `https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123`
 - `webhookUrl` + `webhookSecret` (optional, both-or-neither)
+
+GhostRank note:
+- GhostWire activity only contributes to GhostRank when provider attribution is resolvable.
+- only terminal reconciled jobs count:
+  - `COMPLETED`
+  - `REJECTED`
+  - `EXPIRED`
+- `OPEN`, `FUNDED`, and `SUBMITTED` jobs do not affect ranking
 
 Returns:
 - `jobId`

@@ -88,6 +88,10 @@ https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123
 
 4. Optionally configure GhostWire lifecycle webhooks.
    - see `docs/developer-portal/ghostwire-webhooks.md`
+5. Configure GhostRank attribution for Hosted GhostWire providers.
+   - preferred: send `providerAgentId` and `providerServiceSlug` on `POST /api/wire/quote`
+   - fallback: Ghost auto-derives attribution from a unique provider-wallet-to-agent mapping
+   - ambiguous provider-wallet mappings remain unattributed and will not count toward GhostRank
 
 ### Consumer requirements
 
@@ -95,6 +99,10 @@ https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123
 2. Create the Hosted job from `POST /api/wire/jobs`.
 3. Provide `metadataUri` when you want the consumer SDK to resolve the final deliverable automatically after completion.
 4. Poll `GET /api/wire/jobs/[jobId]` or consume webhook events until the job reaches terminal state.
+5. Only terminal reconciled GhostWire jobs affect GhostRank:
+   - `COMPLETED`
+   - `REJECTED`
+   - `EXPIRED`
 
 ### Hosted GhostWire runtime secrets
 

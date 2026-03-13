@@ -2,6 +2,7 @@ import { createPublicClient, fallback, getAddress, http, type Address } from "vi
 import { base } from "viem/chains";
 import {
   Prisma,
+  type AgentRailMode,
   type AgentTier,
   type AgentTxSourceKind,
   type CanonicalAddressSource,
@@ -10,6 +11,15 @@ import {
 } from "@prisma/client";
 import { statusIndicatesClaimed } from "../lib/agent-claim";
 import { prisma } from "../lib/db";
+import {
+  computeCommerceQuality,
+  computeDepthConfidence,
+  computeExpressConfidence,
+  computeWireConfidence,
+  normalizeLog100,
+  scoreAgentRailAware,
+} from "../lib/ghostrank-rail-score";
+import { fetchGhostWireProviderRollups, GHOSTWIRE_SCORE_WINDOW_DAYS } from "../lib/ghostwire-score-rollup";
 
 type AgentIndexMode = "erc8004" | "olas";
 type ScoreTxSource = "agent" | "owner" | "creator";
@@ -55,10 +65,52 @@ type ScoreInputRow = {
   usageAuthorizedCount7d: number;
   metricSource: TxMetricSource;
   yield: number;
+  expressYield: number;
+  wireYield: number;
   uptime: number;
+  commerceQuality: number;
+  expressConfidence: number;
+  wireConfidence: number;
+  wireCompletedCount30d: number;
+  wireRejectedCount30d: number;
+  wireExpiredCount30d: number;
+  wireSettledPrincipal30d: bigint;
+  wireSettledProviderEarnings30d: bigint;
+  expressReputation: number | null;
+  wireReputation: number | null;
+  railMode: AgentRailMode;
   isClaimed: boolean;
   txCountUpdatedAt: Date | null;
 };
+
+type ExistingScoreInputSeedRow = Pick<
+  ScoreInputRow,
+  | "agentAddress"
+  | "agentId"
+  | "name"
+  | "creator"
+  | "owner"
+  | "image"
+  | "description"
+  | "telegram"
+  | "twitter"
+  | "website"
+  | "status"
+  | "txSourceAddress"
+  | "txSourceKind"
+  | "canonicalOnchainAddress"
+  | "canonicalAddressSource"
+  | "txCount"
+  | "onchainTxCountAgent"
+  | "onchainTxCountOwner"
+  | "usageAuthorizedCount7d"
+  | "metricSource"
+  | "yield"
+  | "expressYield"
+  | "uptime"
+  | "isClaimed"
+  | "txCountUpdatedAt"
+>;
 
 type PendingInputUpsert = {
   agentAddress: string;
@@ -82,6 +134,7 @@ type PendingInputUpsert = {
   usageAuthorizedCount7d: number;
   metricSource: TxMetricSource;
   yieldValue: number;
+  expressYield: number;
   uptime: number;
   isClaimed: boolean;
   txCountUpdatedAt: Date | null;
@@ -145,7 +198,15 @@ type SnapshotScoreRow = {
   reputation: number;
   rankScore: number;
   yieldValue: number;
+  expressYield: number;
+  wireYield: number;
   uptime: number;
+  commerceQuality: number;
+  expressConfidence: number;
+  wireConfidence: number;
+  expressReputation: number | null;
+  wireReputation: number | null;
+  railMode: AgentRailMode;
   volume: bigint;
   score: number;
   agentCreatedAt: Date;
@@ -222,11 +283,6 @@ const SCORE_V2_SYBIL_WINDOW_MINUTES = parseBoundedInt(
 );
 
 const UNCLAIMED_REPUTATION_CAP = 80;
-const REPUTATION_TX_WEIGHT = 0.3;
-const REPUTATION_UPTIME_WEIGHT = 0.5;
-const REPUTATION_YIELD_WEIGHT = 0.2;
-const RANK_REPUTATION_WEIGHT = 0.7;
-const RANK_VELOCITY_WEIGHT = 0.3;
 const ZERO_ADDRESS_LOWER = "0x0000000000000000000000000000000000000000";
 const FAILURE_REASON_MAX_LENGTH = 1_000;
 const SYBIL_MIN_SAMPLE_SIZE = 8;
@@ -246,18 +302,6 @@ const sleep = (ms: number): Promise<void> =>
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 const roundToTwo = (value: number): number => Math.round(value * 100) / 100;
-
-const normalizeLog100 = (value: number, maxValue: number): number => {
-  if (maxValue <= 0) return 0;
-
-  const numerator = Math.log10(value + 1);
-  const denominator = Math.log10(maxValue + 1);
-  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator === 0) {
-    return 0;
-  }
-
-  return clamp(roundToTwo((numerator / denominator) * 100), 0, 100);
-};
 
 const toSafeInt = (value: bigint | number): number => {
   if (typeof value === "number") {
@@ -629,7 +673,7 @@ const rotateByOffset = <T>(items: T[], offset: number): T[] => {
 
 const hasSourceDelta = (
   row: AgentSourceRow,
-  existing: ScoreInputRow | undefined,
+  existing: ExistingScoreInputSeedRow | undefined,
   txSourceAddress: string | null,
   txSourceKind: AgentTxSourceKind,
   canonicalOnchainAddress: string | null,
@@ -656,6 +700,7 @@ const hasSourceDelta = (
     existing.canonicalOnchainAddress !== canonicalOnchainAddress ||
     existing.canonicalAddressSource !== canonicalAddressSource ||
     existing.yield !== nextYield ||
+    existing.expressYield !== nextYield ||
     existing.uptime !== nextUptime ||
     existing.isClaimed !== isClaimed
   );
@@ -703,6 +748,7 @@ const upsertScoreInputs = async (rows: PendingInputUpsert[]): Promise<void> => {
                 usageAuthorizedCount7d: row.usageAuthorizedCount7d,
                 metricSource: row.metricSource,
                 yield: row.yieldValue,
+                expressYield: row.expressYield,
                 uptime: row.uptime,
                 isClaimed: row.isClaimed,
                 txCountUpdatedAt: row.txCountUpdatedAt,
@@ -729,6 +775,7 @@ const upsertScoreInputs = async (rows: PendingInputUpsert[]): Promise<void> => {
                 usageAuthorizedCount7d: row.usageAuthorizedCount7d,
                 metricSource: row.metricSource,
                 yield: row.yieldValue,
+                expressYield: row.expressYield,
                 uptime: row.uptime,
                 isClaimed: row.isClaimed,
                 txCountUpdatedAt: row.txCountUpdatedAt,
@@ -886,6 +933,49 @@ const persistFetchedTxCounts = async (txCountsBySourceAddress: Map<string, numbe
   }
 };
 
+const syncRailMetricsToScoreInputs = async (agents: AgentSourceRow[]): Promise<void> => {
+  if (agents.length === 0) return;
+
+  const since = new Date(Date.now() - GHOSTWIRE_SCORE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const wireRollupsByAgentId = await fetchGhostWireProviderRollups(since);
+  let processed = 0;
+  const now = new Date();
+
+  for (const chunk of chunkArray(agents, SCORE_V2_AGENT_WRITE_BATCH_SIZE)) {
+    await withPrismaRetry(
+      `score-v2 sync rail metrics ${processed + 1}-${Math.min(processed + chunk.length, agents.length)}`,
+      () =>
+        prisma.$transaction(
+          chunk.map((agent) => {
+            const rollup = wireRollupsByAgentId.get(agent.agentId);
+            return prisma.agentScoreInput.update({
+              where: { agentAddress: agent.address },
+              data: {
+                yield: Math.max(0, agent.yield ?? 0),
+                expressYield: Math.max(0, agent.yield ?? 0),
+                uptime: clamp(agent.uptime ?? 0, 0, 100),
+                wireYield: rollup?.wireYield ?? 0,
+                commerceQuality: rollup?.commerceQuality ?? 0,
+                wireConfidence: rollup?.wireConfidence ?? 0,
+                wireCompletedCount30d: rollup?.completedCount ?? 0,
+                wireRejectedCount30d: rollup?.rejectedCount ?? 0,
+                wireExpiredCount30d: rollup?.expiredCount ?? 0,
+                wireSettledPrincipal30d: rollup?.settledPrincipalAmount ?? 0n,
+                wireSettledProviderEarnings30d: rollup?.settledProviderEarnings ?? 0n,
+                lastIngestedAt: now,
+              },
+            });
+          }),
+        ),
+    );
+
+    processed += chunk.length;
+    if (processed % SCORE_V2_HEARTBEAT_INTERVAL === 0 || processed === agents.length) {
+      console.log(`Heartbeat: score-v2 synced rail metrics ${processed}/${agents.length}`);
+    }
+  }
+};
+
 const buildSnapshotRows = (
   inputs: Array<
     ScoreInputRow & {
@@ -962,10 +1052,18 @@ const buildSnapshotRows = (
   const maxTxCount = txCounts.length > 0 ? Math.max(...txCounts) : 0;
   const uniqueSignerCounts = preparedInputs.map((item) => Math.max(0, item.gateSignal.uniqueSignerCount));
   const maxUniqueSignerCount = uniqueSignerCounts.length > 0 ? Math.max(...uniqueSignerCounts) : 0;
-  const claimedYields = inputs
-    .map((input) => (input.isClaimed ? Math.max(0, input.yield) : 0))
+  const claimedExpressYields = inputs
+    .map((input) => (input.isClaimed ? Math.max(0, input.expressYield) : 0))
     .filter((value) => value > 0);
-  const maxClaimedYield = claimedYields.length > 0 ? Math.max(...claimedYields) : 0;
+  const maxClaimedYield = claimedExpressYields.length > 0 ? Math.max(...claimedExpressYields) : 0;
+  const claimedWireYields = inputs
+    .map((input) => (input.isClaimed ? Math.max(0, input.wireYield) : 0))
+    .filter((value) => value > 0);
+  const maxClaimedWireYield = claimedWireYields.length > 0 ? Math.max(...claimedWireYields) : 0;
+  const maxWireSettledPrincipal = preparedInputs.reduce(
+    (maxValue, item) => Math.max(maxValue, item.input.isClaimed ? toSafeInt(item.input.wireSettledPrincipal30d) : 0),
+    0,
+  );
   const totalSignalWeight = SYBIL_UNIQUE_SIGNAL_WEIGHT + SYBIL_TX_SIGNAL_WEIGHT;
   const normalizedUniqueSignalWeight = totalSignalWeight > 0 ? SYBIL_UNIQUE_SIGNAL_WEIGHT / totalSignalWeight : 0.5;
   const normalizedTxSignalWeight = totalSignalWeight > 0 ? SYBIL_TX_SIGNAL_WEIGHT / totalSignalWeight : 0.5;
@@ -990,9 +1088,42 @@ const buildSnapshotRows = (
     const velocityNorm = roundToTwo(
       txVolumeNorm * normalizedTxSignalWeight + uniqueSignerNorm * normalizedUniqueSignalWeight,
     );
-    const yieldValue = input.isClaimed ? Math.max(0, input.yield) : 0;
+    const expressYieldValue = input.isClaimed ? Math.max(0, input.expressYield) : 0;
+    const wireYieldValue = input.isClaimed ? Math.max(0, input.wireYield) : 0;
     const uptime = input.isClaimed ? clamp(input.uptime, 0, 100) : 0;
-    const yieldNorm = maxClaimedYield > 0 ? clamp((yieldValue / maxClaimedYield) * 100, 0, 100) : 0;
+    const wireCompletedCount = input.isClaimed ? Math.max(0, input.wireCompletedCount30d) : 0;
+    const wireRejectedCount = input.isClaimed ? Math.max(0, input.wireRejectedCount30d) : 0;
+    const wireExpiredCount = input.isClaimed ? Math.max(0, input.wireExpiredCount30d) : 0;
+    const wireTerminalJobs = wireCompletedCount + wireRejectedCount + wireExpiredCount;
+    const wireSettledPrincipal = input.isClaimed ? toSafeInt(input.wireSettledPrincipal30d) : 0;
+    const expressYieldNorm = maxClaimedYield > 0 ? normalizeLog100(expressYieldValue, maxClaimedYield) : 0;
+    const wireYieldNorm = maxClaimedWireYield > 0 ? normalizeLog100(wireYieldValue, maxClaimedWireYield) : 0;
+    const volumeConfidence =
+      maxWireSettledPrincipal > 0 ? normalizeLog100(wireSettledPrincipal, maxWireSettledPrincipal) / 100 : 0;
+    const depthConfidence = computeDepthConfidence(wireTerminalJobs, 10);
+    const commerceQuality = input.isClaimed
+      ? computeCommerceQuality({
+          completedCount: wireCompletedCount,
+          rejectedCount: wireRejectedCount,
+          expiredCount: wireExpiredCount,
+          volumeConfidence,
+          depthConfidence,
+        })
+      : 0;
+    const expressConfidence = input.isClaimed
+      ? computeExpressConfidence({
+          usageAuthorizedCount7d: prepared.usageAuthorizedCount7d,
+          uptime,
+          expressYield: expressYieldValue,
+        })
+      : 0;
+    const wireConfidence = input.isClaimed
+      ? computeWireConfidence({
+          terminalJobs: wireTerminalJobs,
+          settledPrincipal: wireSettledPrincipal,
+          settledProviderEarnings: wireYieldValue,
+        })
+      : 0;
     const antiWashPenalty = gateSybilSignals.hasCoverage ? calculateSybilPenalty(gateSignal) : 0;
 
     if (antiWashPenalty > 0) {
@@ -1000,15 +1131,34 @@ const buildSnapshotRows = (
       sybilMaxPenalty = Math.max(sybilMaxPenalty, antiWashPenalty);
     }
 
+    const railScore = input.isClaimed
+      ? scoreAgentRailAware({
+          velocity: velocityNorm,
+          antiWashPenalty,
+          express:
+            prepared.usageAuthorizedCount7d > 0 || uptime > 0 || expressYieldValue > 0
+              ? {
+                  uptime,
+                  expressYieldNorm,
+                  confidence: expressConfidence,
+                }
+              : null,
+          wire:
+            wireTerminalJobs > 0 || wireYieldValue > 0
+              ? {
+                  commerceQuality,
+                  wireYieldNorm,
+                  confidence: wireConfidence,
+                }
+              : null,
+        })
+      : null;
     const reputation = input.isClaimed
-      ? roundToTwo(
-          velocityNorm * REPUTATION_TX_WEIGHT +
-            uptime * REPUTATION_UPTIME_WEIGHT +
-            yieldNorm * REPUTATION_YIELD_WEIGHT,
-        )
+      ? railScore?.reputation ?? 0
       : roundToTwo(Math.min(velocityNorm, UNCLAIMED_REPUTATION_CAP));
-    const rawRankScore = roundToTwo(reputation * RANK_REPUTATION_WEIGHT + velocityNorm * RANK_VELOCITY_WEIGHT);
-    const rankScore = roundToTwo(clamp(rawRankScore - antiWashPenalty, 0, 100));
+    const rankScore = input.isClaimed
+      ? railScore?.rankScore ?? 0
+      : roundToTwo(clamp(reputation * 0.7 + velocityNorm * 0.3 - antiWashPenalty, 0, 100));
     const tier = getTier(txCount, input.isClaimed);
 
     return {
@@ -1023,8 +1173,16 @@ const buildSnapshotRows = (
       reputation,
       rankScore,
       tier,
-      yieldValue,
+      yieldValue: expressYieldValue,
+      expressYield: expressYieldValue,
+      wireYield: wireYieldValue,
       uptime,
+      commerceQuality,
+      expressConfidence,
+      wireConfidence,
+      expressReputation: railScore?.expressReputation ?? null,
+      wireReputation: railScore?.wireReputation ?? null,
+      railMode: railScore?.railMode ?? "UNPROVEN",
       volume: BigInt(txCount),
       score: Math.round(rankScore),
       antiWashPenalty,
@@ -1063,7 +1221,15 @@ const buildSnapshotRows = (
     reputation: row.reputation,
     rankScore: row.rankScore,
     yieldValue: row.yieldValue,
+    expressYield: row.expressYield,
+    wireYield: row.wireYield,
     uptime: row.uptime,
+    commerceQuality: row.commerceQuality,
+    expressConfidence: row.expressConfidence,
+    wireConfidence: row.wireConfidence,
+    expressReputation: row.expressReputation,
+    wireReputation: row.wireReputation,
+    railMode: row.railMode,
     volume: row.volume,
     score: row.score,
     agentCreatedAt: row.input.createdAt,
@@ -1134,7 +1300,15 @@ const writeSnapshot = async (
               reputation: row.reputation,
               rankScore: row.rankScore,
               yield: row.yieldValue,
+              expressYield: row.expressYield,
+              wireYield: row.wireYield,
               uptime: row.uptime,
+              commerceQuality: row.commerceQuality,
+              expressConfidence: row.expressConfidence,
+              wireConfidence: row.wireConfidence,
+              expressReputation: row.expressReputation,
+              wireReputation: row.wireReputation,
+              railMode: row.railMode,
               volume: row.volume,
               score: row.score,
               agentCreatedAt: row.agentCreatedAt,
@@ -1246,13 +1420,21 @@ const persistDerivedScoreInputMetrics = async (rows: SnapshotScoreRow[]): Promis
                 onchainTxCountAgent: row.onchainTxCountAgent,
                 onchainTxCountOwner: row.onchainTxCountOwner,
                 usageAuthorizedCount7d: row.usageAuthorizedCount7d,
-                metricSource: row.metricSource,
-                canonicalOnchainAddress: row.canonicalOnchainAddress,
-                canonicalAddressSource: row.canonicalAddressSource,
-                lastIngestedAt: now,
-              },
-            }),
-          ),
+              metricSource: row.metricSource,
+              canonicalOnchainAddress: row.canonicalOnchainAddress,
+              canonicalAddressSource: row.canonicalAddressSource,
+              lastIngestedAt: now,
+              expressYield: row.expressYield,
+              wireYield: row.wireYield,
+              commerceQuality: row.commerceQuality,
+              expressConfidence: row.expressConfidence,
+              wireConfidence: row.wireConfidence,
+              expressReputation: row.expressReputation,
+              wireReputation: row.wireReputation,
+              railMode: row.railMode,
+            },
+          }),
+        ),
         ),
     );
 
@@ -1326,6 +1508,7 @@ const ingestScoreInputs = async (): Promise<{
         usageAuthorizedCount7d: true,
         metricSource: true,
         yield: true,
+        expressYield: true,
         uptime: true,
         isClaimed: true,
         txCountUpdatedAt: true,
@@ -1410,6 +1593,7 @@ const ingestScoreInputs = async (): Promise<{
       usageAuthorizedCount7d: Math.max(0, existing?.usageAuthorizedCount7d ?? 0),
       metricSource: existing?.metricSource ?? "UNRESOLVED",
       yieldValue: Math.max(0, agent.yield ?? 0),
+      expressYield: Math.max(0, agent.yield ?? 0),
       uptime: clamp(agent.uptime ?? 0, 0, 100),
       isClaimed,
       txCountUpdatedAt: seedTxCountUpdatedAt,
@@ -1445,6 +1629,7 @@ const ingestScoreInputs = async (): Promise<{
   const sourcesToRefresh = Array.from(changedSourceSet);
   const txFetchResult = await fetchTxCountsBySourceAddress(sourcesToRefresh);
   await persistFetchedTxCounts(txFetchResult.txCountBySourceAddressLower);
+  await syncRailMetricsToScoreInputs(agents);
 
   return {
     totalAgents: agents.length,
@@ -1493,7 +1678,20 @@ const runSnapshotRanking = async (): Promise<{
         usageAuthorizedCount7d: true,
         metricSource: true,
         yield: true,
+        expressYield: true,
+        wireYield: true,
         uptime: true,
+        commerceQuality: true,
+        expressConfidence: true,
+        wireConfidence: true,
+        wireCompletedCount30d: true,
+        wireRejectedCount30d: true,
+        wireExpiredCount30d: true,
+        wireSettledPrincipal30d: true,
+        wireSettledProviderEarnings30d: true,
+        expressReputation: true,
+        wireReputation: true,
+        railMode: true,
         isClaimed: true,
         txCountUpdatedAt: true,
         createdAt: true,

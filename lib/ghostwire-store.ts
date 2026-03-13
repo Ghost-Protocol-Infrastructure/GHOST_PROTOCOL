@@ -96,6 +96,8 @@ export class WireJobExecutionConflictError extends Error {
 export const createWireQuote = async (input: {
   clientAddress?: string | null;
   providerAddress: string;
+  providerAgentId?: string | null;
+  providerServiceSlug?: string | null;
   evaluatorAddress: string;
   chainId: GhostWireSupportedChainId;
   principalAmount: bigint;
@@ -133,6 +135,8 @@ export const createWireQuote = async (input: {
       quoteId,
       clientAddress: input.clientAddress ?? null,
       providerAddress: input.providerAddress,
+      providerAgentId: input.providerAgentId ?? null,
+      providerServiceSlug: input.providerServiceSlug ?? null,
       evaluatorAddress: input.evaluatorAddress,
       chainId: input.chainId,
       settlementAsset: GHOSTWIRE_SUPPORTED_SETTLEMENT_ASSET,
@@ -392,6 +396,8 @@ export const createWireJobFromQuote = async (input: {
   quoteId: string;
   clientAddress: string;
   providerAddress: string;
+  providerAgentId?: string | null;
+  providerServiceSlug?: string | null;
   evaluatorAddress: string;
   specHash: `0x${string}`;
   metadataUri?: string | null;
@@ -425,6 +431,20 @@ export const createWireJobFromQuote = async (input: {
     if (quote.providerAddress !== input.providerAddress) {
       throw new WireQuoteMismatchError("Quote provider address does not match create request.");
     }
+    if (
+      quote.providerAgentId &&
+      input.providerAgentId &&
+      quote.providerAgentId !== input.providerAgentId
+    ) {
+      throw new WireQuoteMismatchError("Quote provider agent attribution does not match create request.");
+    }
+    if (
+      quote.providerServiceSlug &&
+      input.providerServiceSlug &&
+      quote.providerServiceSlug !== input.providerServiceSlug
+    ) {
+      throw new WireQuoteMismatchError("Quote provider service attribution does not match create request.");
+    }
     if (quote.evaluatorAddress !== input.evaluatorAddress) {
       throw new WireQuoteMismatchError("Quote evaluator address does not match create request.");
     }
@@ -436,6 +456,9 @@ export const createWireJobFromQuote = async (input: {
     const webhookEventId = buildWireOpenWebhookEventId(jobId);
     const contractBudgetAmount = resolveGhostWireContractBudgetAmount(quote.principalAmount);
 
+    const providerAgentId = quote.providerAgentId ?? input.providerAgentId ?? null;
+    const providerServiceSlug = quote.providerServiceSlug ?? input.providerServiceSlug ?? null;
+
     const job = await tx.wireJob.create({
       data: {
         jobId,
@@ -444,6 +467,8 @@ export const createWireJobFromQuote = async (input: {
         jobExpiresAt,
         clientAddress: input.clientAddress,
         providerAddress: input.providerAddress,
+        providerAgentId,
+        providerServiceSlug,
         evaluatorAddress: input.evaluatorAddress,
         contractBudgetAmount,
         settlementAsset: quote.settlementAsset,
@@ -478,6 +503,8 @@ export const createWireJobFromQuote = async (input: {
       data: {
         consumedAt,
         clientAddress: input.clientAddress,
+        providerAgentId,
+        providerServiceSlug,
       },
     });
 
@@ -534,6 +561,8 @@ export const getWireJobById = async (jobId: string): Promise<{
   terminalDisposition: string | null;
   clientAddress: string;
   providerAddress: string;
+  providerAgentId: string | null;
+  providerServiceSlug: string | null;
   evaluatorAddress: string;
   specHash: string;
   metadataUri: string | null;
@@ -582,6 +611,8 @@ export const getWireJobById = async (jobId: string): Promise<{
     terminalDisposition: job.terminalDisposition,
     clientAddress: job.clientAddress,
     providerAddress: job.providerAddress,
+    providerAgentId: job.providerAgentId,
+    providerServiceSlug: job.providerServiceSlug,
     evaluatorAddress: job.evaluatorAddress,
     specHash: job.specHash,
     metadataUri: job.metadataUri,
@@ -662,6 +693,8 @@ export const listWireJobsNeedingOperatorWork = async (limit: number) =>
       terminalTxHash: true,
       clientAddress: true,
       providerAddress: true,
+      providerAgentId: true,
+      providerServiceSlug: true,
       evaluatorAddress: true,
       specHash: true,
       metadataUri: true,
@@ -743,6 +776,8 @@ export const listWireJobs = async (input: {
     terminalDisposition: string | null;
     clientAddress: string;
     providerAddress: string;
+    providerAgentId: string | null;
+    providerServiceSlug: string | null;
     evaluatorAddress: string;
     contractAddress: string | null;
     contractJobId: string | null;
@@ -794,6 +829,8 @@ export const listWireJobs = async (input: {
       terminalDisposition: job.terminalDisposition,
       clientAddress: job.clientAddress,
       providerAddress: job.providerAddress,
+      providerAgentId: job.providerAgentId,
+      providerServiceSlug: job.providerServiceSlug,
       evaluatorAddress: job.evaluatorAddress,
       contractAddress: job.contractAddress,
       contractJobId: job.contractJobId,

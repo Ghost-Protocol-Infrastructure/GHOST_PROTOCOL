@@ -90,8 +90,16 @@ const quote = await ghost.createWireQuote({
   evaluator: "0xevaluator...",
   principalAmount: "1000000",
   chainId: 8453,
+  providerAgentId: "18755",
+  providerServiceSlug: "agent-18755",
 });
 ```
+
+GhostRank note:
+
+- set `providerAgentId` and `providerServiceSlug` when the provider wants Hosted GhostWire activity to count toward GhostRank
+- if omitted, Ghost will try to auto-derive provider attribution from a unique provider-wallet-to-agent mapping
+- ambiguous wallet mappings remain unattributed and are excluded from GhostRank scoring
 
 ### 2. Create the hosted job
 
@@ -102,6 +110,8 @@ const job = await ghost.createWireJob({
   provider: "0xprovider...",
   evaluator: "0xevaluator...",
   specHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  providerAgentId: "18755",
+  providerServiceSlug: "agent-18755",
   metadataUri: "https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123",
   execSecret: process.env.GHOSTWIRE_EXEC_SECRET,
 });
@@ -140,5 +150,6 @@ See:
 - Hosted GhostWire is managed, not customer-native.
 - The hosted operator does not replace the provider or evaluator roles.
 - `metadataUri` should point to a merchant-controlled deliverable locator if you want consumer-friendly retrieval.
+- only terminal reconciled Hosted GhostWire jobs count toward GhostRank.
 - GhostWire is appropriate for managed beta / concierge / enterprise flows now.
 - Do not market Hosted GhostWire as Direct GhostWire.

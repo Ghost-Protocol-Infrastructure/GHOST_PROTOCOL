@@ -33,12 +33,35 @@ class GhostWireMethodTests(unittest.TestCase):
                 client="0x1111111111111111111111111111111111111111",
                 provider="0x2222222222222222222222222222222222222222",
                 evaluator="0x3333333333333333333333333333333333333333",
+                provider_agent_id="18755",
+                provider_service_slug="agent-18755",
                 spec_hash="0x" + ("aa" * 32),
             )
 
             self.assertTrue(result["ok"])
             self.assertEqual(result["jobId"], "wj_123")
             self.assertEqual(mock_post.call_args.kwargs["headers"]["Authorization"], "Bearer super-secret")
+            self.assertEqual(mock_post.call_args.kwargs["json"]["providerAgentId"], "18755")
+            self.assertEqual(mock_post.call_args.kwargs["json"]["providerServiceSlug"], "agent-18755")
+
+    def test_create_wire_quote_passes_provider_attribution(self):
+        gate = GhostGate(private_key=PRIVATE_KEY, base_url="https://ghostprotocol.cc", service_slug="agent-11")
+
+        with patch("ghostgate.requests.post") as mock_post:
+            mock_post.return_value = self._response(200, {"ok": True, "quoteId": "wq_123"})
+
+            result = gate.create_wire_quote(
+                provider="0x2222222222222222222222222222222222222222",
+                evaluator="0x3333333333333333333333333333333333333333",
+                principal_amount="1000000",
+                provider_agent_id="18755",
+                provider_service_slug="agent-18755",
+            )
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["quoteId"], "wq_123")
+            self.assertEqual(mock_post.call_args.kwargs["json"]["providerAgentId"], "18755")
+            self.assertEqual(mock_post.call_args.kwargs["json"]["providerServiceSlug"], "agent-18755")
 
     def test_get_wire_deliverable_fetches_locator(self):
         gate = GhostGate(private_key=PRIVATE_KEY, base_url="https://ghostprotocol.cc", service_slug="agent-11")

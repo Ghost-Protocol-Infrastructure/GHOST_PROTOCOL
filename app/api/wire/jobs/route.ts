@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { type WireContractState } from "@prisma/client";
 import { parsePositiveIntBounded } from "@/lib/fulfillment-route";
 import { prisma } from "@/lib/db";
+import { GhostWireProviderAttributionError, resolveGhostWireProviderAttribution } from "@/lib/ghostwire-attribution";
 import {
   isGhostWireExecAuthorized,
   isGhostWireExecSecretConfigured,
@@ -117,6 +118,8 @@ export async function POST(request: NextRequest) {
   const evaluator = parseAddressString(parsed.body.evaluator);
   const specHash = parseHex32String(parsed.body.specHash);
   const metadataUri = parseOptionalString(parsed.body.metadataUri);
+  const providerAgentId = parseOptionalString(parsed.body.providerAgentId);
+  const providerServiceSlug = parseOptionalString(parsed.body.providerServiceSlug);
   const webhookTargetUrl = parseHttpUrlString(parsed.body.webhookUrl);
   const webhookSecret = parseOptionalString(parsed.body.webhookSecret);
 
@@ -144,7 +147,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  let attribution: Awaited<ReturnType<typeof resolveGhostWireProviderAttribution>>;
+
   try {
+    attribution = await resolveGhostWireProviderAttribution({
+      providerAddress: provider,
+      providerAgentId,
+      providerServiceSlug,
+    });
+
     const quote = await prisma.wireQuote.findUnique({
       where: { quoteId },
       select: {
@@ -174,6 +185,12 @@ export async function POST(request: NextRequest) {
       );
     }
   } catch (error) {
+    if (error instanceof GhostWireProviderAttributionError) {
+      return ghostWireJson(
+        { code: 409, error: error.message, errorCode: "WIRE_PROVIDER_ATTRIBUTION_MISMATCH" },
+        409,
+      );
+    }
     console.error("Failed to evaluate GhostWire execution policy.", error);
     return ghostWireJson(
       {
@@ -190,6 +207,8 @@ export async function POST(request: NextRequest) {
       quoteId,
       clientAddress: client,
       providerAddress: provider,
+      providerAgentId: attribution.providerAgentId,
+      providerServiceSlug: attribution.providerServiceSlug,
       evaluatorAddress: evaluator,
       specHash,
       metadataUri,
@@ -220,6 +239,12 @@ export async function POST(request: NextRequest) {
     }
     if (error instanceof WireQuoteMismatchError) {
       return ghostWireJson({ code: 409, error: error.message, errorCode: "WIRE_QUOTE_MISMATCH" }, 409);
+    }
+    if (error instanceof GhostWireProviderAttributionError) {
+      return ghostWireJson(
+        { code: 409, error: error.message, errorCode: "WIRE_PROVIDER_ATTRIBUTION_MISMATCH" },
+        409,
+      );
     }
 
     console.error("Failed to create GhostWire job.", error);

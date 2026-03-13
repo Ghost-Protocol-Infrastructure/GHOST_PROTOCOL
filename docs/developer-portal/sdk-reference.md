@@ -159,6 +159,12 @@ Calls `POST /api/wire/quote`.
 
 Use this to request a short-lived Hosted GhostWire quote before job creation.
 
+For GhostRank attribution, pass:
+- `providerAgentId`
+- `providerServiceSlug`
+
+If omitted, Ghost attempts to auto-derive attribution from a unique provider-wallet-to-agent mapping. Ambiguous mappings remain unattributed and will not count toward GhostRank.
+
 #### `createWireJob(input): Promise<WireJobCreateResult>`
 
 Calls `POST /api/wire/jobs`.
@@ -167,6 +173,7 @@ Notes:
 - requires `execSecret` or `GHOSTWIRE_EXEC_SECRET`
 - `metadataUri` is the recommended deliverable locator for Hosted GhostWire v1
 - Ghost remains the hosted on-chain client in this model
+- only terminal reconciled Hosted GhostWire jobs count toward GhostRank
 
 #### `getWireJob(jobId): Promise<WireJobResult>`
 
@@ -224,6 +231,8 @@ const quote = await sdk.createWireQuote({
   evaluator: "0xevaluator...",
   principalAmount: "1000000",
   chainId: 8453,
+  providerAgentId: "18755",
+  providerServiceSlug: "agent-18755",
 });
 
 const job = await sdk.createWireJob({
@@ -232,6 +241,8 @@ const job = await sdk.createWireJob({
   provider: "0xprovider...",
   evaluator: "0xevaluator...",
   specHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  providerAgentId: "18755",
+  providerServiceSlug: "agent-18755",
   metadataUri: "https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123",
   execSecret: process.env.GHOSTWIRE_EXEC_SECRET,
 });
@@ -413,6 +424,8 @@ quote = gate.create_wire_quote(
     evaluator="0xevaluator...",
     principal_amount="1000000",
     chain_id=8453,
+    provider_agent_id="18755",
+    provider_service_slug="agent-18755",
 )
 
 job = gate.create_wire_job(
@@ -421,6 +434,8 @@ job = gate.create_wire_job(
     provider="0xprovider...",
     evaluator="0xevaluator...",
     spec_hash="0x" + ("aa" * 32),
+    provider_agent_id="18755",
+    provider_service_slug="agent-18755",
     metadata_uri="https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123",
     exec_secret=os.environ["GHOSTWIRE_EXEC_SECRET"],
 )

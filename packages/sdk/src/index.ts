@@ -147,6 +147,8 @@ export type WireJobCreateInput = {
   client: `0x${string}` | string;
   provider: `0x${string}` | string;
   evaluator: `0x${string}` | string;
+  providerAgentId?: string | null;
+  providerServiceSlug?: string | null;
   specHash: `0x${string}` | string;
   metadataUri?: string | null;
   webhookUrl?: string | null;
@@ -173,6 +175,8 @@ export type WireJobSnapshot = {
   terminalDisposition: string | null;
   clientAddress: string;
   providerAddress: string;
+  providerAgentId?: string | null;
+  providerServiceSlug?: string | null;
   evaluatorAddress: string;
   specHash: string;
   metadataUri: string | null;
@@ -609,6 +613,8 @@ export class GhostAgent {
     principalAmount: string;
     chainId?: number;
     client?: `0x${string}` | string | null;
+    providerAgentId?: string | null;
+    providerServiceSlug?: string | null;
   }): Promise<WireQuoteResult> {
     const endpoint = `${this.baseUrl}/api/wire/quote`;
     const response = await fetch(endpoint, {
@@ -624,6 +630,12 @@ export class GhostAgent {
         settlementAsset: "USDC",
         chainId: input.chainId ?? this.chainId,
         ...(normalizeOptionalString(input.client ?? null) ? { client: input.client } : {}),
+        ...(normalizeOptionalString(input.providerAgentId ?? null)
+          ? { providerAgentId: input.providerAgentId }
+          : {}),
+        ...(normalizeOptionalString(input.providerServiceSlug ?? null)
+          ? { providerServiceSlug: input.providerServiceSlug }
+          : {}),
       }),
       cache: "no-store",
     });
@@ -662,6 +674,12 @@ export class GhostAgent {
         client: input.client,
         provider: input.provider,
         evaluator: input.evaluator,
+        ...(normalizeOptionalString(input.providerAgentId ?? null)
+          ? { providerAgentId: input.providerAgentId }
+          : {}),
+        ...(normalizeOptionalString(input.providerServiceSlug ?? null)
+          ? { providerServiceSlug: input.providerServiceSlug }
+          : {}),
         specHash: input.specHash,
         ...(normalizeOptionalString(input.metadataUri ?? null) ? { metadataUri: input.metadataUri } : {}),
         ...(normalizeOptionalString(input.webhookUrl ?? null) ? { webhookUrl: input.webhookUrl } : {}),

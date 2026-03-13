@@ -239,6 +239,8 @@ class GhostGate:
         principal_amount: str,
         chain_id: Optional[int] = None,
         client: Optional[str] = None,
+        provider_agent_id: Optional[str] = None,
+        provider_service_slug: Optional[str] = None,
         timeout_seconds: Optional[float] = None,
     ) -> WireQuoteResult:
         endpoint = f"{self.base_url}/api/wire/quote"
@@ -251,6 +253,12 @@ class GhostGate:
                 "settlementAsset": "USDC",
                 "chainId": chain_id or self.chain_id,
                 **({"client": client} if self._normalize_optional_string(client) else {}),
+                **({"providerAgentId": provider_agent_id} if self._normalize_optional_string(provider_agent_id) else {}),
+                **(
+                    {"providerServiceSlug": provider_service_slug}
+                    if self._normalize_optional_string(provider_service_slug)
+                    else {}
+                ),
             },
             headers={"accept": "application/json, text/plain;q=0.9, */*;q=0.8"},
             timeout=self._resolve_timeout(timeout_seconds),
@@ -272,6 +280,8 @@ class GhostGate:
         client: str,
         provider: str,
         evaluator: str,
+        provider_agent_id: Optional[str] = None,
+        provider_service_slug: Optional[str] = None,
         spec_hash: str,
         metadata_uri: Optional[str] = None,
         webhook_url: Optional[str] = None,
@@ -293,6 +303,12 @@ class GhostGate:
                 "client": client,
                 "provider": provider,
                 "evaluator": evaluator,
+                **({"providerAgentId": provider_agent_id} if self._normalize_optional_string(provider_agent_id) else {}),
+                **(
+                    {"providerServiceSlug": provider_service_slug}
+                    if self._normalize_optional_string(provider_service_slug)
+                    else {}
+                ),
                 "specHash": spec_hash,
                 **({"metadataUri": metadata_uri} if self._normalize_optional_string(metadata_uri) else {}),
                 **({"webhookUrl": webhook_url} if self._normalize_optional_string(webhook_url) else {}),

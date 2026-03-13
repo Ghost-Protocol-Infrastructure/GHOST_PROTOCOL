@@ -44,6 +44,13 @@ enum AgentTxSourceKind {
   UNRESOLVED
 }
 
+enum AgentRailMode {
+  EXPRESS
+  WIRE
+  HYBRID
+  UNPROVEN
+}
+
 enum CreditLedgerDirection {
   CREDIT
   DEBIT
@@ -502,7 +509,20 @@ model AgentScoreInput {
   usageAuthorizedCount7d  Int                    @default(0)
   metricSource            TxMetricSource         @default(UNRESOLVED)
   yield                   Float                  @default(0)
+  expressYield            Float                  @default(0)
+  wireYield               Float                  @default(0)
   uptime                  Float                  @default(0)
+  commerceQuality         Float                  @default(0)
+  expressConfidence       Float                  @default(0)
+  wireConfidence          Float                  @default(0)
+  wireCompletedCount30d   Int                    @default(0)
+  wireRejectedCount30d    Int                    @default(0)
+  wireExpiredCount30d     Int                    @default(0)
+  wireSettledPrincipal30d BigInt                 @default(0)
+  wireSettledProviderEarnings30d BigInt          @default(0)
+  expressReputation       Float?
+  wireReputation          Float?
+  railMode                AgentRailMode          @default(UNPROVEN)
   isClaimed               Boolean                @default(false)
   txCountUpdatedAt        DateTime?
   lastIngestedAt          DateTime               @default(now())
@@ -564,7 +584,15 @@ model LeaderboardSnapshotRow {
   reputation              Float
   rankScore               Float
   yield                   Float
+  expressYield            Float                  @default(0)
+  wireYield               Float                  @default(0)
   uptime                  Float
+  commerceQuality         Float                  @default(0)
+  expressConfidence       Float                  @default(0)
+  wireConfidence          Float                  @default(0)
+  expressReputation       Float?
+  wireReputation          Float?
+  railMode                AgentRailMode          @default(UNPROVEN)
   volume                  BigInt
   score                   Int
   agentCreatedAt          DateTime
@@ -595,6 +623,8 @@ model WireQuote {
   quoteId                      String               @unique
   clientAddress                String?
   providerAddress              String
+  providerAgentId              String?
+  providerServiceSlug          String?
   evaluatorAddress             String
   chainId                      Int
   settlementAsset              WireSettlementAsset
@@ -617,6 +647,8 @@ model WireQuote {
   @@index([consumedAt])
   @@index([chainId, settlementAsset, createdAt])
   @@index([providerAddress, createdAt])
+  @@index([providerAgentId, createdAt])
+  @@index([providerServiceSlug, createdAt])
 }
 
 model WireJob {
@@ -630,6 +662,8 @@ model WireJob {
   contractBudgetAmount BigInt
   clientAddress        String
   providerAddress      String
+  providerAgentId      String?
+  providerServiceSlug  String?
   evaluatorAddress     String
   settlementAsset      WireSettlementAsset
   principalAmount      BigInt
@@ -658,6 +692,8 @@ model WireJob {
   @@index([chainId, publicState, createdAt])
   @@index([clientAddress, createdAt])
   @@index([providerAddress, createdAt])
+  @@index([providerAgentId, createdAt])
+  @@index([providerServiceSlug, createdAt])
   @@index([evaluatorAddress, createdAt])
   @@index([jobExpiresAt])
   @@index([contractAddress, contractJobId])
