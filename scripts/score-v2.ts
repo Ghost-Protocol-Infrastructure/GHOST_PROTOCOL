@@ -881,10 +881,8 @@ const fetchTxCountsBySourceAddress = async (sourceAddresses: string[]): Promise<
           fetched += 1;
         } catch (error) {
           failures += 1;
-          txCountBySourceAddressLower.set(sourceAddressLower, 0);
-          console.warn(`score-v2 failed txCount fetch for ${sourceAddress}. Defaulting to 0.`);
+          console.warn(`score-v2 failed txCount fetch for ${sourceAddress}. Preserving previous txCount value.`);
           console.error(error);
-          fetched += 1;
         }
       }),
     );
