@@ -1717,11 +1717,11 @@ async function main(): Promise<void> {
   );
 
   const startedAt = Date.now();
-  const completedAtIso = new Date().toISOString();
 
   if (SCORE_V2_RUN_MODE === "refresh-only") {
     const ingest = await ingestScoreInputs();
     const elapsedMs = Date.now() - startedAt;
+    const completedAtIso = new Date().toISOString();
     await writeRunState({
       last_refresh_run_at: completedAtIso,
       last_refresh_elapsed_ms: String(elapsedMs),
@@ -1740,6 +1740,7 @@ async function main(): Promise<void> {
   if (SCORE_V2_RUN_MODE === "snapshot-only") {
     const ranking = await runSnapshotRanking();
     const elapsedMs = Date.now() - startedAt;
+    const completedAtIso = new Date().toISOString();
     await writeRunState({
       last_snapshot_build_at: completedAtIso,
       last_snapshot_build_elapsed_ms: String(elapsedMs),
@@ -1770,6 +1771,7 @@ async function main(): Promise<void> {
 
   const ranking = await runSnapshotRanking();
   const elapsedMs = Date.now() - startedAt;
+  const completedAtIso = new Date().toISOString();
 
   await writeRunState({
     last_run_at: completedAtIso,
