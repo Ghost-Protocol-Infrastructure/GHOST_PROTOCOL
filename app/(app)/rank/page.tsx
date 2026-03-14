@@ -146,19 +146,16 @@ const normalizeCanonicalAddressSource = (raw: string | null | undefined): Canoni
 };
 const formatTxMetricSource = (
   source: TxMetricSource,
-  usageAuthorizedCount7d: number,
-  onchainTxCountOwner: number,
-  txCount: number,
 ): string => {
   switch (source) {
     case "AGENT_ONCHAIN":
       return "source: agent txs";
     case "USAGE_ACTIVITY_7D":
-      return `usage 7d (${usageAuthorizedCount7d.toLocaleString()})`;
+      return "source: usage activity (7d)";
     case "OWNER_FALLBACK":
-      return `owner fallback (${onchainTxCountOwner.toLocaleString()})`;
+      return "source: owner wallet";
     case "CREATOR_FALLBACK":
-      return `creator fallback (${txCount.toLocaleString()})`;
+      return "source: creator wallet";
     case "UNRESOLVED":
     default:
       return "source: unresolved";
@@ -801,7 +798,7 @@ export default function Home() {
                 {searchQuery ? " (filtered)" : ""}
               </div>
               <div className="text-[9px] tracking-[0.12em] text-neutral-700">
-                TXS column shows canonical agent on-chain txs only. Fallback metrics are labeled per row.
+                TXS column shows the active tx metric. Source labels indicate whether it came from agent txs, owner wallet, creator wallet, or usage activity.
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 md:justify-end md:gap-3">
@@ -1027,15 +1024,10 @@ export default function Home() {
                         <div className="border border-neutral-800 bg-neutral-950 p-2">
                           <p className="mb-1 text-neutral-600 font-bold">TXS</p>
                           <p className="text-right text-neutral-400 font-mono">
-                            {agent.onchainTxCountAgent === null ? "—" : agent.onchainTxCountAgent.toLocaleString()}
+                            {agent.txCount.toLocaleString()}
                           </p>
                           <p className="mt-1 text-right text-[9px] text-neutral-600 font-mono normal-case tracking-normal">
-                            {formatTxMetricSource(
-                              agent.txMetricSource,
-                              agent.usageAuthorizedCount7d,
-                              agent.onchainTxCountOwner,
-                              agent.txCount,
-                            )}
+                            {formatTxMetricSource(agent.txMetricSource)}
                           </p>
                         </div>
                         <div className="border border-neutral-800 bg-neutral-950 p-2">
@@ -1222,15 +1214,10 @@ export default function Home() {
                       </div>
                       <div className="col-span-1 py-3 px-6 border-l border-r border-neutral-800 text-right">
                         <p className="text-neutral-400 font-mono">
-                          {agent.onchainTxCountAgent === null ? "—" : agent.onchainTxCountAgent.toLocaleString()}
+                          {agent.txCount.toLocaleString()}
                         </p>
                         <p className="mt-1 text-[9px] text-neutral-600 font-mono normal-case tracking-normal">
-                          {formatTxMetricSource(
-                            agent.txMetricSource,
-                            agent.usageAuthorizedCount7d,
-                            agent.onchainTxCountOwner,
-                            agent.txCount,
-                          )}
+                          {formatTxMetricSource(agent.txMetricSource)}
                         </p>
                       </div>
                       <div className={`col-span-2 py-3 px-6 border-r border-neutral-800 text-right font-mono ${reputationColor(agent.reputationScore)}`}>
