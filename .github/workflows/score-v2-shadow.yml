@@ -1,4 +1,4 @@
-name: Score V2 Shadow
+name: Score V2
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
       shadow_only:
         description: "Keep v2 in shadow-only mode"
         required: false
-        default: "true"
+        default: "false"
         type: choice
         options:
           - "true"
@@ -14,11 +14,11 @@ on:
       leaderboard_read_from_snapshot:
         description: "Read leaderboard API from active snapshot"
         required: false
-        default: "false"
+        default: "true"
         type: choice
         options:
-          - "false"
           - "true"
+          - "false"
   schedule:
     - cron: "20 * * * *"
 
@@ -41,9 +41,9 @@ jobs:
       ERC8004_REGISTRY_ADDRESS: ${{ secrets.ERC8004_REGISTRY_ADDRESS }}
       GHOST_TELEMETRY_WINDOW_MINUTES: "1440"
       SCORE_V2_ENABLED: "true"
-      SCORE_V2_SHADOW_ONLY: ${{ github.event.inputs.shadow_only || 'true' }}
+      SCORE_V2_SHADOW_ONLY: ${{ github.event_name == 'schedule' && 'false' || github.event.inputs.shadow_only || 'false' }}
       SCORE_V2_SCHEDULER_ENABLED: "true"
-      LEADERBOARD_READ_FROM_SNAPSHOT: ${{ github.event.inputs.leaderboard_read_from_snapshot || 'false' }}
+      LEADERBOARD_READ_FROM_SNAPSHOT: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.leaderboard_read_from_snapshot || 'true' }}
       SCORE_V2_TX_CONCURRENCY: "20"
       SCORE_V2_TX_BATCH_DELAY_MS: "10"
       SCORE_V2_TX_CALL_TIMEOUT_MS: "10000"

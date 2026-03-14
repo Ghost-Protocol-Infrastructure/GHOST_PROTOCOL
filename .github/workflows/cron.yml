@@ -77,8 +77,9 @@ jobs:
       SCORE_PRISMA_RETRY_DELAY_MS: "1000"
       SCORE_PRISMA_CONNECTION_TIMEOUT_MS: "12000"
       GHOST_TELEMETRY_WINDOW_MINUTES: "1440"
-      # Scheduled refreshes should prioritize the production index + live score path.
-      # Shadow-only v2 snapshot builds remain manual until they have a dedicated schedule/budget.
+      # Scheduled refreshes only handle index + telemetry ingestion.
+      # Live v2 scoring runs on the dedicated Score V2 workflow so legacy score writes do not
+      # overwrite the snapshot-backed production ranking or non-shadow v2 agent-table writeback.
       SCORE_V2_ENABLED: ${{ github.event.inputs.score_v2_enabled || 'false' }}
       SCORE_V2_SHADOW_ONLY: ${{ github.event.inputs.score_v2_shadow_only || 'true' }}
       SCORE_V2_SCHEDULER_ENABLED: ${{ github.event.inputs.score_v2_scheduler_enabled || 'false' }}
@@ -110,6 +111,7 @@ jobs:
         run: npm run ingest:telemetry
 
       - name: Run scoring engine
+        if: github.event_name != 'schedule' && (env.SCORE_V2_ENABLED != 'true' || env.SCORE_V2_SCHEDULER_ENABLED != 'true')
         run: npm run score
 
       - name: Run v2 scoring pipeline
