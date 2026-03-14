@@ -9,6 +9,7 @@ import GhostLogo from '@/components/GhostLogo';
 const isHexAddress = (value: string): boolean => /^0x[a-fA-F0-9]{40}$/.test(value);
 const truncateAddress = (value: string): string => `${value.slice(0, 6)}...${value.slice(-4)}`;
 const CREDIT_PRICE_WEI_FALLBACK = "10000000000000";
+const GHOSTWIRE_MAINNET_ADDRESS_FALLBACK = "0xCA0c1834c5Ab5cb3778C36649cCBF76879780623";
 
 const formatWeiToEth = (rawWei: string): string => {
   try {
@@ -25,7 +26,8 @@ const formatWeiToEth = (rawWei: string): string => {
 
 const HomePage = () => {
   const ghostVaultAddress = process.env.NEXT_PUBLIC_GHOST_VAULT_ADDRESS?.trim() ?? '';
-  const ghostWireAddress = process.env.NEXT_PUBLIC_GHOSTWIRE_CONTRACT_ADDRESS?.trim() ?? '';
+  const ghostWireAddress =
+    process.env.NEXT_PUBLIC_GHOSTWIRE_CONTRACT_ADDRESS?.trim() || GHOSTWIRE_MAINNET_ADDRESS_FALLBACK;
   const creditPriceWei = process.env.NEXT_PUBLIC_GHOST_CREDIT_PRICE_WEI?.trim() || CREDIT_PRICE_WEI_FALLBACK;
   const creditPriceEth = formatWeiToEth(creditPriceWei);
   const hasGhostVaultAddress = isHexAddress(ghostVaultAddress);
