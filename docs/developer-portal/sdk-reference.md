@@ -159,6 +159,13 @@ Calls `POST /api/wire/quote`.
 
 Use this to request a short-lived Hosted GhostWire quote before job creation.
 
+Wallet-role guidance:
+- `provider` should normally be the merchant-controlled payout / delivery wallet
+- `evaluator` should normally be a merchant-controlled approval / review wallet
+- both wallets need enough Base ETH for their later on-chain transactions
+  - provider -> `submit`
+  - evaluator -> `complete` / `reject`
+
 For GhostRank attribution, pass:
 - `providerAgentId`
 - `providerServiceSlug`
@@ -173,6 +180,7 @@ Notes:
 - requires `execSecret` or `GHOSTWIRE_EXEC_SECRET`
 - `metadataUri` is the recommended deliverable locator for Hosted GhostWire v1
 - Ghost remains the hosted on-chain client in this model
+- Hosted GhostWire wallet-role selection is currently integration-driven, not dashboard-driven
 - only terminal reconciled Hosted GhostWire jobs count toward GhostRank
 - GhostRank credit is provider-side only in Hosted GhostWire v1
 - current GhostWire scoring uses a rolling 30-day window once attributed terminal jobs exist
@@ -366,6 +374,11 @@ Notes:
 
 Calls `POST /api/wire/quote`.
 
+Wallet-role guidance:
+- `provider` should normally be the merchant-controlled payout / delivery wallet
+- `evaluator` should normally be a merchant-controlled approval / review wallet
+- both wallets need enough Base ETH for their later on-chain transactions
+
 For GhostRank attribution, pass `provider_agent_id` and `provider_service_slug` when the provider wants Hosted GhostWire activity to count toward ranking.
 
 If omitted, Ghost attempts to auto-derive attribution from a unique provider-wallet-to-agent mapping. Ambiguous mappings remain unattributed and will not count toward GhostRank.
@@ -377,6 +390,7 @@ Calls `POST /api/wire/jobs`.
 Notes:
 - requires `exec_secret` or `GHOSTWIRE_EXEC_SECRET`
 - `metadata_uri` is the recommended deliverable locator for Hosted GhostWire v1
+- Hosted GhostWire wallet-role selection is currently integration-driven, not dashboard-driven
 - only terminal reconciled Hosted GhostWire jobs count toward GhostRank
 - GhostRank credit is provider-side only in Hosted GhostWire v1
 - current GhostWire scoring uses a rolling 30-day window once attributed terminal jobs exist

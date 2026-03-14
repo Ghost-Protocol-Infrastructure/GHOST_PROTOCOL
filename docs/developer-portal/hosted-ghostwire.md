@@ -45,9 +45,19 @@ Use GhostGate Express when:
 - `provider` wallet
   - receives payout on successful completion
   - submits the deliverable hash on-chain
+  - for real merchant integrations, this should normally be the merchant-controlled payout wallet
 - `evaluator` wallet
   - calls `complete` or `reject` on-chain
+  - for real merchant integrations, this should normally be a merchant-controlled approval wallet
   - should be a separate wallet from settlement at production scale
+
+Operational note:
+
+- Do not use Ghost operational wallets as the merchant `provider` or `evaluator` roles in normal client integrations.
+- The provider and evaluator roles belong to the merchant side unless Ghost is intentionally offering a managed evaluator policy for that integration.
+- Both wallets need enough Base ETH to submit their on-chain transactions:
+  - provider: `submit`
+  - evaluator: `complete` or `reject`
 
 ### Required merchant surfaces
 
@@ -72,6 +82,34 @@ https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123
 ```
 
 The consumer SDK can resolve that locator after the GhostWire job reaches `COMPLETED`.
+
+## How merchants set provider and evaluator today
+
+Hosted GhostWire wallet-role selection is currently integration-driven, not dashboard-driven.
+
+Today, merchants provide these values through:
+
+1. SDK calls
+   - Node:
+     - `createWireQuote({ provider, evaluator, ... })`
+     - `createWireJob({ quoteId, client, provider, evaluator, ... })`
+   - Python:
+     - `create_wire_quote(provider=..., evaluator=..., ...)`
+     - `create_wire_job(quote_id=..., client=..., provider=..., evaluator=..., ...)`
+2. Raw API calls
+   - `POST /api/wire/quote`
+   - `POST /api/wire/jobs`
+
+The merchant should normally pass:
+
+- `provider` = merchant payout / delivery wallet
+- `evaluator` = merchant approval / review wallet
+
+GhostRank note:
+
+- if the merchant wants Hosted GhostWire activity attributed to a ranked agent, also pass:
+  - `providerAgentId`
+  - `providerServiceSlug`
 
 ## Consumer flow
 
@@ -151,6 +189,7 @@ See:
 
 - Hosted GhostWire is managed, not customer-native.
 - The hosted operator does not replace the provider or evaluator roles.
+- In normal client integrations, `provider` and `evaluator` should be merchant-controlled wallets, not Ghost operational wallets.
 - `metadataUri` should point to a merchant-controlled deliverable locator if you want consumer-friendly retrieval.
 - only terminal reconciled Hosted GhostWire jobs count toward GhostRank.
 - GhostRank scoring currently uses attributed provider-side outcomes over a rolling 30-day window; until live usage exists, calibration is intentionally conservative.

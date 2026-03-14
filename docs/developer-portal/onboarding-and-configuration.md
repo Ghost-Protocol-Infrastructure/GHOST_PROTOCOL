@@ -75,8 +75,11 @@ Role model:
 1. Choose a provider wallet.
    - receives successful payout
    - must have enough ETH for `submit`
+   - should normally be the merchant-controlled payout / delivery wallet
 2. Choose an evaluator wallet.
    - finalizes `complete` or `reject`
+   - must have enough ETH for `complete` / `reject`
+   - should normally be a merchant-controlled approval wallet
    - should be separate from your settlement key at production scale
 3. Expose a deliverable locator endpoint.
    - Hosted GhostWire v1 uses `metadataUri` as the consumer-facing deliverable locator.
@@ -92,6 +95,14 @@ https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123
    - preferred: send `providerAgentId` and `providerServiceSlug` on `POST /api/wire/quote`
    - fallback: Ghost auto-derives attribution from a unique provider-wallet-to-agent mapping
    - ambiguous provider-wallet mappings remain unattributed and will not count toward GhostRank
+6. Provide provider/evaluator wallets through the integration surface.
+   - current Hosted GhostWire wallet selection is SDK/API-driven, not dashboard-driven
+   - pass `provider` and `evaluator` on:
+     - `POST /api/wire/quote`
+     - `POST /api/wire/jobs`
+   - normal client mapping:
+     - `provider` = merchant payout / delivery wallet
+     - `evaluator` = merchant approval / review wallet
 
 ### Consumer requirements
 

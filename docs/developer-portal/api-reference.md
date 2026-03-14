@@ -279,6 +279,11 @@ Request body:
 - `providerServiceSlug` (optional, recommended for GhostRank attribution)
 
 Attribution behavior:
+- `provider` should normally be the merchant-controlled payout / delivery wallet
+- `evaluator` should normally be a merchant-controlled approval / review wallet
+- both roles must be able to send their later Base transactions:
+  - provider -> `submit`
+  - evaluator -> `complete` / `reject`
 - provider attribution persists from quote creation into hosted job creation when the job is built from that quote
 - if `providerAgentId` is supplied, it must belong to the supplied `provider` wallet
 - if `providerServiceSlug` is supplied, it must resolve to the same provider ownership
@@ -325,6 +330,12 @@ Request body:
   - In Hosted GhostWire v1, use this as the merchant-controlled deliverable locator URL.
   - Recommended shape: `https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123`
 - `webhookUrl` + `webhookSecret` (optional, both-or-neither)
+
+Role note:
+- Hosted GhostWire wallet-role selection is currently integration-driven, not dashboard-driven.
+- normal client mapping:
+  - `provider` = merchant payout / delivery wallet
+  - `evaluator` = merchant approval / review wallet
 
 GhostRank note:
 - GhostWire activity only contributes to GhostRank when provider attribution is resolvable.
