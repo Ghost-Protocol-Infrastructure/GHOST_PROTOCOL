@@ -19,6 +19,10 @@ import {
   normalizeLog100,
   scoreAgentRailAware,
 } from "../lib/ghostrank-rail-score";
+import {
+  buildScoreV2RailMetricFields,
+  scoreV2RailMetricFieldsChanged,
+} from "../lib/score-v2-rail-sync";
 import { fetchGhostWireProviderRollups, GHOSTWIRE_SCORE_WINDOW_DAYS } from "../lib/ghostwire-score-rollup";
 import { resolveScoreV2RunMode, shouldWriteScoreV2AgentTable } from "../lib/score-v2-run-mode";
 
@@ -934,47 +938,72 @@ const persistFetchedTxCounts = async (txCountsBySourceAddress: Map<string, numbe
   }
 };
 
-const syncRailMetricsToScoreInputs = async (agents: AgentSourceRow[]): Promise<void> => {
-  if (agents.length === 0) return;
+const syncRailMetricsToScoreInputs = async (
+  agents: AgentSourceRow[],
+  existingRailMetricsByAddress: Map<
+    string,
+    {
+      wireYield: number;
+      commerceQuality: number;
+      wireConfidence: number;
+      wireCompletedCount30d: number;
+      wireRejectedCount30d: number;
+      wireExpiredCount30d: number;
+      wireSettledPrincipal30d: bigint;
+      wireSettledProviderEarnings30d: bigint;
+    }
+  >,
+): Promise<number> => {
+  if (agents.length === 0) return 0;
 
   const since = new Date(Date.now() - GHOSTWIRE_SCORE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
   const wireRollupsByAgentId = await fetchGhostWireProviderRollups(since);
   let processed = 0;
+  let updatedRows = 0;
   const now = new Date();
 
   for (const chunk of chunkArray(agents, SCORE_V2_AGENT_WRITE_BATCH_SIZE)) {
-    await withPrismaRetry(
-      `score-v2 sync rail metrics ${processed + 1}-${Math.min(processed + chunk.length, agents.length)}`,
-      () =>
-        prisma.$transaction(
-          chunk.map((agent) => {
-            const rollup = wireRollupsByAgentId.get(agent.agentId);
-            return prisma.agentScoreInput.update({
-              where: { agentAddress: agent.address },
-              data: {
-                yield: Math.max(0, agent.yield ?? 0),
-                expressYield: Math.max(0, agent.yield ?? 0),
-                uptime: clamp(agent.uptime ?? 0, 0, 100),
-                wireYield: rollup?.wireYield ?? 0,
-                commerceQuality: rollup?.commerceQuality ?? 0,
-                wireConfidence: rollup?.wireConfidence ?? 0,
-                wireCompletedCount30d: rollup?.completedCount ?? 0,
-                wireRejectedCount30d: rollup?.rejectedCount ?? 0,
-                wireExpiredCount30d: rollup?.expiredCount ?? 0,
-                wireSettledPrincipal30d: rollup?.settledPrincipalAmount ?? 0n,
-                wireSettledProviderEarnings30d: rollup?.settledProviderEarnings ?? 0n,
-                lastIngestedAt: now,
-              },
-            });
-          }),
-        ),
-    );
+    const pendingRailUpdates = chunk.flatMap((agent) => {
+      const currentRailMetrics = existingRailMetricsByAddress.get(agent.address);
+      const nextRailMetrics = buildScoreV2RailMetricFields(wireRollupsByAgentId.get(agent.agentId));
+      if (!scoreV2RailMetricFieldsChanged(currentRailMetrics, nextRailMetrics)) return [];
+      return [{ agentAddress: agent.address, nextRailMetrics }];
+    });
+
+    if (pendingRailUpdates.length > 0) {
+      await withPrismaRetry(
+        `score-v2 sync rail metrics ${processed + 1}-${Math.min(processed + chunk.length, agents.length)}`,
+        () =>
+          prisma.$transaction(
+            pendingRailUpdates.map(({ agentAddress, nextRailMetrics }) =>
+              prisma.agentScoreInput.update({
+                where: { agentAddress },
+                data: {
+                  wireYield: nextRailMetrics.wireYield,
+                  commerceQuality: nextRailMetrics.commerceQuality,
+                  wireConfidence: nextRailMetrics.wireConfidence,
+                  wireCompletedCount30d: nextRailMetrics.wireCompletedCount30d,
+                  wireRejectedCount30d: nextRailMetrics.wireRejectedCount30d,
+                  wireExpiredCount30d: nextRailMetrics.wireExpiredCount30d,
+                  wireSettledPrincipal30d: nextRailMetrics.wireSettledPrincipal30d,
+                  wireSettledProviderEarnings30d: nextRailMetrics.wireSettledProviderEarnings30d,
+                  lastIngestedAt: now,
+                },
+              }),
+            ),
+          ),
+      );
+      updatedRows += pendingRailUpdates.length;
+    }
 
     processed += chunk.length;
     if (processed % SCORE_V2_HEARTBEAT_INTERVAL === 0 || processed === agents.length) {
-      console.log(`Heartbeat: score-v2 synced rail metrics ${processed}/${agents.length}`);
+      console.log(`Heartbeat: score-v2 synced rail metrics ${processed}/${agents.length} (updated=${updatedRows})`);
     }
   }
+
+  console.log(`score-v2 rail sync complete: scanned=${agents.length}, updated=${updatedRows}.`);
+  return updatedRows;
 };
 
 const buildSnapshotRows = (
@@ -1410,6 +1439,7 @@ const ingestScoreInputs = async (): Promise<{
   refreshedSources: number;
   txFetchFailures: number;
   budgetReached: boolean;
+  railMetricRowsUpdated: number;
 }> => {
   const agents = await withPrismaRetry("score-v2 load agents", () =>
     prisma.agent.findMany({
@@ -1440,6 +1470,7 @@ const ingestScoreInputs = async (): Promise<{
       refreshedSources: 0,
       txFetchFailures: 0,
       budgetReached: false,
+      railMetricRowsUpdated: 0,
     };
   }
 
@@ -1468,7 +1499,15 @@ const ingestScoreInputs = async (): Promise<{
         metricSource: true,
         yield: true,
         expressYield: true,
+        wireYield: true,
         uptime: true,
+        commerceQuality: true,
+        wireConfidence: true,
+        wireCompletedCount30d: true,
+        wireRejectedCount30d: true,
+        wireExpiredCount30d: true,
+        wireSettledPrincipal30d: true,
+        wireSettledProviderEarnings30d: true,
         isClaimed: true,
         txCountUpdatedAt: true,
       },
@@ -1588,7 +1627,7 @@ const ingestScoreInputs = async (): Promise<{
   const sourcesToRefresh = Array.from(changedSourceSet);
   const txFetchResult = await fetchTxCountsBySourceAddress(sourcesToRefresh);
   await persistFetchedTxCounts(txFetchResult.txCountBySourceAddressLower);
-  await syncRailMetricsToScoreInputs(agents);
+  const railMetricRowsUpdated = await syncRailMetricsToScoreInputs(agents, existingByAddress);
 
   return {
     totalAgents: agents.length,
@@ -1596,6 +1635,7 @@ const ingestScoreInputs = async (): Promise<{
     refreshedSources: txFetchResult.total,
     txFetchFailures: txFetchResult.failures,
     budgetReached: txFetchResult.budgetReached,
+    railMetricRowsUpdated,
   };
 };
 
@@ -1725,12 +1765,13 @@ async function main(): Promise<void> {
       last_refresh_elapsed_ms: String(elapsedMs),
       last_ingest_agents: String(ingest.totalAgents),
       last_ingest_changed_inputs: String(ingest.changedInputs),
+      last_rail_metric_rows_updated: String(ingest.railMetricRowsUpdated),
       last_tx_sources_refreshed: String(ingest.refreshedSources),
       last_tx_fetch_failures: String(ingest.txFetchFailures),
       last_tx_budget_reached: ingest.budgetReached ? "true" : "false",
     });
     console.log(
-      `score-v2 refresh complete: agents=${ingest.totalAgents}, changed_inputs=${ingest.changedInputs}, tx_sources_refreshed=${ingest.refreshedSources}, tx_failures=${ingest.txFetchFailures}${ingest.budgetReached ? ", budget_reached=true" : ""}, elapsed_ms=${elapsedMs}.`,
+      `score-v2 refresh complete: agents=${ingest.totalAgents}, changed_inputs=${ingest.changedInputs}, rail_metric_rows_updated=${ingest.railMetricRowsUpdated}, tx_sources_refreshed=${ingest.refreshedSources}, tx_failures=${ingest.txFetchFailures}${ingest.budgetReached ? ", budget_reached=true" : ""}, elapsed_ms=${elapsedMs}.`,
     );
     return;
   }
