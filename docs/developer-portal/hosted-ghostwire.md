@@ -11,7 +11,7 @@ It is a managed ERC-8183 escrow rail:
 
 This is the launch surface for GhostWire today.
 
-Direct GhostWire, where the external customer wallet is the on-chain client, is a later Phase 1 slice and is not the current public product.
+Direct GhostWire, where the external customer wallet is the on-chain client, is a later Phase 2 follow-on and is not the current public product.
 
 ## When to use Hosted GhostWire
 
@@ -100,6 +100,8 @@ GhostRank note:
 - set `providerAgentId` and `providerServiceSlug` when the provider wants Hosted GhostWire activity to count toward GhostRank
 - if omitted, Ghost will try to auto-derive provider attribution from a unique provider-wallet-to-agent mapping
 - ambiguous wallet mappings remain unattributed and are excluded from GhostRank scoring
+- GhostRank credit is provider-side only in Hosted GhostWire v1
+- only terminal reconciled provider-attributed jobs affect ranking
 
 ### 2. Create the hosted job
 
@@ -151,5 +153,6 @@ See:
 - The hosted operator does not replace the provider or evaluator roles.
 - `metadataUri` should point to a merchant-controlled deliverable locator if you want consumer-friendly retrieval.
 - only terminal reconciled Hosted GhostWire jobs count toward GhostRank.
+- GhostRank scoring currently uses attributed provider-side outcomes over a rolling 30-day window; until live usage exists, calibration is intentionally conservative.
 - GhostWire is appropriate for managed beta / concierge / enterprise flows now.
 - Do not market Hosted GhostWire as Direct GhostWire.

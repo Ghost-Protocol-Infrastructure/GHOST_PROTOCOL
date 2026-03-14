@@ -279,6 +279,7 @@ Request body:
 - `providerServiceSlug` (optional, recommended for GhostRank attribution)
 
 Attribution behavior:
+- provider attribution persists from quote creation into hosted job creation when the job is built from that quote
 - if `providerAgentId` is supplied, it must belong to the supplied `provider` wallet
 - if `providerServiceSlug` is supplied, it must resolve to the same provider ownership
 - if neither is supplied, Ghost attempts to auto-derive attribution from a unique provider-wallet-to-agent mapping
@@ -327,6 +328,7 @@ Request body:
 
 GhostRank note:
 - GhostWire activity only contributes to GhostRank when provider attribution is resolvable.
+- GhostRank credit is provider-side only in Hosted GhostWire v1; client/evaluator roles do not receive rank credit from wire jobs.
 - only terminal reconciled jobs count:
   - `COMPLETED`
   - `REJECTED`

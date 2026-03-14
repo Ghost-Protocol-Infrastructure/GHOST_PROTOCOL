@@ -174,6 +174,8 @@ Notes:
 - `metadataUri` is the recommended deliverable locator for Hosted GhostWire v1
 - Ghost remains the hosted on-chain client in this model
 - only terminal reconciled Hosted GhostWire jobs count toward GhostRank
+- GhostRank credit is provider-side only in Hosted GhostWire v1
+- current GhostWire scoring uses a rolling 30-day window once attributed terminal jobs exist
 
 #### `getWireJob(jobId): Promise<WireJobResult>`
 
@@ -360,17 +362,24 @@ Notes:
 
 #### Hosted GhostWire helpers
 
-#### `create_wire_quote(provider, evaluator, principal_amount, chain_id=8453, client=None) -> WireQuoteResult`
+#### `create_wire_quote(provider, evaluator, principal_amount, chain_id=8453, client=None, provider_agent_id=None, provider_service_slug=None) -> WireQuoteResult`
 
 Calls `POST /api/wire/quote`.
 
-#### `create_wire_job(quote_id, client, provider, evaluator, spec_hash, metadata_uri=None, webhook_url=None, webhook_secret=None, exec_secret=None) -> WireJobResult`
+For GhostRank attribution, pass `provider_agent_id` and `provider_service_slug` when the provider wants Hosted GhostWire activity to count toward ranking.
+
+If omitted, Ghost attempts to auto-derive attribution from a unique provider-wallet-to-agent mapping. Ambiguous mappings remain unattributed and will not count toward GhostRank.
+
+#### `create_wire_job(quote_id, client, provider, evaluator, provider_agent_id=None, provider_service_slug=None, spec_hash, metadata_uri=None, webhook_url=None, webhook_secret=None, exec_secret=None) -> WireJobResult`
 
 Calls `POST /api/wire/jobs`.
 
 Notes:
 - requires `exec_secret` or `GHOSTWIRE_EXEC_SECRET`
 - `metadata_uri` is the recommended deliverable locator for Hosted GhostWire v1
+- only terminal reconciled Hosted GhostWire jobs count toward GhostRank
+- GhostRank credit is provider-side only in Hosted GhostWire v1
+- current GhostWire scoring uses a rolling 30-day window once attributed terminal jobs exist
 
 #### `get_wire_job(job_id) -> WireJobResult`
 

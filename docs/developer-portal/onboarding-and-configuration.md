@@ -103,6 +103,8 @@ https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123
    - `COMPLETED`
    - `REJECTED`
    - `EXPIRED`
+6. GhostRank credit is provider-side only for Hosted GhostWire v1.
+7. Current Hosted GhostWire scoring uses a rolling 30-day window once attributed terminal jobs exist.
 
 ### Hosted GhostWire runtime secrets
 
