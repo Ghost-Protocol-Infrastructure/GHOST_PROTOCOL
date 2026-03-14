@@ -57,6 +57,7 @@ jobs:
       SCORE_V2_PRISMA_RETRY_ATTEMPTS: "4"
       SCORE_V2_PRISMA_RETRY_DELAY_MS: "1000"
       SCORE_V2_PRISMA_CONNECTION_TIMEOUT_MS: "12000"
+      SCORE_V2_WRITE_AGENT_TABLE: "false"
 
     steps:
       - name: Checkout code
@@ -80,8 +81,11 @@ jobs:
       - name: Ingest telemetry signals
         run: npm run ingest:telemetry
 
-      - name: Run v2 scoring pipeline
-        run: npm run score:v2
+      - name: Refresh v2 score inputs
+        run: npm run score:v2:refresh
+
+      - name: Build v2 leaderboard snapshot
+        run: npm run score:v2:snapshot
 
       - name: Report index health
         run: npx tsx scripts/report-index-health.ts

@@ -14,6 +14,8 @@
     "ingest:telemetry": "npx tsx scripts/ingest-telemetry-signals.ts",
     "score": "npx tsx scripts/score-leads.ts",
     "score:v2": "npx tsx scripts/score-v2.ts",
+    "score:v2:refresh": "npx tsx scripts/score-v2.ts --refresh-only",
+    "score:v2:snapshot": "npx tsx scripts/score-v2.ts --snapshot-only",
     "audit:score:clusters": "npx tsx scripts/audit-score-clusters.ts",
     "reconcile:credits": "npx tsx scripts/reconcile-credits.ts",
     "generate:fulfillment:fixtures": "npx tsx scripts/generate-fulfillment-fixtures.ts",

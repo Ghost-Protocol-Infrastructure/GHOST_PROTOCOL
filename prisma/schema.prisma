@@ -604,6 +604,7 @@ model LeaderboardSnapshotRow {
   agent    Agent               @relation(fields: [agentAddress], references: [address], onDelete: Cascade)
 
   @@unique([snapshotId, agentAddress])
+  @@index([snapshotId, agentId])
   @@index([snapshotId, rank])
   @@index([snapshotId, rankScore])
   @@index([snapshotId, owner])

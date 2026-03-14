@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import Image from "next/image";
 import { prisma } from "@/lib/db";
 import AgentProfileAutoRefresh from "@/components/AgentProfileAutoRefresh";
+import { findActiveSnapshotScoreByAgentId } from "@/lib/leaderboard-snapshot";
+import { resolveScoreReadSource } from "@/lib/score-read-source";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +34,13 @@ type AgentSummary = {
     lastCanaryPassedAt: Date | null;
   } | null;
 };
+
+type AgentSnapshotScore = Pick<AgentSummary, "tier" | "txCount" | "reputation" | "rankScore">;
+
+const SCORE_READ_SOURCE = resolveScoreReadSource(
+  process.env.SCORE_READ_SOURCE,
+  process.env.LEADERBOARD_READ_FROM_SNAPSHOT,
+);
 
 const tierClassName: Record<AgentSummary["tier"], string> = {
   WHALE: "border-violet-400 bg-violet-500/20 text-violet-300 animate-pulse shadow-[0_0_10px_rgba(139,92,246,0.5)]",
@@ -173,6 +182,27 @@ export default async function AgentProfilePage({ params, searchParams }: AgentPa
 
   if (!agent) {
     notFound();
+  }
+
+  if (SCORE_READ_SOURCE === "snapshot") {
+    const snapshotScore = await findActiveSnapshotScoreByAgentId<AgentSnapshotScore>(prisma, agentId, {
+      select: {
+        tier: true,
+        txCount: true,
+        reputation: true,
+        rankScore: true,
+      },
+    });
+
+    if (snapshotScore) {
+      agent = {
+        ...agent,
+        tier: snapshotScore.tier,
+        txCount: snapshotScore.txCount,
+        reputation: snapshotScore.reputation,
+        rankScore: snapshotScore.rankScore,
+      };
+    }
   }
 
   const statusLabel = toTitleCase(agent.status);

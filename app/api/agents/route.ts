@@ -3,6 +3,7 @@ import { Prisma, type Prisma as PrismaTypes } from "@prisma/client";
 import { createPublicClient, fallback, http } from "viem";
 import { base } from "viem/chains";
 import { prisma } from "@/lib/db";
+import { resolveScoreReadSource } from "@/lib/score-read-source";
 
 export const runtime = "nodejs";
 
@@ -24,7 +25,10 @@ const ACTIVATED_AGENTS_CACHE_TTL_MS = (() => {
 const AGENT_INDEX_MODE = process.env.AGENT_INDEX_MODE?.trim().toLowerCase() === "olas" ? "olas" : "erc8004";
 const ACTIVE_CURSOR_KEY = AGENT_INDEX_MODE === "olas" ? "agent_indexer_olas" : "agent_indexer_erc8004";
 const LEGACY_CURSOR_KEY = "agent_indexer";
-const LEADERBOARD_READ_FROM_SNAPSHOT = process.env.LEADERBOARD_READ_FROM_SNAPSHOT?.trim().toLowerCase() === "true";
+const SCORE_READ_SOURCE = resolveScoreReadSource(
+  process.env.SCORE_READ_SOURCE,
+  process.env.LEADERBOARD_READ_FROM_SNAPSHOT,
+);
 const SCORE_V2_SYNTHETIC_USAGE_PRIMARY = (() => {
   const raw = process.env.SCORE_V2_SYNTHETIC_USAGE_PRIMARY?.trim().toLowerCase();
   if (raw === "true") return true;
@@ -393,7 +397,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  if (LEADERBOARD_READ_FROM_SNAPSHOT) {
+  if (SCORE_READ_SOURCE === "snapshot") {
     const activeSnapshot = await prisma.leaderboardSnapshot.findFirst({
       where: {
         isActive: true,

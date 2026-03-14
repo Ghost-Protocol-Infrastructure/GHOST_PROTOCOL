@@ -20,6 +20,7 @@ import {
   scoreAgentRailAware,
 } from "../lib/ghostrank-rail-score";
 import { fetchGhostWireProviderRollups, GHOSTWIRE_SCORE_WINDOW_DAYS } from "../lib/ghostwire-score-rollup";
+import { resolveScoreV2RunMode, shouldWriteScoreV2AgentTable } from "../lib/score-v2-run-mode";
 
 type AgentIndexMode = "erc8004" | "olas";
 type ScoreTxSource = "agent" | "owner" | "creator";
@@ -224,6 +225,8 @@ const SCORE_TX_SOURCE: ScoreTxSource = (() => {
 const SCORE_V2_ENABLED = process.env.SCORE_V2_ENABLED?.trim().toLowerCase() === "true";
 const SCORE_V2_SHADOW_ONLY = process.env.SCORE_V2_SHADOW_ONLY?.trim().toLowerCase() !== "false";
 const SCORE_V2_FORCE_RUN = process.argv.includes("--force");
+const SCORE_V2_RUN_MODE = resolveScoreV2RunMode(process.argv.slice(2));
+const SCORE_V2_WRITE_AGENT_TABLE = shouldWriteScoreV2AgentTable(process.env.SCORE_V2_WRITE_AGENT_TABLE);
 
 const INDEXER_RPC_URL =
   process.env.BASE_RPC_URL_INDEXER?.trim() || process.env.BASE_RPC_URL?.trim() || "https://mainnet.base.org";
@@ -1403,48 +1406,6 @@ const applySnapshotScoresToAgentTable = async (rows: SnapshotScoreRow[]): Promis
   }
 };
 
-const persistDerivedScoreInputMetrics = async (rows: SnapshotScoreRow[]): Promise<void> => {
-  if (rows.length === 0) return;
-
-  let processed = 0;
-  const now = new Date();
-  for (const chunk of chunkArray(rows, SCORE_V2_AGENT_WRITE_BATCH_SIZE)) {
-    await withPrismaRetry(
-      `score-v2 persist derived score-input metrics ${processed + 1}-${Math.min(processed + chunk.length, rows.length)}`,
-      () =>
-        prisma.$transaction(
-          chunk.map((row) =>
-            prisma.agentScoreInput.update({
-              where: { agentAddress: row.agentAddress },
-              data: {
-                onchainTxCountAgent: row.onchainTxCountAgent,
-                onchainTxCountOwner: row.onchainTxCountOwner,
-                usageAuthorizedCount7d: row.usageAuthorizedCount7d,
-              metricSource: row.metricSource,
-              canonicalOnchainAddress: row.canonicalOnchainAddress,
-              canonicalAddressSource: row.canonicalAddressSource,
-              lastIngestedAt: now,
-              expressYield: row.expressYield,
-              wireYield: row.wireYield,
-              commerceQuality: row.commerceQuality,
-              expressConfidence: row.expressConfidence,
-              wireConfidence: row.wireConfidence,
-              expressReputation: row.expressReputation,
-              wireReputation: row.wireReputation,
-              railMode: row.railMode,
-            },
-          }),
-        ),
-        ),
-    );
-
-    processed += chunk.length;
-    if (processed % SCORE_V2_HEARTBEAT_INTERVAL === 0 || processed === rows.length) {
-      console.log(`Heartbeat: score-v2 persisted derived metrics ${processed}/${rows.length}`);
-    }
-  }
-};
-
 const ingestScoreInputs = async (): Promise<{
   totalAgents: number;
   changedInputs: number;
@@ -1710,10 +1671,9 @@ const runSnapshotRanking = async (): Promise<{
       inputs,
       gateSybilSignals,
     );
-  await persistDerivedScoreInputMetrics(rows);
   const snapshotId = await writeSnapshot(rows, maxTxCount, maxClaimedYield);
 
-  if (!SCORE_V2_SHADOW_ONLY) {
+  if (!SCORE_V2_SHADOW_ONLY && SCORE_V2_WRITE_AGENT_TABLE) {
     await applySnapshotScoresToAgentTable(rows);
   }
 
@@ -1753,10 +1713,55 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `score-v2 config: mode=${AGENT_INDEX_MODE}, tx_source=${SCORE_TX_SOURCE}, synthetic_usage_primary=${SCORE_V2_SYNTHETIC_USAGE_PRIMARY}, shadow_only=${SCORE_V2_SHADOW_ONLY}, rpc_env=${INDEXER_RPC_ENV}, tx_concurrency=${SCORE_V2_TX_CONCURRENCY}, tx_call_timeout_ms=${SCORE_V2_TX_CALL_TIMEOUT_MS}, tx_rpc_timeout_ms=${SCORE_V2_TX_RPC_TIMEOUT_MS}, tx_budget_ms=${SCORE_V2_TX_BUDGET_MS}, ingest_batch_size=${SCORE_V2_INGEST_BATCH_SIZE}, snapshot_batch_size=${SCORE_V2_SNAPSHOT_BATCH_SIZE}, stale_tx_batch=${SCORE_V2_STALE_TX_BATCH}, stale_tx_minutes=${SCORE_V2_STALE_TX_MINUTES}`,
+    `score-v2 config: run_mode=${SCORE_V2_RUN_MODE}, mode=${AGENT_INDEX_MODE}, tx_source=${SCORE_TX_SOURCE}, synthetic_usage_primary=${SCORE_V2_SYNTHETIC_USAGE_PRIMARY}, shadow_only=${SCORE_V2_SHADOW_ONLY}, write_agent_table=${SCORE_V2_WRITE_AGENT_TABLE}, rpc_env=${INDEXER_RPC_ENV}, tx_concurrency=${SCORE_V2_TX_CONCURRENCY}, tx_call_timeout_ms=${SCORE_V2_TX_CALL_TIMEOUT_MS}, tx_rpc_timeout_ms=${SCORE_V2_TX_RPC_TIMEOUT_MS}, tx_budget_ms=${SCORE_V2_TX_BUDGET_MS}, ingest_batch_size=${SCORE_V2_INGEST_BATCH_SIZE}, snapshot_batch_size=${SCORE_V2_SNAPSHOT_BATCH_SIZE}, stale_tx_batch=${SCORE_V2_STALE_TX_BATCH}, stale_tx_minutes=${SCORE_V2_STALE_TX_MINUTES}`,
   );
 
   const startedAt = Date.now();
+  const completedAtIso = new Date().toISOString();
+
+  if (SCORE_V2_RUN_MODE === "refresh-only") {
+    const ingest = await ingestScoreInputs();
+    const elapsedMs = Date.now() - startedAt;
+    await writeRunState({
+      last_refresh_run_at: completedAtIso,
+      last_refresh_elapsed_ms: String(elapsedMs),
+      last_ingest_agents: String(ingest.totalAgents),
+      last_ingest_changed_inputs: String(ingest.changedInputs),
+      last_tx_sources_refreshed: String(ingest.refreshedSources),
+      last_tx_fetch_failures: String(ingest.txFetchFailures),
+      last_tx_budget_reached: ingest.budgetReached ? "true" : "false",
+    });
+    console.log(
+      `score-v2 refresh complete: agents=${ingest.totalAgents}, changed_inputs=${ingest.changedInputs}, tx_sources_refreshed=${ingest.refreshedSources}, tx_failures=${ingest.txFetchFailures}${ingest.budgetReached ? ", budget_reached=true" : ""}, elapsed_ms=${elapsedMs}.`,
+    );
+    return;
+  }
+
+  if (SCORE_V2_RUN_MODE === "snapshot-only") {
+    const ranking = await runSnapshotRanking();
+    const elapsedMs = Date.now() - startedAt;
+    await writeRunState({
+      last_snapshot_build_at: completedAtIso,
+      last_snapshot_build_elapsed_ms: String(elapsedMs),
+      last_snapshot_id: ranking.snapshotId,
+      last_snapshot_rows: String(ranking.totalRows),
+      last_snapshot_max_tx_count: String(ranking.maxTxCount),
+      last_snapshot_max_claimed_yield: String(ranking.maxClaimedYield),
+      last_sybil_coverage: ranking.sybilCoverage ? "true" : "false",
+      last_sybil_services_tracked: String(ranking.sybilServicesTracked),
+      last_sybil_authorized_events: String(ranking.sybilAuthorizedEvents),
+      last_sybil_penalized_agents: String(ranking.sybilPenalizedAgents),
+      last_sybil_max_penalty: String(ranking.sybilMaxPenalty),
+      last_tx_metric_agent_onchain_count: String(ranking.txMetricAgentOnchainCount),
+      last_tx_metric_synthetic_usage_count: String(ranking.txMetricSyntheticUsageCount),
+      last_tx_metric_fallback_count: String(ranking.txMetricFallbackCount),
+    });
+    console.log(
+      `score-v2 snapshot complete: snapshot=${ranking.snapshotId}, rows=${ranking.totalRows}, tx_metric_agent_onchain=${ranking.txMetricAgentOnchainCount}, tx_metric_synthetic_usage=${ranking.txMetricSyntheticUsageCount}, tx_metric_fallback=${ranking.txMetricFallbackCount}, sybil_coverage=${ranking.sybilCoverage}, sybil_services=${ranking.sybilServicesTracked}, sybil_authorized_events=${ranking.sybilAuthorizedEvents}, sybil_penalized_agents=${ranking.sybilPenalizedAgents}, sybil_max_penalty=${ranking.sybilMaxPenalty}, elapsed_ms=${elapsedMs}.`,
+    );
+    return;
+  }
+
   const ingest = await ingestScoreInputs();
   if (ingest.totalAgents === 0) {
     console.log("score-v2: no agents found. Skipping snapshot generation.");
@@ -1767,8 +1772,12 @@ async function main(): Promise<void> {
   const elapsedMs = Date.now() - startedAt;
 
   await writeRunState({
-    last_run_at: new Date().toISOString(),
+    last_run_at: completedAtIso,
     last_run_elapsed_ms: String(elapsedMs),
+    last_refresh_run_at: completedAtIso,
+    last_refresh_elapsed_ms: String(elapsedMs),
+    last_snapshot_build_at: completedAtIso,
+    last_snapshot_build_elapsed_ms: String(elapsedMs),
     last_ingest_agents: String(ingest.totalAgents),
     last_ingest_changed_inputs: String(ingest.changedInputs),
     last_tx_sources_refreshed: String(ingest.refreshedSources),
