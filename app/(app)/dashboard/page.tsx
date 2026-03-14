@@ -240,8 +240,10 @@ const APP_BASE_URL = normalizeBaseUrl(
     (typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:3000"),
 );
 const GITHUB_DOCS_BASE_URL = "https://github.com/Ghost-Protocol-Infrastructure/GHOST_PROTOCOL/blob/main/docs/developer-portal";
+const MERCHANT_ONBOARDING_DOC_URL = `${GITHUB_DOCS_BASE_URL}/onboarding-and-configuration.md`;
 const NODE_QUICKSTART_DOC_URL = `${GITHUB_DOCS_BASE_URL}/quickstart-node.md`;
 const SDK_REFERENCE_DOC_URL = `${GITHUB_DOCS_BASE_URL}/sdk-reference.md`;
+const HOSTED_GHOSTWIRE_DOC_URL = `${GITHUB_DOCS_BASE_URL}/hosted-ghostwire.md`;
 const SDK_CONTEXT_KEY_PREVIEW_PLACEHOLDER = "sk_live_your_sdk_context_key";
 const SDK_SECURITY_NOTICE =
   "Security Notice: Ghost Gate access is authenticated with Web3 wallet signatures (EIP-712). Configure SDKs with a signer private key in a trusted backend/server/CLI environment only. Never expose private keys in frontend code or commit them to version control.";
@@ -346,21 +348,34 @@ function SdkSecurityNoticeBanner() {
   );
 }
 
-function SdkDocsLinks() {
+function SdkDocsLinks({ mode = "consumer" }: { mode?: "consumer" | "merchant" }) {
   return (
     <div className="mt-5 space-y-3">
       <p className="text-sm text-neutral-500">
-        Use the docs for installation steps and required environment variables (including signer key setup).
+        {mode === "merchant"
+          ? "Start with activate() onboarding, then use the Hosted GhostWire reference for wire-mode roles and deliverables."
+          : "Use the docs for installation steps and required environment variables (including signer key setup)."}
       </p>
       <div className="flex flex-wrap gap-3">
-        <a
-          href={NODE_QUICKSTART_DOC_URL}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
-        >
-          OPEN NODE QUICKSTART
-        </a>
+        {mode === "merchant" ? (
+          <a
+            href={MERCHANT_ONBOARDING_DOC_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
+          >
+            OPEN MERCHANT ONBOARDING
+          </a>
+        ) : (
+          <a
+            href={NODE_QUICKSTART_DOC_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
+          >
+            OPEN NODE QUICKSTART
+          </a>
+        )}
         <a
           href={SDK_REFERENCE_DOC_URL}
           target="_blank"
@@ -368,6 +383,14 @@ function SdkDocsLinks() {
           className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
         >
           OPEN SDK REFERENCE
+        </a>
+        <a
+          href={HOSTED_GHOSTWIRE_DOC_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
+        >
+          OPEN GHOSTWIRE REFERENCE
         </a>
       </div>
     </div>
@@ -1927,9 +1950,20 @@ from ghostgate import GhostGate
 
 app = Flask(__name__)
 
+merchant = GhostGate(
+    private_key=os.environ["GHOST_OWNER_PRIVATE_KEY"],
+    service_slug="${merchantServiceSlug}",
+)
+
+activation = merchant.activate(
+    agent_id="${selectedOwnedAgent?.agentId ?? "YOUR_AGENT_ID"}",
+    service_slug="${merchantServiceSlug}",
+    endpoint_url="https://merchant.example.com",
+    canary_path="/health",
+)
+print("readiness:", activation["readiness"])
+
 gate = GhostGate(
-    # Placeholder only. Ghost dashboard does not issue SDK context keys yet.
-    api_key="${merchantApiKey}",
     # Gate authorization is signature-based and requires a signer private key
     private_key=os.environ.get("GHOST_SIGNER_PRIVATE_KEY") or os.environ.get("PRIVATE_KEY"),
     chain_id=${PREFERRED_CHAIN_ID},  # ${PREFERRED_CHAIN_NAME}
@@ -1943,7 +1977,7 @@ gate = GhostGate(
 
 # Agent ID: ${selectedOwnedAgent?.agentId ?? "YOUR_AGENT_ID"}
 
-# Optional: merchant heartbeat telemetry loop
+# Optional: merchant runtime heartbeat telemetry loop
 heartbeat = gate.start_heartbeat(
     service_slug="${merchantServiceSlug}",
     interval_seconds=60,
@@ -1953,7 +1987,7 @@ heartbeat = gate.start_heartbeat(
 @gate.guard(cost=1, service="${merchantServiceSlug}", method="POST")
 def my_agent():
     return jsonify({"ok": True})`,
-    [merchantApiKey, selectedOwnedAgent, merchantServiceSlug],
+    [selectedOwnedAgent, merchantServiceSlug],
   );
 
   const canPurchase =
@@ -2024,6 +2058,16 @@ def my_agent():
         backlog: 0,
       },
     );
+  }, [merchantWireJobs]);
+  const mostRecentMerchantWireJobAt = useMemo(() => {
+    if (merchantWireJobs.length === 0) return null;
+
+    return merchantWireJobs.reduce<string | null>((latest, job) => {
+      const candidate = typeof job.updatedAt === "string" && job.updatedAt ? job.updatedAt : job.createdAt;
+      if (!candidate) return latest;
+      if (!latest) return candidate;
+      return new Date(candidate).getTime() > new Date(latest).getTime() ? candidate : latest;
+    }, null);
   }, [merchantWireJobs]);
 
   const merchantOwnsSelectedAgent = Boolean(
@@ -2579,7 +2623,7 @@ def my_agent():
                   </pre>
                 </div>
 
-                <SdkDocsLinks />
+                <SdkDocsLinks mode="merchant" />
               </article>
 
               <article className="bg-neutral-950 border border-neutral-900 rounded-none p-5">
@@ -2644,7 +2688,8 @@ def my_agent():
                     </p>
                     {merchantSettlementSummary.confirmed.oldestCreatedAt && (
                       <p className="mt-1 text-[11px] text-neutral-600">
-                        Oldest confirmed event: {formatRelativeTimeFromIso(merchantSettlementSummary.confirmed.oldestCreatedAt)}
+                        Oldest confirmed GhostGate settlement event:{" "}
+                        {formatRelativeTimeFromIso(merchantSettlementSummary.confirmed.oldestCreatedAt)}
                       </p>
                     )}
                   </div>
@@ -2659,6 +2704,11 @@ def my_agent():
                       <p className="mt-1 text-xs text-neutral-600">
                         Recent managed wire-mode jobs involving the selected owner address. Ghost hosts create/fund/reconcile in v1; providers still deliver and evaluators still finalize.
                       </p>
+                      {mostRecentMerchantWireJobAt && (
+                        <p className="mt-1 text-[11px] text-neutral-600">
+                          Most recent GhostWire job: {formatRelativeTimeFromIso(mostRecentMerchantWireJobAt)}
+                        </p>
+                      )}
                     </div>
                     {isLoadingMerchantWireJobs && (
                       <p className="text-[11px] uppercase tracking-[0.16em] text-neutral-500 font-bold">

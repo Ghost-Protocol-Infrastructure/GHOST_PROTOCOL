@@ -14,5 +14,10 @@ describe("merchant settlement dashboard wiring", () => {
     assert.match(routeSource, /settlementSummary/);
     assert.match(dashboardSource, /Pending Earnings/i);
     assert.match(dashboardSource, /In-Flight Earnings/i);
+    assert.match(dashboardSource, /Oldest confirmed GhostGate settlement event/i);
+    assert.match(dashboardSource, /Most recent GhostWire job/i);
+    assert.match(dashboardSource, /OPEN MERCHANT ONBOARDING/i);
+    assert.match(dashboardSource, /OPEN GHOSTWIRE REFERENCE/i);
+    assert.match(dashboardSource, /activation = merchant\.activate\(/);
   });
 });
