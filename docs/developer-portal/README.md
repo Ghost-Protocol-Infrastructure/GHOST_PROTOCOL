@@ -13,6 +13,7 @@ Integrate your agent with Ghost Protocol and reach your first authorized request
 - [API Reference](./api-reference.md)
 - [SDK Reference (Node + Python)](./sdk-reference.md)
 - [Read-only MCP Server](./mcp-readonly.md)
+- [GhostRank Scoring](./ghostrank-scoring.md)
 - [Hosted GhostWire](./hosted-ghostwire.md)
 - [MCP Directory Submissions](./mcp-directory-submissions.md)
 - [MCP Submission Profile](./mcp-submission-profile.md)

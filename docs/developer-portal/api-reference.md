@@ -705,6 +705,14 @@ Notes:
 - `lastSyncedBlock` is the last persisted indexer cursor checkpoint (chunk-level), so it can trail current Base head during active indexing/backfills.
 - `syncHealth` / `syncAgeSeconds` report indexing freshness and may temporarily degrade during RPC incidents or recovery runs.
 - Indexing and scoring are separate background jobs, so rank freshness and chain-index freshness can momentarily diverge.
+- `txCount` is the active tx/activity metric used for ranking. Use `metricSource` / `txMetricSource` to interpret whether it came from direct agent activity, GhostGate usage activity, owner-wallet fallback, or creator-wallet fallback.
+- Public `yield` currently reflects the Express-side displayed yield value. GhostWire `wireYield` contributes internally to ranking but is not yet surfaced as a separate public `yield` column.
+- Public `uptime` reflects GhostGate/Express reliability only.
+- Fallback-only rows can appear in ranking, but fallback wallet activity is intentionally bounded proxy evidence rather than full-strength trust proof.
+
+See also:
+
+- [`GhostRank Scoring`](./ghostrank-scoring.md)
 
 ### Error response (`400`)
 
