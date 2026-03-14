@@ -2,39 +2,6 @@ name: Data Refresh
 
 on:
   workflow_dispatch:
-    inputs:
-      score_v2_enabled:
-        description: "Enable v2 scoring pipeline"
-        required: false
-        default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
-      score_v2_shadow_only:
-        description: "Keep v2 in shadow-only mode"
-        required: false
-        default: "true"
-        type: choice
-        options:
-          - "true"
-          - "false"
-      score_v2_scheduler_enabled:
-        description: "Allow workflow to execute v2 step"
-        required: false
-        default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
-      leaderboard_read_from_snapshot:
-        description: "Read leaderboard API from active snapshot"
-        required: false
-        default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
   schedule:
     - cron: "0 * * * *"
 
@@ -65,25 +32,7 @@ jobs:
       AGENT_PRISMA_RETRY_DELAY_MS: "1000"
       AGENT_PRISMA_OPERATION_TIMEOUT_MS: "180000"
       AGENT_PRISMA_CONNECTION_TIMEOUT_MS: "12000"
-      SCORE_TX_CONCURRENCY: "20"
-      SCORE_TX_BATCH_DELAY_MS: "10"
-      SCORE_TX_CALL_TIMEOUT_MS: "10000"
-      SCORE_TX_BUDGET_MS: "600000"
-      SCORE_RPC_TIMEOUT_MS: "10000"
-      SCORE_RPC_RETRY_COUNT: "1"
-      SCORE_DB_UPDATE_BATCH_SIZE: "100"
-      SCORE_HEARTBEAT_INTERVAL: "25"
-      SCORE_PRISMA_RETRY_ATTEMPTS: "4"
-      SCORE_PRISMA_RETRY_DELAY_MS: "1000"
-      SCORE_PRISMA_CONNECTION_TIMEOUT_MS: "12000"
       GHOST_TELEMETRY_WINDOW_MINUTES: "1440"
-      # Scheduled refreshes only handle index + telemetry ingestion.
-      # Live v2 scoring runs on the dedicated Score V2 workflow so legacy score writes do not
-      # overwrite the snapshot-backed production ranking or non-shadow v2 agent-table writeback.
-      SCORE_V2_ENABLED: ${{ github.event.inputs.score_v2_enabled || 'false' }}
-      SCORE_V2_SHADOW_ONLY: ${{ github.event.inputs.score_v2_shadow_only || 'true' }}
-      SCORE_V2_SCHEDULER_ENABLED: ${{ github.event.inputs.score_v2_scheduler_enabled || 'false' }}
-      LEADERBOARD_READ_FROM_SNAPSHOT: ${{ github.event_name == 'schedule' && 'false' || github.event.inputs.leaderboard_read_from_snapshot || 'false' }}
 
     steps:
       - name: Checkout code
@@ -109,14 +58,6 @@ jobs:
 
       - name: Ingest telemetry signals
         run: npm run ingest:telemetry
-
-      - name: Run scoring engine
-        if: github.event_name != 'schedule' && (env.SCORE_V2_ENABLED != 'true' || env.SCORE_V2_SCHEDULER_ENABLED != 'true')
-        run: npm run score
-
-      - name: Run v2 scoring pipeline
-        if: env.SCORE_V2_ENABLED == 'true' && env.SCORE_V2_SCHEDULER_ENABLED == 'true'
-        run: npm run score:v2
 
       - name: Report index health
         run: npx tsx scripts/report-index-health.ts
