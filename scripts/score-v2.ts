@@ -20,6 +20,11 @@ import {
   scoreAgentRailAware,
 } from "../lib/ghostrank-rail-score";
 import {
+  computeFallbackProxyTxSignal,
+  isFallbackTxMetricSource,
+  resolveScoreV2Tier,
+} from "../lib/score-v2-fallback-signal";
+import {
   buildScoreV2RailMetricFields,
   scoreV2RailMetricFieldsChanged,
 } from "../lib/score-v2-rail-sync";
@@ -400,13 +405,6 @@ const toAgentTxSourceKind = (sourceKind: ResolvedTxSourceKind | null): AgentTxSo
   if (sourceKind === "owner") return "OWNER";
   if (sourceKind === "creator") return "CREATOR";
   return "UNRESOLVED";
-};
-
-const getTier = (txCount: number, isClaimed: boolean): AgentTier => {
-  if (!isClaimed && txCount <= 0) return "GHOST";
-  if (txCount > 500) return "WHALE";
-  if (txCount > 50) return "ACTIVE";
-  return "NEW";
 };
 
 const withTimeout = async <T>(label: string, timeoutMs: number, operation: () => Promise<T>): Promise<T> => {
@@ -1065,6 +1063,7 @@ const buildSnapshotRows = (
       input,
       gateSignal,
       metricSource,
+      txSourceAddressLower,
       onchainTxCountAgent,
       onchainTxCountOwner,
       usageAuthorizedCount7d: usageAuthorizedCount,
@@ -1080,6 +1079,14 @@ const buildSnapshotRows = (
   });
   const txCounts = preparedInputs.map((item) => item.effectiveTxCount);
   const maxTxCount = txCounts.length > 0 ? Math.max(...txCounts) : 0;
+  const fallbackClusterSizeBySourceAddressLower = new Map<string, number>();
+  for (const item of preparedInputs) {
+    if (!isFallbackTxMetricSource(item.metricSource) || !item.txSourceAddressLower) continue;
+    fallbackClusterSizeBySourceAddressLower.set(
+      item.txSourceAddressLower,
+      (fallbackClusterSizeBySourceAddressLower.get(item.txSourceAddressLower) ?? 0) + 1,
+    );
+  }
   const uniqueSignerCounts = preparedInputs.map((item) => Math.max(0, item.gateSignal.uniqueSignerCount));
   const maxUniqueSignerCount = uniqueSignerCounts.length > 0 ? Math.max(...uniqueSignerCounts) : 0;
   const claimedExpressYields = inputs
@@ -1109,7 +1116,14 @@ const buildSnapshotRows = (
     const { input, gateSignal } = prepared;
     const txCount = prepared.effectiveTxCount;
     txMetricPathCounts[prepared.txMetricPath] += 1;
-    const txVolumeNorm = normalizeLog100(txCount, maxTxCount);
+    const rawTxVolumeNorm = normalizeLog100(txCount, maxTxCount);
+    const fallbackClusterSize =
+      isFallbackTxMetricSource(prepared.metricSource) && prepared.txSourceAddressLower
+        ? Math.max(1, fallbackClusterSizeBySourceAddressLower.get(prepared.txSourceAddressLower) ?? 1)
+        : 1;
+    const txVolumeNorm = isFallbackTxMetricSource(prepared.metricSource)
+      ? computeFallbackProxyTxSignal(rawTxVolumeNorm, fallbackClusterSize)
+      : rawTxVolumeNorm;
     const uniqueSignerCount = Math.max(0, gateSignal.uniqueSignerCount);
     const uniqueSignerNorm =
       gateSybilSignals.hasCoverage && maxUniqueSignerCount > 0
@@ -1189,11 +1203,12 @@ const buildSnapshotRows = (
     const rankScore = input.isClaimed
       ? railScore?.rankScore ?? 0
       : roundToTwo(clamp(reputation * 0.7 + velocityNorm * 0.3 - antiWashPenalty, 0, 100));
-    const tier = getTier(txCount, input.isClaimed);
+    const tier = resolveScoreV2Tier(txCount, input.isClaimed, prepared.metricSource);
 
     return {
       input,
       txCount,
+      txSignalStrength: txVolumeNorm,
       onchainTxCountAgent: prepared.onchainTxCountAgent,
       onchainTxCountOwner: prepared.onchainTxCountOwner,
       usageAuthorizedCount7d: prepared.usageAuthorizedCount7d,
@@ -1223,6 +1238,7 @@ const buildSnapshotRows = (
     if (b.rankScore !== a.rankScore) return b.rankScore - a.rankScore;
     if (b.reputation !== a.reputation) return b.reputation - a.reputation;
     if (a.antiWashPenalty !== b.antiWashPenalty) return a.antiWashPenalty - b.antiWashPenalty;
+    if (b.txSignalStrength !== a.txSignalStrength) return b.txSignalStrength - a.txSignalStrength;
     if (b.txCount !== a.txCount) return b.txCount - a.txCount;
     return a.input.agentAddress.localeCompare(b.input.agentAddress);
   });
