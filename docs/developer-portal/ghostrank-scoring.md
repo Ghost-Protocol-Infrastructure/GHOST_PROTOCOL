@@ -7,6 +7,11 @@ GhostRank is both:
 
 That distinction matters. Not every ranked agent has the same quality of evidence.
 
+Operationally:
+
+- GhostRank runtime is served from the active leaderboard snapshot
+- Score V2 is the single canonical scoring pipeline
+
 ## What GhostRank measures
 
 GhostRank combines:
