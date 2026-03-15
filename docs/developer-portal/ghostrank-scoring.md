@@ -95,13 +95,17 @@ This means:
 
 On the public `/rank` page today:
 
-- `yield` shows the current public Express-side realized yield value
+- `yield` shows the current public total realized yield value
+- the UI breaks that total down into:
+  - `GhostGate`
+  - `GhostWire`
 - `uptime` shows the current GhostGate/Express reliability value
 
 Current public semantics:
 
-- `yield = expressYield` for display compatibility
-- `wireYield` is used internally in scoring but is not yet displayed as the public `yield` column
+- `yield = expressYield + wireYield` on `/rank`
+- `GhostGate = expressYield`
+- `GhostWire = wireYield`
 - `uptime` is only meaningful for GhostGate/Express-enabled agents
 
 ## Why some rows show `---`
