@@ -8,17 +8,23 @@
 
 ## 1. Install dependencies
 
-From the repository root:
+For local repo use:
 
 ```bash
 npm install
 ```
 
-If installing package-only:
+For package-only local use:
 
 ```bash
 cd integrations/openclaw-ghost-pay
 npm install
+```
+
+For ClawHub publish/install, publish the folder root so the helper scripts ship with the skill bundle:
+
+```bash
+clawhub publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.2.1 --tags latest
 ```
 
 ## 2. Set runtime env
@@ -44,7 +50,7 @@ GHOSTWIRE_SPEC_HASH=0x...
 GHOSTWIRE_EXEC_SECRET=...
 ```
 
-## 3. Register plugin in OpenClaw/ClawHub
+## 3. Register plugin in local OpenClaw config
 
 Use the package root:
 

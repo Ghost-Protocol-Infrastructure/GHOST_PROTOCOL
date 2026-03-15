@@ -2,6 +2,8 @@
 
 Copy/paste commands from repo root.
 
+Published ClawHub installs should use `{baseDir}` from the installed skill folder instead of the repo-local `integrations/openclaw-ghost-pay` path.
+
 ## 1. Discover payment requirements
 
 ```bash

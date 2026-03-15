@@ -1,7 +1,8 @@
 ---
 name: openclaw-ghost-pay
 description: Discover Ghost payment requirements, execute GhostGate Express payments, and run GhostWire quote/create/status flows with execution controls.
-metadata: {"author":"Ghost Protocol Infrastructure","version":"1.2.0","runtime":"node","requires_env":["GHOST_SIGNER_PRIVATE_KEY"],"safety":"server-only"}
+version: 1.2.1
+metadata: {"clawdis":{"emoji":"👻","homepage":"https://github.com/Ghost-Protocol-Infrastructure/GHOST_PROTOCOL/tree/main/integrations/openclaw-ghost-pay","os":["darwin","linux","win32"],"requires":{"env":["GHOST_SIGNER_PRIVATE_KEY"],"bins":["node"]},"primaryEnv":"GHOST_SIGNER_PRIVATE_KEY","install":[{"id":"viem","kind":"node","package":"viem","label":"Install viem (required for GhostGate EIP-712 signing)"}]}}
 ---
 
 # OpenClaw Ghost Pay Skill
@@ -28,7 +29,7 @@ Never put private keys in prompts, code blocks, or frontend output.
 ## Step 1: Get Payment Requirements via MCP
 
 ```bash
-node integrations/openclaw-ghost-pay/bin/get-payment-requirements.mjs --service agent-18755
+node {baseDir}/../../bin/get-payment-requirements.mjs --service agent-18755
 ```
 
 This calls Ghost read-only MCP (`/api/mcp/read-only`) and resolves `get_payment_requirements`, which returns:
@@ -41,7 +42,7 @@ This calls Ghost read-only MCP (`/api/mcp/read-only`) and resolves `get_payment_
 ## Step 2: Execute Paid Gate Call (x402 Envelope)
 
 ```bash
-node integrations/openclaw-ghost-pay/bin/pay-gate-x402.mjs --service agent-18755 --method POST --body-json "{\"prompt\":\"hello\"}"
+node {baseDir}/../../bin/pay-gate-x402.mjs --service agent-18755 --method POST --body-json "{\"prompt\":\"hello\"}"
 ```
 
 This signs the Ghost EIP-712 `Access` payload and wraps it in `payment-signature` with scheme `ghost-eip712-credit-v1`.
@@ -49,19 +50,19 @@ This signs the Ghost EIP-712 `Access` payload and wraps it in `payment-signature
 ## Step 3 (Optional): Create GhostWire Quote
 
 ```bash
-node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --provider 0x... --evaluator 0x... --principal-amount 1000000
+node {baseDir}/../../bin/get-wire-quote.mjs --provider 0x... --evaluator 0x... --principal-amount 1000000
 ```
 
 ## Step 4 (Optional): Create GhostWire Job from Quote
 
 ```bash
-node integrations/openclaw-ghost-pay/bin/create-wire-job-from-quote.mjs --quote-id wq_... --client 0x... --provider 0x... --evaluator 0x... --spec-hash 0x...
+node {baseDir}/../../bin/create-wire-job-from-quote.mjs --quote-id wq_... --client 0x... --provider 0x... --evaluator 0x... --spec-hash 0x...
 ```
 
 ## Step 5 (Optional): Poll GhostWire Job Status
 
 ```bash
-node integrations/openclaw-ghost-pay/bin/get-wire-job-status.mjs --job-id wj_... --wait-terminal true
+node {baseDir}/../../bin/get-wire-job-status.mjs --job-id wj_... --wait-terminal true
 ```
 
 ## Safe Usage Rules

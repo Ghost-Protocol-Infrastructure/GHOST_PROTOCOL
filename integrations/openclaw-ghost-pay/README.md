@@ -8,6 +8,16 @@ This package bridges OpenClaw agents to Ghost Protocol's existing stack:
 
 Express mode is fully executable here. Wire mode execution is available through guarded GhostWire APIs (`/api/wire/jobs`) and runs through GhostWire operator reconciliation.
 
+## ClawHub publish path
+
+If you want a real ClawHub bundle with helper scripts included, publish the folder root:
+
+```bash
+clawhub publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.2.1 --tags latest
+```
+
+Do not rely on a web-form-only publish if it only captures `SKILL.md`; the installable bundle needs the helper scripts under `bin/`.
+
 ## Contents
 
 - `openclaw.plugin.json` - plugin descriptor with local skill path
@@ -99,9 +109,11 @@ Keep `GHOST_SIGNER_PRIVATE_KEY` in runtime secret storage, not in config files.
 
 Use this copy when submitting `openclaw-ghost-pay` to directories.
 
-- Name: Ghost Protocol - Instant x402 Payments
-- Short Description: Equip your OpenClaw agent to pay for API access with Ghost Credits via x402-compatible headers. Production benchmark: 100% success, p50 210.5ms, p95 402.4ms.
-- Long Description: Ghost Protocol gives OpenClaw agents a low-latency payment path for paywalled APIs. Agents read payment requirements, sign EIP-712 authorization tickets, and send x402-compatible `payment-signature` headers through GhostGate. This package is transport compatibility for x402-style envelopes and uses Ghost Protocol settlement underneath.
+- Display Name: Ghost Protocol OpenClaw Pay
+- Slug: openclaw-ghost-pay
+- Version: 1.2.1
+- Short Description: Discover Ghost payment requirements, execute GhostGate Express payments, and run GhostWire quote/create/status flows with execution controls.
+- Long Description: Ghost Protocol gives OpenClaw agents a low-latency payment path for paywalled APIs. Agents can discover payment requirements, sign EIP-712 GhostGate access envelopes, and execute Hosted GhostWire quote/create/status flows from a single skill bundle. The ClawHub bundle includes the helper scripts it references and requires a trusted server-side signer key.
 
 Verified production benchmark:
 
