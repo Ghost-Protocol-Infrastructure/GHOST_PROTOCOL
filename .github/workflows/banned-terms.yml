@@ -1,0 +1,36 @@
+name: Banned Terms Guard
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  banned-terms:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fail on banned terms
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          found=0
+
+          while IFS= read -r term || [[ -n "${term}" ]]; do
+            if [[ -z "${term}" ]] || [[ "${term}" =~ ^# ]]; then
+              continue
+            fi
+
+            if git grep -n -I -i -- "${term}" -- . ':(exclude).github/banned-terms.txt'; then
+              echo "::error::Banned term detected: ${term}"
+              found=1
+            fi
+          done < .github/banned-terms.txt
+
+          if [[ "${found}" -ne 0 ]]; then
+            exit 1
+          fi
