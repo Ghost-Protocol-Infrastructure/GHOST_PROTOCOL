@@ -4,13 +4,11 @@ import Image from "next/image";
 import { prisma } from "@/lib/db";
 import AgentProfileAutoRefresh from "@/components/AgentProfileAutoRefresh";
 import { findActiveSnapshotScoreByAgentId } from "@/lib/leaderboard-snapshot";
-import { resolveScoreReadSource } from "@/lib/score-read-source";
 
 export const dynamic = "force-dynamic";
 
 type AgentPageProps = {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ sdk?: string }>;
 };
 
 type GatewayReadinessStatus = "UNCONFIGURED" | "CONFIGURED" | "LIVE" | "DEGRADED";
@@ -35,12 +33,20 @@ type AgentSummary = {
   } | null;
 };
 
-type AgentSnapshotScore = Pick<AgentSummary, "tier" | "txCount" | "reputation" | "rankScore">;
-
-const SCORE_READ_SOURCE = resolveScoreReadSource(
-  process.env.SCORE_READ_SOURCE,
-  process.env.LEADERBOARD_READ_FROM_SNAPSHOT,
-);
+type AgentSnapshotProfile = {
+  agentId: string;
+  agentAddress: string;
+  name: string;
+  image: string | null;
+  creator: string;
+  owner: string;
+  status: string;
+  tier: AgentSummary["tier"];
+  txCount: number;
+  reputation: number;
+  rankScore: number;
+  description: string | null;
+};
 
 const tierClassName: Record<AgentSummary["tier"], string> = {
   WHALE: "border-violet-400 bg-violet-500/20 text-violet-300 animate-pulse shadow-[0_0_10px_rgba(139,92,246,0.5)]",
@@ -121,93 +127,75 @@ const normalizeAgentDescription = (description: string | null): string | null =>
   return cleaned;
 };
 
-export default async function AgentProfilePage({ params, searchParams }: AgentPageProps) {
+export default async function AgentProfilePage({ params }: AgentPageProps) {
   const { id } = await params;
-  const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const agentId = decodeURIComponent(id).trim();
 
   if (!agentId) {
     notFound();
   }
 
-  let agent: AgentSummary | null = null;
+  const snapshotProfile = await findActiveSnapshotScoreByAgentId<AgentSnapshotProfile>(prisma, agentId, {
+    select: {
+      agentId: true,
+      agentAddress: true,
+      name: true,
+      image: true,
+      creator: true,
+      owner: true,
+      status: true,
+      tier: true,
+      txCount: true,
+      reputation: true,
+      rankScore: true,
+      description: true,
+    },
+  });
+
+  if (!snapshotProfile) {
+    notFound();
+  }
+
+  let gatewayConfig: AgentSummary["gatewayConfig"] = null;
   try {
-    agent = (await prisma.agent.findUnique({
+    const row = await prisma.agentGatewayConfig.findUnique({
       where: { agentId },
       select: {
-        agentId: true,
-        address: true,
-        name: true,
-        image: true,
-        creator: true,
-        owner: true,
-        status: true,
-        tier: true,
-        txCount: true,
-        reputation: true,
-        rankScore: true,
-        description: true,
-        gatewayConfig: {
-          select: {
-            readinessStatus: true,
-            lastCanaryCheckedAt: true,
-            lastCanaryPassedAt: true,
-          },
-        },
+        readinessStatus: true,
+        lastCanaryCheckedAt: true,
+        lastCanaryPassedAt: true,
       },
-    })) as AgentSummary | null;
+    });
+    gatewayConfig = row
+      ? {
+          readinessStatus: row.readinessStatus,
+          lastCanaryCheckedAt: row.lastCanaryCheckedAt,
+          lastCanaryPassedAt: row.lastCanaryPassedAt,
+        }
+      : null;
   } catch (error) {
     if (!isMissingAgentGatewayConfigTableError(error)) {
       throw error;
     }
-
-    agent = (await prisma.agent.findUnique({
-      where: { agentId },
-      select: {
-        agentId: true,
-        address: true,
-        name: true,
-        image: true,
-        creator: true,
-        owner: true,
-        status: true,
-        tier: true,
-        txCount: true,
-        reputation: true,
-        rankScore: true,
-        description: true,
-      },
-    })) as AgentSummary | null;
   }
 
-  if (!agent) {
-    notFound();
-  }
-
-  if (SCORE_READ_SOURCE === "snapshot") {
-    const snapshotScore = await findActiveSnapshotScoreByAgentId<AgentSnapshotScore>(prisma, agentId, {
-      select: {
-        tier: true,
-        txCount: true,
-        reputation: true,
-        rankScore: true,
-      },
-    });
-
-    if (snapshotScore) {
-      agent = {
-        ...agent,
-        tier: snapshotScore.tier,
-        txCount: snapshotScore.txCount,
-        reputation: snapshotScore.reputation,
-        rankScore: snapshotScore.rankScore,
-      };
-    }
-  }
+  const agent: AgentSummary = {
+    agentId: snapshotProfile.agentId,
+    address: snapshotProfile.agentAddress,
+    name: snapshotProfile.name,
+    image: snapshotProfile.image,
+    creator: snapshotProfile.creator,
+    owner: snapshotProfile.owner,
+    status: snapshotProfile.status,
+    tier: snapshotProfile.tier,
+    txCount: snapshotProfile.txCount,
+    reputation: snapshotProfile.reputation,
+    rankScore: snapshotProfile.rankScore,
+    description: snapshotProfile.description,
+    gatewayConfig,
+  };
 
   const statusLabel = toTitleCase(agent.status);
-  const requestedSdkTab = resolvedSearchParams?.sdk?.toLowerCase();
-  const hasLegacySetupParam = requestedSdkTab === "node" || requestedSdkTab === "python";
   const ownerAddress = agent.owner ?? agent.creator;
   const agentDescription = normalizeAgentDescription(agent.description);
   const agentImageUrl = resolveAgentImageUrl(agent.image);
@@ -216,7 +204,6 @@ export default async function AgentProfilePage({ params, searchParams }: AgentPa
   const gatewayLastCheckedAt = agent.gatewayConfig?.lastCanaryCheckedAt ?? null;
   const gatewayLastPassedAt = agent.gatewayConfig?.lastCanaryPassedAt ?? null;
   const merchantSetupHref = `/dashboard?mode=merchant&agentId=${encodeURIComponent(agent.agentId)}&owner=${encodeURIComponent(ownerAddress)}`;
-  const consumerTerminalHref = `/dashboard?mode=consumer&agentId=${encodeURIComponent(agent.agentId)}&owner=${encodeURIComponent(ownerAddress)}`;
   const agentConsoleHref = `/dashboard?agentId=${encodeURIComponent(agent.agentId)}&owner=${encodeURIComponent(ownerAddress)}`;
 
   return (
@@ -232,31 +219,6 @@ export default async function AgentProfilePage({ params, searchParams }: AgentPa
             {"//BACK_TO_RANK"}
           </Link>
         </div>
-
-        {hasLegacySetupParam ? (
-          <section className="mb-6 border border-amber-700/40 bg-amber-950/10 p-4">
-            <p className="text-xs uppercase tracking-[0.16em] text-amber-300 font-bold">
-              Setup snippets moved to Merchant Console
-            </p>
-            <p className="mt-2 text-sm text-amber-100/80">
-              This page is now a public agent profile. Use Merchant Console for SDK initialization and setup.
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Link
-                href={merchantSetupHref}
-                className="border border-amber-600/50 bg-amber-950/20 px-3 py-2 text-xs uppercase tracking-[0.12em] text-amber-300 transition hover:border-amber-500 hover:text-amber-200 font-bold"
-              >
-                Open Merchant Console
-              </Link>
-              <Link
-                href={consumerTerminalHref}
-                className="border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs uppercase tracking-[0.12em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200 font-bold"
-              >
-                Open Consumer Terminal
-              </Link>
-            </div>
-          </section>
-        ) : null}
 
         <section className="mb-6 border border-neutral-900 bg-neutral-950 p-6">
           <div className="grid grid-cols-1 items-stretch gap-8 lg:grid-cols-[300px_minmax(0,1fr)]">

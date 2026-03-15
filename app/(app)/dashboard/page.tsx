@@ -2350,7 +2350,7 @@ def my_agent():
                     </div>
 
                     <p className="text-xs text-neutral-600">
-                      Canary contract (Phase A): GET <span className="font-mono">{merchantGatewayCanaryPath || DEFAULT_CANARY_PATH}</span> must
+                      Canary endpoint: GET <span className="font-mono">{merchantGatewayCanaryPath || DEFAULT_CANARY_PATH}</span> must
                       return HTTP 200 with exact JSON:{" "}
                       <span className="font-mono">{`{"ghostgate":"ready","service":"${merchantServiceSlug}"}`}</span>
                     </p>

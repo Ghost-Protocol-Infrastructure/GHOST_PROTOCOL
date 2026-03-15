@@ -144,14 +144,14 @@ export const canonicalizeFulfillmentQuery = (
     if (!key) {
       throw new FulfillmentCanonicalizationError(
         "FULFILLMENT_QUERY_EMPTY_KEY",
-        "Query string contains an empty key, which is not supported in Phase C MVP.",
+        "Query string contains an empty key, which is not supported in the current fulfillment flow.",
       );
     }
 
     if (seenKeys.has(key)) {
       throw new FulfillmentCanonicalizationError(
         "FULFILLMENT_QUERY_DUPLICATE_KEY",
-        `Query string contains duplicate key '${key}', which is not supported in Phase C MVP.`,
+        `Query string contains duplicate key '${key}', which is not supported in the current fulfillment flow.`,
       );
     }
     seenKeys.add(key);

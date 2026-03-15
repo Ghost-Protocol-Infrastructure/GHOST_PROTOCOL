@@ -29,7 +29,7 @@ import {
   scoreV2RailMetricFieldsChanged,
 } from "../lib/score-v2-rail-sync";
 import { fetchGhostWireProviderRollups, GHOSTWIRE_SCORE_WINDOW_DAYS } from "../lib/ghostwire-score-rollup";
-import { resolveScoreV2RunMode, shouldWriteScoreV2AgentTable } from "../lib/score-v2-run-mode";
+import { resolveScoreV2RunMode } from "../lib/score-v2-run-mode";
 
 type AgentIndexMode = "erc8004" | "olas";
 type ScoreTxSource = "agent" | "owner" | "creator";
@@ -232,10 +232,8 @@ const SCORE_TX_SOURCE: ScoreTxSource = (() => {
 })();
 
 const SCORE_V2_ENABLED = process.env.SCORE_V2_ENABLED?.trim().toLowerCase() === "true";
-const SCORE_V2_SHADOW_ONLY = process.env.SCORE_V2_SHADOW_ONLY?.trim().toLowerCase() !== "false";
 const SCORE_V2_FORCE_RUN = process.argv.includes("--force");
 const SCORE_V2_RUN_MODE = resolveScoreV2RunMode(process.argv.slice(2));
-const SCORE_V2_WRITE_AGENT_TABLE = shouldWriteScoreV2AgentTable(process.env.SCORE_V2_WRITE_AGENT_TABLE);
 
 const INDEXER_RPC_URL =
   process.env.BASE_RPC_URL_INDEXER?.trim() || process.env.BASE_RPC_URL?.trim() || "https://mainnet.base.org";
@@ -1434,39 +1432,6 @@ const writeSnapshot = async (
   }
 };
 
-const applySnapshotScoresToAgentTable = async (rows: SnapshotScoreRow[]): Promise<void> => {
-  if (rows.length === 0) return;
-  let processed = 0;
-  for (const chunk of chunkArray(rows, SCORE_V2_AGENT_WRITE_BATCH_SIZE)) {
-    await withPrismaRetry(
-      `score-v2 apply snapshot scores to agent table ${processed + 1}-${Math.min(processed + chunk.length, rows.length)}`,
-      () =>
-        prisma.$transaction(
-          chunk.map((row) =>
-            prisma.agent.update({
-              where: { address: row.agentAddress },
-              data: {
-                txCount: row.txCount,
-                tier: row.tier,
-                reputation: row.reputation,
-                rankScore: row.rankScore,
-                yield: row.yieldValue,
-                uptime: row.uptime,
-                volume: row.volume,
-                score: row.score,
-              },
-            }),
-          ),
-        ),
-    );
-
-    processed += chunk.length;
-    if (processed % SCORE_V2_HEARTBEAT_INTERVAL === 0 || processed === rows.length) {
-      console.log(`Heartbeat: score-v2 applied agent score updates ${processed}/${rows.length}`);
-    }
-  }
-};
-
 const ingestScoreInputs = async (): Promise<{
   totalAgents: number;
   changedInputs: number;
@@ -1745,10 +1710,6 @@ const runSnapshotRanking = async (): Promise<{
     );
   const snapshotId = await writeSnapshot(rows, maxTxCount, maxClaimedYield);
 
-  if (!SCORE_V2_SHADOW_ONLY && SCORE_V2_WRITE_AGENT_TABLE) {
-    await applySnapshotScoresToAgentTable(rows);
-  }
-
   return {
     snapshotId,
     totalRows: rows.length,
@@ -1785,7 +1746,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `score-v2 config: run_mode=${SCORE_V2_RUN_MODE}, mode=${AGENT_INDEX_MODE}, tx_source=${SCORE_TX_SOURCE}, synthetic_usage_primary=${SCORE_V2_SYNTHETIC_USAGE_PRIMARY}, shadow_only=${SCORE_V2_SHADOW_ONLY}, write_agent_table=${SCORE_V2_WRITE_AGENT_TABLE}, rpc_env=${INDEXER_RPC_ENV}, tx_concurrency=${SCORE_V2_TX_CONCURRENCY}, tx_call_timeout_ms=${SCORE_V2_TX_CALL_TIMEOUT_MS}, tx_rpc_timeout_ms=${SCORE_V2_TX_RPC_TIMEOUT_MS}, tx_budget_ms=${SCORE_V2_TX_BUDGET_MS}, ingest_batch_size=${SCORE_V2_INGEST_BATCH_SIZE}, snapshot_batch_size=${SCORE_V2_SNAPSHOT_BATCH_SIZE}, stale_tx_batch=${SCORE_V2_STALE_TX_BATCH}, stale_tx_minutes=${SCORE_V2_STALE_TX_MINUTES}`,
+    `score-v2 config: run_mode=${SCORE_V2_RUN_MODE}, mode=${AGENT_INDEX_MODE}, tx_source=${SCORE_TX_SOURCE}, synthetic_usage_primary=${SCORE_V2_SYNTHETIC_USAGE_PRIMARY}, rpc_env=${INDEXER_RPC_ENV}, tx_concurrency=${SCORE_V2_TX_CONCURRENCY}, tx_call_timeout_ms=${SCORE_V2_TX_CALL_TIMEOUT_MS}, tx_rpc_timeout_ms=${SCORE_V2_TX_RPC_TIMEOUT_MS}, tx_budget_ms=${SCORE_V2_TX_BUDGET_MS}, ingest_batch_size=${SCORE_V2_INGEST_BATCH_SIZE}, snapshot_batch_size=${SCORE_V2_SNAPSHOT_BATCH_SIZE}, stale_tx_batch=${SCORE_V2_STALE_TX_BATCH}, stale_tx_minutes=${SCORE_V2_STALE_TX_MINUTES}`,
   );
 
   const startedAt = Date.now();

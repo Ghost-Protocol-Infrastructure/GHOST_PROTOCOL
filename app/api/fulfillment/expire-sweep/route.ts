@@ -172,7 +172,7 @@ async function handle(request: NextRequest): Promise<NextResponse> {
       return expireSweepResponse(
         {
           code: 503,
-          error: "Phase C fulfillment schema is not available in this environment yet.",
+          error: "Fulfillment schema is not available in this environment yet.",
           errorCode: "PHASE_C_SCHEMA_UNAVAILABLE",
         },
         503,

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resolveScoreV2RunMode, shouldWriteScoreV2AgentTable } from "../lib/score-v2-run-mode";
+import { resolveScoreV2RunMode } from "../lib/score-v2-run-mode";
 
 test("defaults score-v2 to full mode", () => {
   assert.equal(resolveScoreV2RunMode([]), "full");
@@ -17,10 +17,4 @@ test("supports snapshot-only score-v2 mode", () => {
 
 test("rejects incompatible score-v2 modes", () => {
   assert.throws(() => resolveScoreV2RunMode(["--refresh-only", "--snapshot-only"]), /mutually exclusive/i);
-});
-
-test("agent table writeback is disabled by default", () => {
-  assert.equal(shouldWriteScoreV2AgentTable(undefined), false);
-  assert.equal(shouldWriteScoreV2AgentTable("false"), false);
-  assert.equal(shouldWriteScoreV2AgentTable("true"), true);
 });

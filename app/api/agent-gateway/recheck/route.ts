@@ -184,7 +184,7 @@ async function handle(request: NextRequest): Promise<NextResponse> {
         {
           code: 503,
           error:
-            "Phase B agent gateway recheck tables are not available. Apply the Prisma schema update before using this endpoint.",
+            "Agent gateway recheck tables are not available. Apply the Prisma schema update before using this endpoint.",
         },
         503,
       );

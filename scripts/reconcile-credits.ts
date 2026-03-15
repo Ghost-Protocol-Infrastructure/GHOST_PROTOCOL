@@ -190,9 +190,9 @@ const run = async (): Promise<void> => {
   }
 
   if (!hasHeldCreditsColumn) {
-    console.warn('Held-credit reconcile skipped: column "CreditBalance.heldCredits" does not exist yet. Run Phase C schema migration first.');
+    console.warn('Held-credit reconcile skipped: column "CreditBalance.heldCredits" does not exist yet. Run the fulfillment schema migration first.');
   } else if (!hasFulfillmentHoldTable) {
-    console.warn('Held-credit reconcile skipped: table "FulfillmentHold" does not exist yet. Run Phase C schema migration first.');
+    console.warn('Held-credit reconcile skipped: table "FulfillmentHold" does not exist yet. Run the fulfillment schema migration first.');
   } else if (heldDrift.length > 0) {
     const sample = heldDrift.slice(0, 10);
     console.warn(`Held-credit reconcile warning: found ${heldDrift.length} heldCredits drift rows.`);

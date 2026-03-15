@@ -2,23 +2,6 @@ name: Score V2
 
 on:
   workflow_dispatch:
-    inputs:
-      shadow_only:
-        description: "Keep v2 in shadow-only mode"
-        required: false
-        default: "false"
-        type: choice
-        options:
-          - "true"
-          - "false"
-      leaderboard_read_from_snapshot:
-        description: "Read leaderboard API from active snapshot"
-        required: false
-        default: "true"
-        type: choice
-        options:
-          - "true"
-          - "false"
   schedule:
     - cron: "20 * * * *"
 
@@ -26,11 +9,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: score-v2-shadow
+  group: score-v2
   cancel-in-progress: false
 
 jobs:
-  score-v2-shadow:
+  score-v2:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -41,9 +24,7 @@ jobs:
       ERC8004_REGISTRY_ADDRESS: ${{ secrets.ERC8004_REGISTRY_ADDRESS }}
       GHOST_TELEMETRY_WINDOW_MINUTES: "1440"
       SCORE_V2_ENABLED: "true"
-      SCORE_V2_SHADOW_ONLY: ${{ github.event_name == 'schedule' && 'false' || github.event.inputs.shadow_only || 'false' }}
       SCORE_V2_SCHEDULER_ENABLED: "true"
-      LEADERBOARD_READ_FROM_SNAPSHOT: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.leaderboard_read_from_snapshot || 'true' }}
       SCORE_V2_TX_CONCURRENCY: "20"
       SCORE_V2_TX_BATCH_DELAY_MS: "10"
       SCORE_V2_TX_CALL_TIMEOUT_MS: "10000"
@@ -57,7 +38,6 @@ jobs:
       SCORE_V2_PRISMA_RETRY_ATTEMPTS: "4"
       SCORE_V2_PRISMA_RETRY_DELAY_MS: "1000"
       SCORE_V2_PRISMA_CONNECTION_TIMEOUT_MS: "12000"
-      SCORE_V2_WRITE_AGENT_TABLE: "false"
 
     steps:
       - name: Checkout code

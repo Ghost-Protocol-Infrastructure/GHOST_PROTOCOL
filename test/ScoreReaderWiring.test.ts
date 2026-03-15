@@ -6,11 +6,12 @@ const readText = async (relativePath: string): Promise<string> => {
   return readFile(new URL(`../${relativePath}`, import.meta.url), "utf8");
 };
 
-test("runtime score readers are wired to the new snapshot lookup and rollback flag helpers", async () => {
+test("runtime score readers are wired directly to snapshot-backed reads", async () => {
   const routeSource = await readText("app/api/agents/route.ts");
   const agentPageSource = await readText("app/(app)/agent/[id]/page.tsx");
 
-  assert.match(routeSource, /resolveScoreReadSource/);
-  assert.match(agentPageSource, /resolveScoreReadSource/);
+  assert.doesNotMatch(routeSource, /resolveScoreReadSource/);
+  assert.doesNotMatch(agentPageSource, /resolveScoreReadSource/);
+  assert.match(routeSource, /leaderboardSnapshotRow\.findMany/);
   assert.match(agentPageSource, /findActiveSnapshotScoreByAgentId/);
 });

@@ -11,7 +11,3 @@ export const resolveScoreV2RunMode = (argv: string[]): ScoreV2RunMode => {
   if (hasSnapshotOnly) return "snapshot-only";
   return "full";
 };
-
-export const shouldWriteScoreV2AgentTable = (value: string | null | undefined): boolean => {
-  return value?.trim().toLowerCase() === "true";
-};

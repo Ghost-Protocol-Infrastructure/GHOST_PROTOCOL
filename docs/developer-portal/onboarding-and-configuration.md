@@ -156,7 +156,7 @@ Hosted GhostWire is a managed rollout surface, not a fully open customer-native 
 
 | Variable | Used by | Required | Notes |
 |---|---|---|---|
-| `GHOST_SETTLEMENT_OPERATOR_SECRET` | `/api/admin/settlement/allocate`, `/api/admin/settlement/reconcile`, `/api/admin/settlement/operator-health`, `/api/admin/vault/preflight` | Yes (hosted settlement automation) | Dedicated secret required. No fallback secret path. |
+| `GHOST_SETTLEMENT_OPERATOR_SECRET` | `/api/admin/settlement/allocate`, `/api/admin/settlement/reconcile`, `/api/admin/settlement/operator-health` | Yes (hosted settlement automation) | Dedicated secret required. No fallback secret path. |
 | `GHOST_SETTLEMENT_SUPPORT_SECRET` | `/api/admin/settlement/metrics` | Recommended for ops/support | Supports bearer auth or `x-ghost-settlement-support-secret`. |
 
 ### 4.4 Hosted GhostWire secrets

@@ -8,10 +8,12 @@ const readText = async (relativePath: string): Promise<string> => {
 
 test("score-v2 package scripts and workflow use split refresh/snapshot commands", async () => {
   const packageJson = await readText("package.json");
-  const workflowSource = await readText(".github/workflows/score-v2-shadow.yml");
+  const workflowSource = await readText(".github/workflows/score-v2.yml");
 
+  assert.match(packageJson, /"score":\s*"npx tsx scripts\/score-v2\.ts"/);
   assert.match(packageJson, /"score:v2:refresh":\s*"npx tsx scripts\/score-v2\.ts --refresh-only"/);
   assert.match(packageJson, /"score:v2:snapshot":\s*"npx tsx scripts\/score-v2\.ts --snapshot-only"/);
   assert.match(workflowSource, /run:\s+npm run score:v2:refresh/);
   assert.match(workflowSource, /run:\s+npm run score:v2:snapshot/);
+  assert.doesNotMatch(workflowSource, /shadow_only|leaderboard_read_from_snapshot|SCORE_V2_WRITE_AGENT_TABLE/);
 });

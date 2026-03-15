@@ -351,7 +351,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (!canaryPath) return json({ code: 400, error: "canaryPath must be a relative path starting with '/'." }, 400);
 
   const canaryMethod = normalizeCanaryMethod(payload.canaryMethod);
-  if (!canaryMethod) return json({ code: 400, error: "Only HTTP GET canaryMethod is supported in Phase A." }, 400);
+  if (!canaryMethod) return json({ code: 400, error: "Only HTTP GET canaryMethod is supported." }, 400);
 
   const serviceSlug = normalizeServiceSlug(payload.serviceSlug, agentId);
   if (!serviceSlug) {

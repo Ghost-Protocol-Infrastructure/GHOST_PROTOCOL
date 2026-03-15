@@ -1,5 +1,5 @@
 import { config as loadEnv } from "dotenv";
-import { createPublicClient, createWalletClient, getAddress, http, type Address } from "viem";
+import { createPublicClient, createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { base, baseSepolia } from "viem/chains";
 import { GHOST_PREFERRED_CHAIN_ID } from "./constants";
@@ -61,13 +61,3 @@ export const createSettlementWalletClient = () => {
   };
 };
 
-export const resolveLegacyVaultAddress = (): Address | null => {
-  const rawAddress = process.env.GHOST_VAULT_LEGACY_ADDRESS?.trim() || process.env.NEXT_PUBLIC_GHOST_VAULT_ADDRESS?.trim();
-  if (!rawAddress) return null;
-
-  try {
-    return getAddress(rawAddress);
-  } catch {
-    return null;
-  }
-};

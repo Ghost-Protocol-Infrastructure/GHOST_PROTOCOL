@@ -249,13 +249,6 @@ Auth:
 - `Authorization: Bearer <GHOST_SETTLEMENT_OPERATOR_SECRET>`
 - or `x-ghost-settlement-operator-secret`
 
-### `GET /api/admin/vault/preflight`
-
-Reports legacy GhostVault liability, accrued fees, and balance for legacy-vault verification after cutover.
-Auth:
-- `Authorization: Bearer <GHOST_SETTLEMENT_OPERATOR_SECRET>`
-- or `x-ghost-settlement-operator-secret`
-
 ## GhostWire API
 
 Hosted GhostWire is the current GhostWire launch surface.

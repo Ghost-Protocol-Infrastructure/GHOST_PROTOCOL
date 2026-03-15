@@ -297,7 +297,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return captureResponse(
           {
             code: 503,
-            error: "Phase C fulfillment schema is not available in this environment yet.",
+            error: "Fulfillment schema is not available in this environment yet.",
             errorCode: "PHASE_C_SCHEMA_UNAVAILABLE",
           },
           503,

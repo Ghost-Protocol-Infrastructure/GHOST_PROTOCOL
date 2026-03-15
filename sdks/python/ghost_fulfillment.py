@@ -1,6 +1,6 @@
 """Ghost Protocol fulfillment helpers (Python SDK parity module).
 
-This is an additive MVP helper module for local/server integrations.
+This helper module is intended for local and server integrations.
 It supports:
 - consumer ticket issuance + direct merchant execute
 - merchant ticket verification
@@ -128,9 +128,9 @@ def canonicalize_fulfillment_query(raw_query: Optional[str]) -> str:
         key = _decode_form_component(raw_key)
         val = _decode_form_component(raw_val)
         if not key:
-            raise ValueError("Empty query key is not supported in Phase C MVP.")
+            raise ValueError("Empty query key is not supported in the current fulfillment flow.")
         if key in seen_keys:
-            raise ValueError(f"Duplicate query key '{key}' is not supported in Phase C MVP.")
+            raise ValueError(f"Duplicate query key '{key}' is not supported in the current fulfillment flow.")
         seen_keys.add(key)
         pairs.append((key, val))
 

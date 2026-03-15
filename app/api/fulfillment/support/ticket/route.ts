@@ -206,7 +206,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return fulfillmentJson(
         {
           code: 503,
-          error: "Phase C fulfillment schema is not available in this environment yet.",
+          error: "Fulfillment schema is not available in this environment yet.",
           errorCode: "PHASE_C_SCHEMA_UNAVAILABLE",
         },
         503,
