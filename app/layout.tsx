@@ -17,6 +17,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
+      <head>
+        <meta name="base:app_id" content="69b6261768ed07045acf8f00" />
+      </head>
       <body className="antialiased">
         <Providers>{children}</Providers>
       </body>
