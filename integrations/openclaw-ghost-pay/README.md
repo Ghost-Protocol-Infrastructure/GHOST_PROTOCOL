@@ -13,7 +13,7 @@ Express mode is fully executable here. Wire mode execution is available through 
 If you want a real ClawHub bundle with helper scripts included, publish the folder root:
 
 ```bash
-clawhub publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.2.1 --tags latest
+clawhub publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.2.2 --tags latest,agents,eip712,ghostprotocol,ghostwire,mcp,openclaw,payments,x402
 ```
 
 Do not rely on a web-form-only publish if it only captures `SKILL.md`; the installable bundle needs the helper scripts under `bin/`.
@@ -111,7 +111,7 @@ Use this copy when submitting `openclaw-ghost-pay` to directories.
 
 - Display Name: Ghost Protocol OpenClaw Pay
 - Slug: openclaw-ghost-pay
-- Version: 1.2.1
+- Version: 1.2.2
 - Short Description: Discover Ghost payment requirements, execute GhostGate Express payments, and run GhostWire quote/create/status flows with execution controls.
 - Long Description: Ghost Protocol gives OpenClaw agents a low-latency payment path for paywalled APIs. Agents can discover payment requirements, sign EIP-712 GhostGate access envelopes, and execute Hosted GhostWire quote/create/status flows from a single skill bundle. The ClawHub bundle includes the helper scripts it references and requires a trusted server-side signer key.
 

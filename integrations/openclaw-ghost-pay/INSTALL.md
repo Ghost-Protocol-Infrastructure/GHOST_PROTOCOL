@@ -24,7 +24,7 @@ npm install
 For ClawHub publish/install, publish the folder root so the helper scripts ship with the skill bundle:
 
 ```bash
-clawhub publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.2.1 --tags latest
+clawhub publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.2.2 --tags latest,agents,eip712,ghostprotocol,ghostwire,mcp,openclaw,payments,x402
 ```
 
 ## 2. Set runtime env
