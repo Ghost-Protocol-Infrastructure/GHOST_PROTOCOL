@@ -9,7 +9,7 @@ import {
   SnapshotStatus,
   type TxMetricSource,
 } from "@prisma/client";
-import { statusIndicatesClaimed } from "../lib/agent-claim";
+import { hasAttributedWireEvidence, statusIndicatesClaimed } from "../lib/agent-claim";
 import { prisma } from "../lib/db";
 import {
   computeCommerceQuality,
@@ -1089,16 +1089,27 @@ const buildSnapshotRows = (
   }
   const uniqueSignerCounts = preparedInputs.map((item) => Math.max(0, item.gateSignal.uniqueSignerCount));
   const maxUniqueSignerCount = uniqueSignerCounts.length > 0 ? Math.max(...uniqueSignerCounts) : 0;
+  const canUseWireMetrics = (input: ScoreInputRow): boolean =>
+    input.isClaimed ||
+    hasAttributedWireEvidence({
+      wireYieldValue: input.wireYield,
+      wireCompletedCount: input.wireCompletedCount30d,
+      wireRejectedCount: input.wireRejectedCount30d,
+      wireExpiredCount: input.wireExpiredCount30d,
+      wireSettledPrincipalValue: input.wireSettledPrincipal30d,
+      wireSettledProviderEarningsValue: input.wireSettledProviderEarnings30d,
+    });
   const claimedExpressYields = inputs
     .map((input) => (input.isClaimed ? Math.max(0, input.expressYield) : 0))
     .filter((value) => value > 0);
   const maxClaimedYield = claimedExpressYields.length > 0 ? Math.max(...claimedExpressYields) : 0;
   const claimedWireYields = inputs
-    .map((input) => (input.isClaimed ? Math.max(0, input.wireYield) : 0))
+    .map((input) => (canUseWireMetrics(input) ? Math.max(0, input.wireYield) : 0))
     .filter((value) => value > 0);
   const maxClaimedWireYield = claimedWireYields.length > 0 ? Math.max(...claimedWireYields) : 0;
   const maxWireSettledPrincipal = preparedInputs.reduce(
-    (maxValue, item) => Math.max(maxValue, item.input.isClaimed ? toSafeInt(item.input.wireSettledPrincipal30d) : 0),
+    (maxValue, item) =>
+      Math.max(maxValue, canUseWireMetrics(item.input) ? toSafeInt(item.input.wireSettledPrincipal30d) : 0),
     0,
   );
   const totalSignalWeight = SYBIL_UNIQUE_SIGNAL_WEIGHT + SYBIL_TX_SIGNAL_WEIGHT;
@@ -1132,20 +1143,21 @@ const buildSnapshotRows = (
     const velocityNorm = roundToTwo(
       txVolumeNorm * normalizedTxSignalWeight + uniqueSignerNorm * normalizedUniqueSignalWeight,
     );
+    const canUseWireEvidence = canUseWireMetrics(input);
     const expressYieldValue = input.isClaimed ? Math.max(0, input.expressYield) : 0;
-    const wireYieldValue = input.isClaimed ? Math.max(0, input.wireYield) : 0;
+    const wireYieldValue = canUseWireEvidence ? Math.max(0, input.wireYield) : 0;
     const uptime = input.isClaimed ? clamp(input.uptime, 0, 100) : 0;
-    const wireCompletedCount = input.isClaimed ? Math.max(0, input.wireCompletedCount30d) : 0;
-    const wireRejectedCount = input.isClaimed ? Math.max(0, input.wireRejectedCount30d) : 0;
-    const wireExpiredCount = input.isClaimed ? Math.max(0, input.wireExpiredCount30d) : 0;
+    const wireCompletedCount = canUseWireEvidence ? Math.max(0, input.wireCompletedCount30d) : 0;
+    const wireRejectedCount = canUseWireEvidence ? Math.max(0, input.wireRejectedCount30d) : 0;
+    const wireExpiredCount = canUseWireEvidence ? Math.max(0, input.wireExpiredCount30d) : 0;
     const wireTerminalJobs = wireCompletedCount + wireRejectedCount + wireExpiredCount;
-    const wireSettledPrincipal = input.isClaimed ? toSafeInt(input.wireSettledPrincipal30d) : 0;
+    const wireSettledPrincipal = canUseWireEvidence ? toSafeInt(input.wireSettledPrincipal30d) : 0;
     const expressYieldNorm = maxClaimedYield > 0 ? normalizeLog100(expressYieldValue, maxClaimedYield) : 0;
     const wireYieldNorm = maxClaimedWireYield > 0 ? normalizeLog100(wireYieldValue, maxClaimedWireYield) : 0;
     const volumeConfidence =
       maxWireSettledPrincipal > 0 ? normalizeLog100(wireSettledPrincipal, maxWireSettledPrincipal) / 100 : 0;
     const depthConfidence = computeDepthConfidence(wireTerminalJobs, 10);
-    const commerceQuality = input.isClaimed
+    const commerceQuality = canUseWireEvidence
       ? computeCommerceQuality({
           completedCount: wireCompletedCount,
           rejectedCount: wireRejectedCount,
@@ -1161,7 +1173,7 @@ const buildSnapshotRows = (
           expressYield: expressYieldValue,
         })
       : 0;
-    const wireConfidence = input.isClaimed
+    const wireConfidence = canUseWireEvidence
       ? computeWireConfidence({
           terminalJobs: wireTerminalJobs,
           settledPrincipal: wireSettledPrincipal,
@@ -1175,7 +1187,7 @@ const buildSnapshotRows = (
       sybilMaxPenalty = Math.max(sybilMaxPenalty, antiWashPenalty);
     }
 
-    const railScore = input.isClaimed
+    const railScore = input.isClaimed || canUseWireEvidence
       ? scoreAgentRailAware({
           velocity: velocityNorm,
           antiWashPenalty,
@@ -1197,12 +1209,18 @@ const buildSnapshotRows = (
               : null,
         })
       : null;
+    const baselineReputation = roundToTwo(Math.min(velocityNorm, UNCLAIMED_REPUTATION_CAP));
+    const baselineRankScore = roundToTwo(clamp(baselineReputation * 0.7 + velocityNorm * 0.3 - antiWashPenalty, 0, 100));
     const reputation = input.isClaimed
       ? railScore?.reputation ?? 0
-      : roundToTwo(Math.min(velocityNorm, UNCLAIMED_REPUTATION_CAP));
+      : canUseWireEvidence
+        ? Math.max(baselineReputation, railScore?.reputation ?? 0)
+        : baselineReputation;
     const rankScore = input.isClaimed
       ? railScore?.rankScore ?? 0
-      : roundToTwo(clamp(reputation * 0.7 + velocityNorm * 0.3 - antiWashPenalty, 0, 100));
+      : canUseWireEvidence
+        ? Math.max(baselineRankScore, railScore?.rankScore ?? 0)
+        : baselineRankScore;
     const tier = resolveScoreV2Tier(txCount, input.isClaimed, prepared.metricSource);
 
     return {
