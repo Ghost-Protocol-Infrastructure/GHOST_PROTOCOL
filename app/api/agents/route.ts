@@ -536,6 +536,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
               reputation: row.reputation,
               rankScore: row.rankScore,
               yield: row.yield,
+              expressYield: row.expressYield,
+              wireYield: row.wireYield,
               uptime: row.uptime,
               volume: row.volume.toString(),
               score: row.score,
@@ -647,6 +649,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       metricSource: true,
       canonicalOnchainAddress: true,
       canonicalAddressSource: true,
+      expressYield: true,
+      wireYield: true,
     },
   });
   const scoreInputByAddress = new Map(scoreInputs.map((row) => [row.agentAddress.toLowerCase(), row]));
@@ -733,6 +737,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           reputation: agent.reputation,
           rankScore: agent.rankScore,
           yield: agent.yield,
+          expressYield:
+            typeof scoreInput?.expressYield === "number" && Number.isFinite(scoreInput.expressYield)
+              ? Math.max(0, scoreInput.expressYield)
+              : Math.max(0, agent.yield),
+          wireYield:
+            typeof scoreInput?.wireYield === "number" && Number.isFinite(scoreInput.wireYield)
+              ? Math.max(0, scoreInput.wireYield)
+              : 0,
           uptime: agent.uptime,
           volume: agent.volume.toString(),
           score: agent.score,

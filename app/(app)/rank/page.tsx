@@ -39,6 +39,8 @@ type ApiAgent = {
   reputation?: number;
   rankScore?: number;
   yield?: number;
+  expressYield?: number;
+  wireYield?: number;
   uptime?: number;
   volume: string;
   score: number;
@@ -66,6 +68,8 @@ type ProcessedLead = {
   reputationScore: number;
   rankScore: number;
   yieldEth: number | null;
+  expressYieldEth: number | null;
+  wireYieldEth: number | null;
   uptimePct: number | null;
   gatewayReadinessStatus: GatewayReadinessStatus;
   gatewayLastCanaryCheckedAt: string | null;
@@ -128,6 +132,8 @@ const normalizeTxScore = (txCount: number, maxTxCount: number): number => {
 const roundToTwo = (value: number): number => Math.round(value * 100) / 100;
 
 const formatYield = (yieldEth: number): string => `${yieldEth.toFixed(4)} ETH`;
+const formatYieldBreakdown = (label: "GhostGate" | "GhostWire", yieldEth: number | null): string =>
+  `${label}: ${yieldEth == null ? "---" : formatYield(yieldEth)}`;
 const formatUptime = (uptimePct: number): string => `${uptimePct.toFixed(1)}%`;
 const formatReputation = (score: number): string => (Number.isInteger(score) ? String(score) : score.toFixed(2));
 const normalizeTxMetricSource = (raw: string | null | undefined): TxMetricSource => {
@@ -373,12 +379,20 @@ const buildLeadsFromApi = (agents: ApiAgent[]): ProcessedLead[] => {
         : typeof agent.score === "number" && Number.isFinite(agent.score)
           ? clamp(agent.score, 0, 100)
           : 0;
-    const rawYield = typeof agent.yield === "number" && Number.isFinite(agent.yield) ? Math.max(0, agent.yield) : 0;
+    const rawExpressYield =
+      typeof agent.expressYield === "number" && Number.isFinite(agent.expressYield)
+        ? Math.max(0, agent.expressYield)
+        : typeof agent.yield === "number" && Number.isFinite(agent.yield)
+          ? Math.max(0, agent.yield)
+          : 0;
+    const rawWireYield =
+      typeof agent.wireYield === "number" && Number.isFinite(agent.wireYield) ? Math.max(0, agent.wireYield) : 0;
+    const rawYield = rawExpressYield + rawWireYield;
     const rawUptime = typeof agent.uptime === "number" && Number.isFinite(agent.uptime) ? clamp(agent.uptime, 0, 100) : 0;
     const isClaimed = isClaimedAgent({
       status: agent.status,
       tier: agent.tier,
-      yieldValue: rawYield,
+      yieldValue: rawExpressYield,
       uptimeValue: rawUptime,
     });
     const rankScore =
@@ -442,6 +456,8 @@ const buildLeadsFromApi = (agents: ApiAgent[]): ProcessedLead[] => {
       reputationScore: rawReputation,
       rankScore,
       yieldEth: isClaimed ? rawYield : null,
+      expressYieldEth: isClaimed ? rawExpressYield : null,
+      wireYieldEth: isClaimed ? rawWireYield : null,
       uptimePct: isClaimed ? rawUptime : null,
       gatewayReadinessStatus: normalizeGatewayReadinessStatus(agent.gatewayReadinessStatus ?? null),
       gatewayLastCanaryCheckedAt: normalizeIsoTimestamp(agent.gatewayLastCanaryCheckedAt ?? null),
@@ -874,6 +890,8 @@ export default function Home() {
                   const rowKey = `${agent.agentId}-${agent.owner}`;
                   const isOwner = userAddress?.toLowerCase() === agent.owner.toLowerCase();
                   const safeYieldEth = agent.isClaimed ? Math.max(0, agent.yieldEth ?? 0) : 0;
+                  const safeExpressYieldEth = agent.isClaimed ? Math.max(0, agent.expressYieldEth ?? 0) : null;
+                  const safeWireYieldEth = agent.isClaimed ? Math.max(0, agent.wireYieldEth ?? 0) : null;
                   const safeUptimePct = agent.isClaimed ? clamp(agent.uptimePct ?? 0, 0, 100) : 0;
                   const showYieldZeroState = agent.isClaimed && safeYieldEth === 0;
                   const showUptimeZeroState = agent.isClaimed && safeUptimePct === 0;
@@ -1041,6 +1059,12 @@ export default function Home() {
                           <p className={`text-right font-mono ${yieldClassName}`}>
                             {agent.isClaimed ? formatYield(safeYieldEth) : "---"}
                           </p>
+                          <p className="mt-1 text-right text-[9px] text-neutral-600 font-mono normal-case tracking-normal">
+                            {formatYieldBreakdown("GhostGate", safeExpressYieldEth)}
+                          </p>
+                          <p className="text-right text-[9px] text-neutral-600 font-mono normal-case tracking-normal">
+                            {formatYieldBreakdown("GhostWire", safeWireYieldEth)}
+                          </p>
                         </div>
                         <div className="border border-neutral-800 bg-neutral-950 p-2">
                           <p className="mb-1 text-neutral-600 font-bold">UPTIME</p>
@@ -1090,6 +1114,8 @@ export default function Home() {
                   const rowKey = `${agent.agentId}-${agent.owner}`;
                   const isOwner = userAddress?.toLowerCase() === agent.owner.toLowerCase();
                   const safeYieldEth = agent.isClaimed ? Math.max(0, agent.yieldEth ?? 0) : 0;
+                  const safeExpressYieldEth = agent.isClaimed ? Math.max(0, agent.expressYieldEth ?? 0) : null;
+                  const safeWireYieldEth = agent.isClaimed ? Math.max(0, agent.wireYieldEth ?? 0) : null;
                   const safeUptimePct = agent.isClaimed ? clamp(agent.uptimePct ?? 0, 0, 100) : 0;
                   const showYieldZeroState = agent.isClaimed && safeYieldEth === 0;
                   const showUptimeZeroState = agent.isClaimed && safeUptimePct === 0;
@@ -1224,7 +1250,13 @@ export default function Home() {
                         {formatReputation(agent.reputationScore)}
                       </div>
                       <div className={`col-span-2 py-3 px-6 border-r border-neutral-800 text-right font-mono ${yieldClassName}`}>
-                        {agent.isClaimed ? formatYield(safeYieldEth) : "---"}
+                        <p>{agent.isClaimed ? formatYield(safeYieldEth) : "---"}</p>
+                        <p className="mt-1 text-[9px] text-neutral-600 font-mono normal-case tracking-normal">
+                          {formatYieldBreakdown("GhostGate", safeExpressYieldEth)}
+                        </p>
+                        <p className="text-[9px] text-neutral-600 font-mono normal-case tracking-normal">
+                          {formatYieldBreakdown("GhostWire", safeWireYieldEth)}
+                        </p>
                       </div>
                       <div className={`col-span-1 py-3 px-6 border-r border-neutral-800 text-right font-mono ${uptimeClassName}`}>
                         {agent.isClaimed ? formatUptime(safeUptimePct) : "---"}
