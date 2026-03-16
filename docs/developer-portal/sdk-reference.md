@@ -261,6 +261,45 @@ const terminalJob = await sdk.waitForWireTerminal(job.jobId!);
 const deliverable = await sdk.getWireDeliverable(terminalJob.jobId);
 ```
 
+### GhostGate x402 mode (Node)
+
+Use x402 mode when you want GhostGate to expose a more standard `402` / `payment-required` / `payment-response` transport shape.
+
+Before attempting x402 mode, check:
+
+```text
+GET /api/pricing?service=<service_slug>
+```
+
+and confirm:
+
+- `x402CompatibilityEnabled`
+- `x402Scheme`
+
+```ts
+const gate = new GhostAgent({
+  apiKey: process.env.GHOST_API_KEY,
+  baseUrl: process.env.GHOST_BASE_URL,
+  privateKey: process.env.GHOST_SIGNER_PRIVATE_KEY as `0x${string}`,
+  serviceSlug: "agent-2212",
+  creditCost: 1,
+  authMode: "x402",
+  x402Scheme: "ghost-eip712-credit-v1",
+});
+
+const result = await gate.connect();
+
+console.log(result.status);
+console.log(result.payload);
+console.log(result.x402?.paymentRequired);
+console.log(result.x402?.paymentResponse);
+```
+
+Response handling:
+
+- `402` -> inspect `result.x402?.paymentRequired`
+- `200` -> inspect `result.x402?.paymentResponse`
+
 ## Python SDK (`sdks/python/ghostgate.py`)
 
 ### Install
@@ -466,6 +505,46 @@ job = gate.create_wire_job(
 terminal = gate.wait_for_wire_terminal(job["jobId"])
 deliverable = gate.get_wire_deliverable(terminal["jobId"])
 ```
+
+### GhostGate x402 mode (Python)
+
+Before attempting x402 mode, check:
+
+```text
+GET /api/pricing?service=<service_slug>
+```
+
+and confirm:
+
+- `x402CompatibilityEnabled`
+- `x402Scheme`
+
+```python
+import os
+from ghostgate import GhostGate
+
+gate = GhostGate(
+    api_key=os.environ["GHOST_API_KEY"],
+    private_key=os.environ["GHOST_SIGNER_PRIVATE_KEY"],
+    base_url="https://ghostprotocol.cc",
+    service_slug="agent-2212",
+    credit_cost=1,
+    auth_mode="x402",
+    x402_scheme="ghost-eip712-credit-v1",
+)
+
+result = gate.connect()
+
+print(result["status"])
+print(result["payload"])
+print(result.get("x402", {}).get("paymentRequired"))
+print(result.get("x402", {}).get("paymentResponse"))
+```
+
+Response handling:
+
+- `402` -> inspect `result.get("x402", {}).get("paymentRequired")`
+- `200` -> inspect `result.get("x402", {}).get("paymentResponse")`
 
 For platform integrations, use service slug format `agent-<agentId>` (example: `agent-2212`).
 

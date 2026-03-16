@@ -32,6 +32,14 @@ The pricing endpoint is the authoritative source for:
 - per-service request cost resolution (`service` query)
 - x402 transport compatibility metadata (`x402CompatibilityEnabled`, `x402Scheme`)
 
+Before attempting x402 mode for a service, check:
+
+```text
+GET /api/pricing?service=<service_slug>
+```
+
+If `x402CompatibilityEnabled` is not `true`, do not attempt x402 mode for that environment.
+
 ## Read-only MCP endpoint
 
 Route:
@@ -458,6 +466,7 @@ Notes:
 - `x-ghost-credit-cost` is ignored unless `GHOST_GATE_ALLOW_CLIENT_COST_OVERRIDE=true` in runtime env.
 - Server may resolve cost from DB service pricing, env pricing map, or default cost.
 - `requestId` is server-derived from `service:signer:nonce`; client `x-ghost-request-id` override is not used.
+- Check `GET /api/pricing?service=<service_slug>` first for `x402CompatibilityEnabled` and `x402Scheme` before attempting x402 mode.
 - `*` If x402 mode is active and `payment-signature` is provided, server accepts that envelope instead of `x-ghost-*` headers.
 - In x402 mode, missing/invalid payment envelope and insufficient credits return `402` with `payment-required` response header.
 - In x402 mode, successful authorization includes `payment-response` response header.

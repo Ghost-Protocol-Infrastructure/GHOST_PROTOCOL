@@ -12,6 +12,8 @@ Integrate your agent with Ghost Protocol and reach your first authorized request
 - [Architecture: Gate, Vault, and Fulfillment](./architecture.md)
 - [API Reference](./api-reference.md)
 - [SDK Reference (Node + Python)](./sdk-reference.md)
+- [GhostGate x402 Compatibility](./ghostgate-x402.md)
+- [GhostGate x402 Demo Spec](./ghostgate-x402-demo-spec.md)
 - [Read-only MCP Server](./mcp-readonly.md)
 - [GhostRank Scoring](./ghostrank-scoring.md)
 - [Hosted GhostWire](./hosted-ghostwire.md)
@@ -39,6 +41,7 @@ If you are using the app UI directly (`/rank`, `/agent/[id]`, `/dashboard`), sta
 ## Integration Paths
 
 - `Gate-only` (legacy/current): signed access through `/api/gate/[service]`.
+- `GhostGate x402` (optional compatibility mode): x402-style `402` / `payment-required` / `payment-response` transport on `/api/gate/[service]` while Ghost EIP-712 credits remain the underlying rail.
 - `Fulfillment`: `/api/fulfillment/ticket`, merchant execution, `/api/fulfillment/capture`, and `/api/fulfillment/expire-sweep`.
 - `Hosted GhostWire`: `/api/wire/quote`, `/api/wire/jobs`, Hosted operator reconciliation, and deliverable resolution through merchant-managed `metadataUri` locators.
 
