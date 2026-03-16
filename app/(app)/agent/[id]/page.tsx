@@ -63,6 +63,8 @@ const toTitleCase = (value: string): string =>
     .join(" ");
 
 const truncateAddress = (address: string): string => `${address.slice(0, 6)}...${address.slice(-4)}`;
+const buildErc8004ScanHref = (agentId: string): string =>
+  `https://www.8004scan.io/agents/base/${encodeURIComponent(agentId)}`;
 
 const formatRelativeTimeFromDate = (value: Date | null): string | null => {
   if (!value) return null;
@@ -205,6 +207,7 @@ export default async function AgentProfilePage({ params }: AgentPageProps) {
   const gatewayLastPassedAt = agent.gatewayConfig?.lastCanaryPassedAt ?? null;
   const merchantSetupHref = `/dashboard?mode=merchant&agentId=${encodeURIComponent(agent.agentId)}&owner=${encodeURIComponent(ownerAddress)}`;
   const agentConsoleHref = `/dashboard?agentId=${encodeURIComponent(agent.agentId)}&owner=${encodeURIComponent(ownerAddress)}`;
+  const erc8004ScanHref = buildErc8004ScanHref(agent.agentId);
 
   return (
     <main className="min-h-screen font-mono text-neutral-400 bg-neutral-950 [background-image:none] max-w-7xl mx-auto border-l border-r border-neutral-900">
@@ -284,8 +287,19 @@ export default async function AgentProfilePage({ params }: AgentPageProps) {
           </div>
 
           {agentDescription ? (
-            <div className="mt-4 border border-neutral-800 bg-neutral-900 p-3 text-sm text-neutral-400 font-mono">
-              {agentDescription}
+            <div className="mt-4 font-mono">
+              <div className="border border-neutral-800 bg-neutral-900 p-3">
+                <p className="text-sm text-neutral-400">{agentDescription}</p>
+              </div>
+              <a
+                href={erc8004ScanHref}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="mt-3 inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-neutral-500 transition hover:text-red-500"
+              >
+                {"//VIEW_ON_8004SCAN"}
+                <span aria-hidden="true">↗</span>
+              </a>
             </div>
           ) : null}
         </section>
