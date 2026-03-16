@@ -6,7 +6,7 @@ import "@rainbow-me/rainbowkit/styles.css";
 import Providers from "./providers";
 
 export const metadata: Metadata = {
-  title: "Ghost Protocol",
+  title: "GHOST_PROTOCOL",
   description: "Infrastructure for the Agentic Economy",
 };
 
