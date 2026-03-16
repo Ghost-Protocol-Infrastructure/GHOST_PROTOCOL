@@ -227,13 +227,16 @@ const run = async (): Promise<void> => {
       assert(nonceCount === 1, `Expected nonce count 1, got ${nonceCount}`);
       assert(gateDebitCount === 1, `Expected one gate debit row, got ${gateDebitCount}`);
       assert(earnings.length === 1, `Expected one merchant earning row, got ${earnings.length}`);
+      const recordedRequestId =
+        typeof first.body?.requestId === "string" && first.body.requestId.length > 0 ? first.body.requestId : null;
+      assert(recordedRequestId !== null, "Expected first gate response to include a server-derived requestId.");
       assert(
         earnings[0]?.merchantOwnerAddress === ownerAddress,
         `Expected merchant owner ${ownerAddress}, got ${earnings[0]?.merchantOwnerAddress ?? "missing"}`,
       );
       assert(
-        earnings[0]?.sourceId === `${signerKey}:${firstRequestId}`,
-        `Expected gate sourceId ${signerKey}:${firstRequestId}, got ${earnings[0]?.sourceId ?? "missing"}`,
+        earnings[0]?.sourceId === `${signerKey}:${recordedRequestId}`,
+        `Expected gate sourceId ${signerKey}:${recordedRequestId}, got ${earnings[0]?.sourceId ?? "missing"}`,
       );
       assert(earnings[0]?.grossCredits === 1, `Expected grossCredits 1, got ${String(earnings[0]?.grossCredits)}`);
       assert(

@@ -14,6 +14,12 @@ import {
 } from "@/lib/db";
 import { GHOST_PREFERRED_CHAIN_ID } from "@/lib/constants";
 import { consumeFulfillmentRateLimit } from "@/lib/fulfillment-rate-limit";
+import {
+  GHOST_GATE_X402_DEFAULT_SCHEME,
+  X402_DEMO_COST,
+  isX402DemoService,
+  isX402EnabledForService,
+} from "@/lib/x402-interop";
 
 export const runtime = "nodejs";
 
@@ -68,7 +74,7 @@ const ENFORCE_LIVE_GATEWAY_READINESS = process.env.GHOST_GATE_ENFORCE_LIVE_GATEW
 const ENFORCE_LIVE_GATEWAY_READINESS_AGENT_ONLY =
   (process.env.GHOST_GATE_ENFORCE_LIVE_GATEWAY_READINESS_AGENT_ONLY?.trim() ?? "") !== "false";
 const GHOST_GATE_X402_ENABLED = process.env.GHOST_GATE_X402_ENABLED?.trim() === "true";
-const GHOST_GATE_X402_SCHEME = process.env.GHOST_GATE_X402_SCHEME?.trim() || "ghost-eip712-credit-v1";
+const GHOST_GATE_X402_SCHEME = process.env.GHOST_GATE_X402_SCHEME?.trim() || GHOST_GATE_X402_DEFAULT_SCHEME;
 const GHOST_GATE_X402_ASSET = process.env.GHOST_GATE_X402_ASSET?.trim() || "GHOST_CREDIT";
 const GHOST_GATE_X402_HINT =
   process.env.GHOST_GATE_X402_HINT?.trim() || "Send PAYMENT-SIGNATURE containing base64 JSON with payload+signature.";
@@ -225,7 +231,11 @@ const parseCreditCost = (value: string | null): bigint | null => {
 const resolveRequestCost = async (
   request: NextRequest,
   service: string,
-): Promise<{ cost: bigint; source: "header" | "db" | "env" | "default" }> => {
+): Promise<{ cost: bigint; source: "header" | "db" | "env" | "default" | "demo" }> => {
+  if (isX402DemoService(service)) {
+    return { cost: X402_DEMO_COST, source: "demo" };
+  }
+
   const requestScopedCost = parseCreditCost(request.headers.get("x-ghost-credit-cost"));
   if (ALLOW_CLIENT_COST_OVERRIDE && requestScopedCost != null) {
     return { cost: requestScopedCost, source: "header" };
@@ -461,10 +471,11 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
   let rawPayload = request.headers.get("x-ghost-payload");
   let authSource: "ghost-eip712" | "x402-payment-signature" = "ghost-eip712";
   let x402ParsedEnvelope: unknown = null;
+  const x402EnabledForService = isX402EnabledForService(requestedService, GHOST_GATE_X402_ENABLED);
 
   if (!rawSig || !rawPayload) {
     const hasAnyGhostAuthHeader = Boolean(rawSig) || Boolean(rawPayload);
-    if (!GHOST_GATE_X402_ENABLED) {
+    if (!x402EnabledForService) {
       return respondWithOutcome({
         outcome: "MALFORMED_AUTH",
         status: 400,
@@ -751,6 +762,13 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Next
     outcome: "AUTHORIZED",
     status: 200,
     body: {
+      ...(isX402DemoService(requestedService)
+        ? {
+            ok: true,
+            mode: "x402-demo",
+            message: "GhostGate x402 demo authorized successfully.",
+          }
+        : {}),
       authorized: true,
       code: 200,
       service: requestedService,
