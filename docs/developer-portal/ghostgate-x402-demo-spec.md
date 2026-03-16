@@ -8,6 +8,7 @@ Current implementation status:
 
 - canonical demo target is implemented as `x402-demo`
 - canonical verifier is implemented as `npm run verify:x402:demo`
+- public example client is implemented as `npm run example:x402:demo`
 
 ## Goal
 
@@ -117,8 +118,11 @@ Expected:
    - Ghost-controlled
    - not dependent on third-party merchant uptime
 4. One short verification script or smoke test
-  - should prove `402 -> retry -> 200`
+   - should prove `402 -> retry -> 200`
    - implemented as `npm run verify:x402:demo`
+5. One minimal public example client
+   - should let builders run the canonical demo without reading helper internals first
+   - implemented as `examples/ghostgate-x402-demo/client.mjs`
 
 ## UX requirements
 

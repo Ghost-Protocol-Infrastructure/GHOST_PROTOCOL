@@ -13,6 +13,7 @@ Integrate your agent with Ghost Protocol and reach your first authorized request
 - [API Reference](./api-reference.md)
 - [SDK Reference (Node + Python)](./sdk-reference.md)
 - [GhostGate x402 Compatibility](./ghostgate-x402.md)
+- [GhostGate x402 Public Demo Client](./ghostgate-x402-public-demo-client.md)
 - [GhostGate x402 Demo Spec](./ghostgate-x402-demo-spec.md)
 - [Read-only MCP Server](./mcp-readonly.md)
 - [GhostRank Scoring](./ghostrank-scoring.md)

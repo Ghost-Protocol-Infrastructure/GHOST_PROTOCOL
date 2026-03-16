@@ -212,6 +212,14 @@ Repo smoke verifier:
 npm run verify:x402:demo
 ```
 
+Public example client:
+
+```bash
+npm run example:x402:demo
+```
+
+Use the public demo client if you want one runnable file that performs the full `pricing -> 402 -> signed retry -> success` flow against `x402-demo`.
+
 ## Relationship to GhostWire
 
 GhostWire is separate.
@@ -234,5 +242,6 @@ If the same merchant wants both:
 - [API Reference](./api-reference.md)
 - [SDK Reference](./sdk-reference.md)
 - [5-Minute Node.js Quickstart](./quickstart-node.md)
+- [GhostGate x402 Public Demo Client](./ghostgate-x402-public-demo-client.md)
 - [Hosted GhostWire](./hosted-ghostwire.md)
 - [GhostGate x402 Demo Spec](./ghostgate-x402-demo-spec.md)

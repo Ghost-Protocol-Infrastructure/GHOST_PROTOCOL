@@ -25,6 +25,7 @@
     "monitor:credits": "npx tsx scripts/monitor-credit-alerts.ts",
     "test:credits:regression": "npx tsx scripts/test-credit-regression.ts",
     "verify:x402:demo": "npx tsx scripts/verify-x402-demo.ts",
+    "example:x402:demo": "node examples/ghostgate-x402-demo/client.mjs",
     "verify:mcp:readonly": "npx tsx scripts/verify-mcp-readonly.ts",
     "benchmark:latency": "npx tsx scripts/benchmark-latency.ts",
     "benchmark:latency:quick": "npx tsx scripts/benchmark-latency.ts --iterations 10 --concurrency 2 --scenario mcp",
