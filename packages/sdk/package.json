@@ -1,7 +1,7 @@
 {
   "name": "@ghostgate/sdk",
-  "version": "0.1.3",
-  "description": "Ghost Protocol Node.js SDK for gate access, fulfillment, telemetry, and canary helpers.",
+  "version": "0.1.4",
+  "description": "Ghost Protocol Node.js SDK for GhostGate, fulfillment, telemetry, and direct GhostWire escrow.",
   "author": "Ghost Protocol",
   "license": "MIT",
   "type": "module",
@@ -21,7 +21,9 @@
     "fulfillment",
     "eip712",
     "telemetry",
-    "base"
+    "base",
+    "ghostwire",
+    "escrow"
   ],
   "publishConfig": {
     "access": "public"

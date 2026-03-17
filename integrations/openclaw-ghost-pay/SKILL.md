@@ -1,7 +1,7 @@
 ---
 name: openclaw-ghost-pay
 description: Discover Ghost payment requirements, execute GhostGate Express payments, and run GhostWire quote/prepare/status flows for direct escrow.
-version: 1.2.2
+version: 1.2.3
 metadata: {"clawdis":{"emoji":"👻","homepage":"https://github.com/Ghost-Protocol-Infrastructure/GHOST_PROTOCOL/tree/main/integrations/openclaw-ghost-pay","os":["darwin","linux","win32"],"requires":{"env":["GHOST_SIGNER_PRIVATE_KEY"],"bins":["node"]},"primaryEnv":"GHOST_SIGNER_PRIVATE_KEY","install":[{"id":"viem","kind":"node","package":"viem","label":"Install viem (required for GhostGate EIP-712 signing)"}]}}
 ---
 

@@ -28,6 +28,38 @@ sdk = GhostGate(
 
 result = sdk.connect()
 print(result)
+
+quote = sdk.create_wire_quote(
+    client="0xclient...",
+    provider="0xprovider...",
+    evaluator="0xevaluator...",
+    principal_amount="1000000",
+    chain_id=8453,
+)
+
+prepared = sdk.prepare_wire_job(
+    quote_id=quote["quoteId"],
+    client="0xclient...",
+    provider="0xprovider...",
+    evaluator="0xevaluator...",
+    spec_hash="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    metadata_uri="https://merchant.example.com/ghostwire/deliverable?jobId=wj_123",
+)
+
+# Client wallet sends prepared["direct"]["createTxRequest"] here, then reports the hash:
+after_create = sdk.record_wire_artifacts(
+    job_id=prepared["jobId"],
+    client_address="0xclient...",
+    create_tx_hash="0xcreate...",
+)
+
+# Client wallet sends after_create["direct"]["setBudgetTxRequest"] and
+# after_create["direct"]["fundTxRequest"] here, then reports the funding hash.
+sdk.record_wire_artifacts(
+    job_id=prepared["jobId"],
+    client_address="0xclient...",
+    fund_tx_hash="0xfund...",
+)
 ```
 
 ## Canonical methods

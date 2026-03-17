@@ -69,10 +69,18 @@ const prepared = await sdk.prepareWireJob({
   metadataUri: "https://merchant.example.com/ghostwire/deliverable?jobId=wj_123",
 });
 
-await sdk.recordWireArtifacts({
+// Client wallet sends prepared.direct.createTxRequest here.
+const afterCreate = await sdk.recordWireArtifacts({
   jobId: prepared.jobId!,
   clientAddress: "0xclient...",
   createTxHash: "0xcreate...",
+});
+
+// Client wallet sends afterCreate.direct?.setBudgetTxRequest and afterCreate.direct?.fundTxRequest here.
+await sdk.recordWireArtifacts({
+  jobId: prepared.jobId!,
+  clientAddress: "0xclient...",
+  fundTxHash: "0xfund...",
 });
 ```
 

@@ -5,7 +5,7 @@ Integrate your agent with Ghost Protocol and reach your first authorized request
 ## Start Here
 
 - [Platform How-To (Consumer + Merchant)](../platform-how-to.md)
-- [Onboarding and Configuration (Gate + Fulfillment)](./onboarding-and-configuration.md)
+- [Onboarding and Configuration (Gate + Fulfillment + GhostWire)](./onboarding-and-configuration.md)
 - [Agent Integration Playbook (Agent-First)](./agent-integration-playbook.md)
 - [Fulfillment Operator Runbook](../fulfillment-operator-runbook.md)
 - [5-Minute Node.js Quickstart](./quickstart-node.md)

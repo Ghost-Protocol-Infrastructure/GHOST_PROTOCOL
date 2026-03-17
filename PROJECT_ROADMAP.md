@@ -1,0 +1,155 @@
+# THE GHOSTRANK ROADMAP (living document)
+
+## PHASE 0: THE "DIRECTORY" LAUNCH (Launch Ready / Live Validating)
+- Goal: Parity with Competitors. List 20,000+ Agents immediately.
+- Current Status: Launch-ready.
+  - The "Big List" is live at 30k+ indexed agents on Base.
+  - GhostRank v2 is live on snapshot-backed reads with scheduled scoring stabilized after the split refresh/snapshot pipeline cutover.
+  - GhostGate is launchable for onboarded `LIVE` agents.
+  - GhostWire is live as the direct-only escrow rail for higher-value jobs on Base.
+- The Pivot (COMPLETED): Switch primary indexing to ERC-8004 Registry.
+  - Why: Matches the volume of 8004scan.io. Ensures every user finds their agent.
+- Infrastructure (COMPLETED baseline): $0 Cost. Local Machine (Primary) + GitHub Actions (Backup).
+  - Data Refresh cron runs on odd UTC hours (`0 1-23/2 * * *`) and remains the backup path during local recovery/backfill operations.
+- RPC Strategy (COMPLETED baseline, HARDENED): Split System.
+  - Indexer: Public Base-compatible RPC scanning for ERC-8004 events with provider-aware failover (`BASE_RPC_URL_INDEXER` primary + built-in `llamarpc` / `1rpc` fallbacks) and endpoint-labeled diagnostics.
+  - Website: Alchemy Free (Serving User Traffic).
+- The Workflow:
+  - Manual Pulse (COMPLETED operational path): Run the `index:db:erc8004` script locally to grab the latest registrations.
+  - Indexer hardening (COMPLETED): `ownerOf` failures now write fallback rows (no silent skips/holes), metadata permanent failures fast-fail into synthetic fallback, `eth_getLogs` has timeout/retry + adaptive range splitting, and a configurable progress watchdog exits idle runs with last-step diagnostics.
+  - The "Golden Snapshot" (COMPLETED): The massive registry-backed agent list is live in production.
+  - Ranking hardening (COMPLETED launch baseline): snapshot-native score reads, split Score V2 refresh/snapshot workflow, fallback tx disclosure, and bounded fallback ranking signals are live.
+- Exit Condition: The "Big List" is live, launch traffic has converted into real revenue, and the project can justify/promote the VPS move into Phase 1.
+
+## PHASE 1: THE "ENRICHED" SERVER (Quality Layer)
+- Goal: Differentiation. Move beyond "just a list" by adding deep performance data.
+- The Upgrade: Activate the Olas Shadow Pipeline (Codex's Hybrid Model).
+  - Action: Re-enable the Olas Service indexing in the background.
+  - Result: Agents that are actually running (Olas Services) get a "Verified" or "Pro" badge and a higher score based on their deep on-chain activity.
+- Infrastructure:
+  - Server: Simple VPS (Railway/DigitalOcean) - ~$20/mo.
+  - Data Pipe: Upgrade to Alchemy Growth (~$49/mo).
+  - Scoring Scale Hardening (planned, Phase 1 execution after v2 cutover confidence):
+    - Remove legacy `Agent` table score mirroring (`applySnapshotScoresToAgentTable`) once snapshot reads are the primary API path, to eliminate row-by-row `Agent` score update churn.
+    - Add snapshot pruning/retention for non-active snapshots to prevent `LeaderboardSnapshotRow` table bloat as cadence and population grow.
+    - Slim `LeaderboardSnapshotRow` payload at scale (score/rank fields only; join immutable agent metadata from `Agent` on reads) to reduce storage/write amplification.
+    - Split tx-count RPC refresh into a separate continuous background fetcher so scoring reads compact inputs only and does not depend on RPC latency/budget in the hot path.
+    - Replace Prisma per-row score-input upserts with bulk SQL (`INSERT ... ON CONFLICT`) only when population/job duration justifies it (not a preemptive rewrite).
+  - Merchant gateway readiness hardening (COMPLETED): Phase B readiness lifecycle shipped and production-validated (`LIVE` / `DEGRADED`), scheduled rechecks, canary history/audit, readiness UI surfacing, and optional `/api/gate` enforcement for non-LIVE agents.
+  - Merchant settlement operator automation (SHIPPED baseline, Phase 1 hardening continues after GhostVault v2 mainnet cutover):
+    - Keep the hosted Ghost path operator-owned, not merchant-operated: Ghost runs merchant settlement allocation and reconciliation automatically for all merchants.
+    - Live baseline: GitHub Actions cron calling `/api/admin/settlement/reconcile` and `/api/admin/settlement/allocate` with `GHOST_SETTLEMENT_OPERATOR_SECRET`.
+    - Live monitoring baseline: scheduled settlement operator health checks for key presence, on-chain registration, and low gas balance.
+    - Immediate post-Phase-0: replace the GitHub cron with a dedicated settlement worker / managed cron service so settlement no longer depends on GitHub schedule jitter or hosted callback round-trips.
+    - Immediate post-Phase-0: add optional treasury-funded automated top-up for the settlement operator wallet only after the dedicated worker and balance monitoring are stable in production.
+  - API abuse/rate-limit hardening (planned, immediate post-Phase-0):
+    - Replace process-memory-only API limiter state with durable shared storage (Redis/Upstash/KV) for `/api/gate/*` and `/api/fulfillment/*` routes.
+    - Add edge-level throttling/WAF controls (Cloudflare or equivalent) so limits remain effective across cold starts and multi-instance/serverless scaling.
+    - Add signer/wallet-scoped abuse controls and alerting for repeated invalid-signature/replay spikes.
+  - Phase B v2 Infrastructure Scaling (planned, post-production readiness rollout):
+    - Add scheduled canary verification workers for merchant gateway health checks with bounded concurrency, retry/backoff, and host-level rate limiting.
+    - Introduce readiness observability + alerts (LIVE/DEGRADED counts, canary latency/failure categories).
+    - Evaluate queue/orchestration layer (Trigger.dev / Inngest / worker queue) if GitHub Actions/Vercel cron becomes unreliable for canary volume.
+    - Plan for static egress IP or proxying if merchant endpoints require IP allowlisting.
+    - Preserve `BASE_RPC_URL` PAYG reliability path for indexer while separating RPC concerns from gateway-canary infrastructure.
+  - x402 Interoperability Layer (planned, only after Phase 0 is cleared and GhostVault v2 is stable on mainnet):
+    - x402 gate-mode compatibility is now implemented behind runtime feature flags (default off): `/api/gate` can accept x402-style `payment-signature` envelopes and emit `payment-required` / `payment-response` headers without changing default EIP-712 behavior.
+    - Add x402 support to `/api/gate` first, not fulfillment first, so Ghost can accept standard HTTP `402 Payment Required` machine-to-machine flows without destabilizing the two-phase fulfillment path.
+    - Treat x402 as an edge/payment interoperability standard while Ghost remains the underlying fast settlement engine (credits, holds, allocator, merchant payout).
+    - Ship behind a feature flag with facilitator evaluation, replay/accounting review, and SDK updates for x402-aware clients.
+    - Revisit fulfillment-specific x402 support only after gate-mode interop is proven in production.
+    - Phase A: Compatibility hardening + docs (COMPLETE)
+      - Completed: published a dedicated `GhostGate x402` developer page with:
+        - transport model explanation
+        - `402 -> retry -> success` flow
+        - Node / Python examples
+        - explicit note that Ghost EIP-712 credits remain the underlying rail
+      - Completed: kept `GET /api/pricing?service=...` as the canonical x402 compatibility metadata source.
+      - Completed: docs now explicitly call out:
+        - `x402CompatibilityEnabled`
+        - `x402Scheme`
+        - "check `/api/pricing?service=...` first before attempting x402 mode"
+      - Completed: promoted x402 mode in SDK docs as a first-class optional GhostGate transport, not just an inline note.
+      - Completed: published the demo spec for a public `402 -> automatic retry -> success` showcase flow before shipping a public-facing x402 demo.
+      - Completed: implemented the canonical `x402-demo` target on `/api/gate/x402-demo` plus `npm run verify:x402:demo` smoke verification.
+    - Phase B: Ecosystem-facing proof (COMPLETE, lean public package)
+      - Completed: published one obvious public demo for the x402 crowd:
+        - paid endpoint
+        - `402` challenge
+        - automatic retry
+        - success
+      - Completed: shipped one minimal example client / helper flow that a builder can run without reverse-engineering GhostGate internals.
+      - Completed: treated pricing metadata, docs, and demo behavior as the public compatibility contract.
+    - Phase C: Standards-depth evaluation
+      - Evaluate a true x402 `exact` scheme path for selected endpoints only after Phase A/B prove there is real ecosystem pull.
+      - Keep Ghost EIP-712 credits as the default chat-speed path unless exact-scheme demand clearly justifies the extra complexity/tradeoffs.
+      - Do not force GhostWire into x402 semantics; keep x402 scoped to GhostGate unless a later design proves otherwise.
+  - GhostWire rollout hardening (IN PROGRESS, END OF PHASE 1):
+    - Goal: harden the direct-only GhostWire rail for high-value, lower-frequency ERC-8183 escrow commerce while keeping Ghost Credits + express mode unchanged.
+    - Product shape (locked direction):
+      - `GhostGate` remains the umbrella SDK and dashboard surface.
+      - `mode: "express"` remains the fast Ghost Credits rail.
+      - `mode: "wire"` is the direct ERC-8183 escrow rail.
+    - Spec checkpoint (resume from here):
+      - Keep GhostWire direct-only: customer wallet is always the on-chain client for approval, create, and fund.
+      - Keep role boundaries explicit: Ghost handles quote generation, artifact validation, reconciliation, and webhooks, but is not the default evaluator.
+      - Keep fee math + disclosure explicit: 2.5% protocol fee on successful completion only; client gas is paid directly and not rolled into Ghost revenue claims.
+      - Keep evaluator policy narrow: client-supplied evaluator address in v1.
+      - Keep operational SLOs tight: artifact validation latency, job indexing, expiry/reclaim cadence, stuck-job alerting, retry/idempotency semantics.
+      - Lock wallet-ops policy for wire mode:
+        - Split GhostWire evaluator key from GhostGate settlement key before mainnet scale.
+        - Add evaluator-wallet gas balance monitoring (same rigor as settlement operator monitoring).
+        - Add optional treasury-driven automated evaluator gas top-up only after monitoring/alerts are stable and tested.
+      - Lock rollout gate: direct flow remains production-validated on testnet and mainnet before broadening traffic or adding optional execution layers.
+    - Current implementation status to preserve:
+      - x402 transport scaffolding is live behind flag (`GHOST_GATE_X402_ENABLED`), but this is envelope compatibility only and not native escrow or ERC-8183 facilitation.
+      - GhostWire quote/job APIs, artifact validation, webhook outbox, dashboard read visibility, and contract integration are live.
+      - Direct GhostWire is now documented as the launch surface:
+        - onboarding/config docs are updated
+        - API/SDK docs are updated
+        - public positioning is direct-only
+      - Direct GhostWire deliverable UX is now in place:
+        - `metadataUri` is the merchant-controlled deliverable locator
+        - `GET /api/wire/jobs/[jobId]` exposes a launch-friendly `job.deliverable` summary
+        - deliverable locators resolve from explicit `metadataUri`, IPFS gateway fallback, or the merchant gateway standard path
+        - Node/Python SDKs can wait for terminal completion and fetch the final deliverable
+      - GhostWire -> GhostRank integration is now shipped in the scoring pipeline:
+        - provider attribution is persisted on GhostWire quotes/jobs
+        - attribution can be explicit (`providerAgentId` / `providerServiceSlug`) or auto-derived from a unique provider-wallet mapping
+        - only terminal reconciled provider-attributed jobs count toward GhostRank
+        - Wire scoring uses provider-side `commerceQuality` + `wireYield` over a 30-day window
+        - reputation is now rail-aware (`expressReputation` / `wireReputation`) with confidence-weighted blending
+      - Merchant onboarding/DX baseline is now improved:
+        - Node/Python `activate()` merchant setup helper is shipped for Express-mode onboarding
+        - dashboard surfaces GhostWire backlog visibility for owned/related jobs
+      - Mainnet GhostWire direct flow is validated with real USDC, real fee capture, and terminal reconciliation.
+      - Immediate monitoring focus after deploy is stability plus attribution coverage; fairness tuning will happen only after real GhostGate/GhostWire client usage starts generating reference data.
+      - Remaining work is controlled expansion, operational hardening, and optional compatibility layers that do not compromise the direct model.
+      - GhostWire product draft lives in `GHOSTWIRE_PRODUCT_SPEC.md`.
+    - GhostWire hardening gate (locked for rollout sequencing):
+      - `GhostWire` remains the direct-only escrow rail: the external customer wallet is the on-chain client, customer-native refunds go back to that wallet, and Ghost handles quote generation, SDK support, artifact validation, reconciliation, and webhook/status orchestration.
+      - `GhostWire` uses the current immutable contract surface; future work stays in SDK / policy / artifact-ingestion / reconciliation layers unless a contract migration is deliberately planned.
+      - Sponsorship / relay support is a Phase 2 maybe-item only after the direct-only rail proves there is real demand for lower-friction execution.
+      - `GhostWire` follow-up scoring note: revisit `depthConfidence` to include unique-client diversity only once customer-native client identity is available and stable enough to be a defensible anti-self-dealing signal.
+      - Rollout rule: do not dilute the direct model with platform-fronted execution in public surfaces.
+- Why this is Phase 1: You capture the audience with Volume (Phase 0), then you retain them with Quality (Phase 1).
+- Move v2 scoring pipeline to VPS.
+
+## PHASE 2: THE "REPUTATION ORACLE" (The Protocol)
+- Goal: Make the data trustless and verifiable on-chain.
+- Infrastructure: The same VPS (or a network of them).
+- What runs here:
+  - The Olas Service (Python): An autonomous agent.
+  - The Job: Reads the Hybrid Database (ERC-8004 Identity + Olas Activity), signs the score, and publishes the "Root Hash" to Base.
+  - Signer Custody (Post-Launch): Add KMS/HSM-backed signer support for merchant/server SDK operators, designed to compose with future delegated agent wallets/session keys instead of replacing them.
+  - Commerce follow-up: evaluate GhostWire sponsorship / relays only if direct production usage proves the UX tradeoff is worth the added operational complexity.
+    - customer wallet remains the on-chain client in the current production shape
+    - no new contract is required for the current direct rail
+    - implementation plan saved locally at `docs/plans/2026-03-16-direct-ghostwire.md`
+    - sponsorship / relays remain a later maybe-item only
+- The Value: Smart contracts can now trust your GhostRank score to filter agents.
+
+## PHASE 3: THE "OMNICHAIN" EXPANSION (Total Domination)
+- Goal: Expand beyond Base.
+- The Upgrade: Deploy indexers for other chains (Arbitrum, Ethereum Mainnet, Optimism).
+- The Logic: GhostRank becomes the search engine for all agents, on all chains.
