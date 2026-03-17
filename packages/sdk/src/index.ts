@@ -288,7 +288,7 @@ export type WireJobSnapshot = {
   deliverable?: {
     available: boolean;
     locatorUrl: string | null;
-    mode: "merchant_locator" | "none";
+    mode: "merchant_locator" | "gateway_standard" | "ipfs_gateway" | "none";
     state: "READY" | "PENDING" | "UNCONFIGURED";
   };
 };

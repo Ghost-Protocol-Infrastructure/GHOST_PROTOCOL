@@ -142,6 +142,13 @@ type WireJobOperatorStatus = {
   lastError: string | null;
 };
 
+type WireJobDeliverableSummary = {
+  available: boolean;
+  locatorUrl: string | null;
+  mode: "merchant_locator" | "gateway_standard" | "ipfs_gateway" | "none";
+  state: "READY" | "PENDING" | "UNCONFIGURED";
+};
+
 type WireJobListItem = {
   id: string;
   jobId: string;
@@ -167,6 +174,7 @@ type WireJobListItem = {
     networkReserve: WireJobPricingAmount;
   };
   operator: WireJobOperatorStatus;
+  deliverable?: WireJobDeliverableSummary | null;
 };
 
 type WireJobsResponse = {
@@ -941,6 +949,10 @@ function DashboardPageContent() {
               : null;
           const operator =
             typeof row.operator === "object" && row.operator !== null ? (row.operator as WireJobOperatorStatus) : null;
+          const deliverable =
+            typeof row.deliverable === "object" && row.deliverable !== null
+              ? (row.deliverable as WireJobDeliverableSummary)
+              : null;
 
           if (!principal || !protocolFee || !networkReserve || !operator) {
             return null;
@@ -979,6 +991,7 @@ function DashboardPageContent() {
               nextRetryAt: typeof operator.nextRetryAt === "string" ? operator.nextRetryAt : null,
               lastError: typeof operator.lastError === "string" ? operator.lastError : null,
             },
+            deliverable,
           };
         })
         .filter((entry): entry is WireJobListItem => entry != null);
@@ -2756,6 +2769,18 @@ def my_agent():
                     <div className="mt-4 space-y-3">
                       {merchantWireJobs.map((job) => (
                         <div key={job.jobId} className="border border-neutral-800 bg-neutral-950 p-3">
+                          {(() => {
+                            const deliverableLocator = job.deliverable?.locatorUrl ?? job.metadataUri;
+                            const deliverableState = job.deliverable?.state ?? (job.metadataUri ? "PENDING" : "UNCONFIGURED");
+                            const deliverableLabel =
+                              deliverableState === "READY"
+                                ? "Locator Ready"
+                                : deliverableState === "PENDING"
+                                  ? "Locator Pending"
+                                  : "Locator Unset";
+
+                            return (
+                              <>
                           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                             <div>
                               <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
@@ -2787,7 +2812,7 @@ def my_agent():
                               <p className="mt-2 text-[11px] text-neutral-500">Contract: {formatShortHash(job.contractAddress)}</p>
                               <p className="mt-1 text-[11px] text-neutral-500">Job Ref: {job.contractJobId ?? "--"}</p>
                               <p className="mt-1 text-[11px] text-neutral-500">
-                                Deliverable: {job.metadataUri ? "Locator Configured" : "Locator Unset"}
+                                Deliverable: {deliverableLabel}
                               </p>
                             </div>
                             <div className="border border-neutral-900 bg-neutral-900 p-3">
@@ -2819,17 +2844,20 @@ def my_agent():
                             </div>
                           </div>
 
-                          {job.metadataUri && (
+                          {deliverableLocator && (
                             <div className="mt-3 border border-neutral-900 bg-neutral-900 p-3">
                               <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
                                 Deliverable Locator
                               </p>
-                              <p className="mt-2 break-all text-[11px] text-neutral-500 font-mono">{job.metadataUri}</p>
+                              <p className="mt-2 break-all text-[11px] text-neutral-500 font-mono">{deliverableLocator}</p>
                               <p className="mt-1 text-[11px] text-neutral-600">
                                 Consumers can resolve this deliverable after completion through the GhostWire SDK helpers.
                               </p>
                             </div>
                           )}
+                              </>
+                            );
+                          })()}
                         </div>
                       ))}
                     </div>

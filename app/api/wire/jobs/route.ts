@@ -3,6 +3,7 @@ import { type WireContractState } from "@prisma/client";
 import { parsePositiveIntBounded } from "@/lib/fulfillment-route";
 import { prisma } from "@/lib/db";
 import { GhostWireProviderAttributionError, resolveGhostWireProviderAttribution } from "@/lib/ghostwire-attribution";
+import { buildGhostWireDeliverableSummary } from "@/lib/ghostwire-deliverable";
 import { evaluateGhostWireExecutionPolicy } from "@/lib/ghostwire-exec-policy";
 import {
   prepareWireJobFromQuote,
@@ -56,11 +57,26 @@ export async function GET(request: NextRequest) {
       participantAddress: participant,
       state,
     });
+    const items = await Promise.all(
+      jobs.items.map(async (job) => ({
+        ...job,
+        deliverable: await buildGhostWireDeliverableSummary({
+          jobId: job.jobId,
+          metadataUri: job.metadataUri,
+          contractState: job.contractState,
+          providerAgentId: job.providerAgentId,
+          providerServiceSlug: job.providerServiceSlug,
+          providerAddress: job.providerAddress,
+          contractAddress: job.contractAddress,
+          contractJobId: job.contractJobId,
+        }),
+      })),
+    );
 
     return ghostWireJson({
       ok: true,
       apiVersion: 1,
-      items: jobs.items,
+      items,
       nextCursor: jobs.nextCursor,
     });
   } catch (error) {

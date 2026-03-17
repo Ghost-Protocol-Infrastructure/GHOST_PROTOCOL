@@ -60,7 +60,7 @@ Do not use GhostWire when:
 7. Submit those client-wallet transactions on-chain.
 8. Record the fund artifact with `POST /api/wire/jobs/[jobId]/artifacts`.
 9. Poll `GET /api/wire/jobs/[jobId]` or consume provider webhooks until terminal state.
-10. Resolve the deliverable from `metadataUri` after `COMPLETED`.
+10. Resolve the deliverable from `job.deliverable.locatorUrl` after `COMPLETED`.
 
 ## Merchant requirements
 
@@ -74,8 +74,20 @@ You need:
 Recommended deliverable pattern:
 
 ```text
-https://merchant.example.com/ghostwire/deliverable?jobId=wj_123
+https://merchant.example.com/ghostwire/deliverable?contract=0x...&job=3
 ```
+
+GhostWire resolves consumer fetch locators in this order:
+
+1. explicit `https://` or `http://` `metadataUri`
+2. explicit `ipfs://` `metadataUri` through a public IPFS gateway
+3. standard fallback derived from the merchant's registered gateway endpoint:
+
+```text
+{endpointUrl}/wire/deliverable?contract=0x...&job=3&jobId=wj_123
+```
+
+That means merchants with a configured gateway endpoint can omit an explicit HTTPS `metadataUri` as long as they serve the standard `/wire/deliverable` route.
 
 ## Consumer requirements
 
@@ -113,7 +125,7 @@ const prepared = await ghost.prepareWireJob({
   provider: "0xprovider...",
   evaluator: "0xevaluator...",
   specHash: "0x" + "aa".repeat(32),
-  metadataUri: "https://merchant.example.com/ghostwire/deliverable?jobId=wj_123",
+  metadataUri: "https://merchant.example.com/ghostwire/deliverable?contract=0x...&job=3",
 });
 
 // Send prepared.direct?.approveTxRequest if present.

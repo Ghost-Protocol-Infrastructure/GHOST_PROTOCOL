@@ -263,7 +263,7 @@ GhostWire is a direct escrow rail.
 
 - the external client wallet is the on-chain client
 - Ghost prepares transaction payloads, validates reported artifacts, reconciles status, and delivers provider-facing webhooks
-- `metadataUri` should be treated as the merchant-controlled deliverable locator when consumer-friendly retrieval is needed
+- `metadataUri` should be treated as the preferred merchant-controlled deliverable locator when consumer-friendly retrieval is needed
 
 ### `POST /api/wire/quote`
 
@@ -331,8 +331,10 @@ Request body:
 - `providerAgentId` (optional override/debug parity with quote attribution)
 - `providerServiceSlug` (optional override/debug parity with quote attribution)
 - `metadataUri` (optional, recommended)
-  - Use this as the merchant-controlled deliverable locator URL.
-  - Recommended shape: `https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123`
+  - Use this as the merchant-controlled deliverable locator URL when you want an explicit fetch target.
+  - Recommended shape: `https://merchant.example.com/ghostwire/deliverable?contract=0x...&job=3`
+  - `ipfs://...` is also supported and will be surfaced through a public IPFS gateway for fetch helpers.
+  - If omitted, GhostWire can still derive a standard locator from the merchant's registered gateway endpoint when provider attribution is available.
 - `webhookUrl` + `webhookSecret` (optional, both-or-neither)
 - `approvalMode` (optional: `exact` or `unlimited`, default `exact`)
 
@@ -381,6 +383,13 @@ Response notes:
   - `locatorUrl`
   - `mode`
   - `state`
+
+`job.deliverable.mode` can be:
+
+- `merchant_locator`
+- `gateway_standard`
+- `ipfs_gateway`
+- `none`
 
 When `job.contractState === "COMPLETED"` and `job.deliverable.available === true`, consumer SDKs can resolve the deliverable directly from the merchant locator.
 

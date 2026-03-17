@@ -16,6 +16,16 @@ export async function GET(_: NextRequest, context: RouteContext) {
 
   try {
     const job = await getWireJobById(jobId.trim());
+    const deliverable = await buildGhostWireDeliverableSummary({
+      jobId: job.jobId,
+      metadataUri: job.metadataUri,
+      contractState: job.contractState,
+      providerAgentId: job.providerAgentId,
+      providerServiceSlug: job.providerServiceSlug,
+      providerAddress: job.providerAddress,
+      contractAddress: job.contractAddress,
+      contractJobId: job.contractJobId,
+    });
     const recovery =
       job.artifactValidationState === "INVALID" || job.artifactValidationState === "MANUAL_REVIEW"
         ? job.contractState === "OPEN"
@@ -41,11 +51,7 @@ export async function GET(_: NextRequest, context: RouteContext) {
       job: {
         ...job,
         ...recovery,
-        deliverable: buildGhostWireDeliverableSummary({
-          jobId: job.jobId,
-          metadataUri: job.metadataUri,
-          contractState: job.contractState,
-        }),
+        deliverable,
       },
     });
   } catch (error) {

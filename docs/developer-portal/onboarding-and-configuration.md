@@ -80,11 +80,12 @@ Role model:
    - should normally be a merchant-controlled approval wallet
    - should be separate from your settlement key at production scale
 3. Expose a deliverable locator endpoint.
-   - GhostWire uses `metadataUri` as the consumer-facing deliverable locator.
+   - GhostWire uses `metadataUri` as the preferred explicit consumer-facing deliverable locator.
+   - If you have a registered gateway `endpointUrl`, GhostWire can also derive the standard fallback path automatically.
    - Recommended pattern:
 
 ```text
-https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123
+https://merchant.example.com/ghostwire/deliverable?contract=0x...&job=3
 ```
 
 4. Optionally configure GhostWire lifecycle webhooks.
@@ -108,7 +109,9 @@ https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123
 2. Prepare the direct job from `POST /api/wire/jobs`.
 3. Send the returned wallet transaction requests from the client wallet.
 4. Record `createTxHash` and `fundTxHash` through `POST /api/wire/jobs/[jobId]/artifacts`.
-5. Provide `metadataUri` when you want the consumer SDK to resolve the final deliverable automatically after completion.
+5. Provide `metadataUri` when you want an explicit final deliverable locator after completion.
+   - `https://...` and `ipfs://...` are both supported.
+   - If you omit it, keep the standard `/wire/deliverable` route live under your configured gateway endpoint so consumer SDKs can still resolve the payload.
 6. Poll `GET /api/wire/jobs/[jobId]` or consume webhook events until the job reaches terminal state.
 7. Only terminal reconciled GhostWire jobs affect GhostRank:
    - `COMPLETED`
