@@ -1,6 +1,6 @@
 # GhostGate Python SDK
 
-Python SDK for Ghost Protocol gate access, telemetry, and Hosted GhostWire helpers.
+Python SDK for Ghost Protocol gate access, telemetry, and direct GhostWire helpers.
 
 ## Install
 
@@ -37,7 +37,8 @@ print(result)
 - `outcome(...)`
 - `start_heartbeat(...)`
 - `create_wire_quote(...)`
-- `create_wire_job(...)`
+- `prepare_wire_job(...)`
+- `record_wire_artifacts(...)`
 - `get_wire_job(...)`
 - `wait_for_wire_terminal(...)`
 - `get_wire_deliverable(...)`

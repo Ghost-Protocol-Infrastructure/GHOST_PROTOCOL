@@ -1,19 +1,12 @@
 import { NextRequest } from "next/server";
 import { parsePositiveIntBounded } from "@/lib/fulfillment-route";
 import { ghostWireAdminJson, isGhostWireOperatorAuthorized } from "@/lib/ghostwire-admin-route";
-import {
-  ghostWireJson,
-  isRecord,
-  parseAddressString,
-  parseGhostWireJsonBody,
-  parseRequiredString,
-} from "@/lib/ghostwire-route";
+import { ghostWireJson, isRecord, parseGhostWireJsonBody } from "@/lib/ghostwire-route";
 import {
   GHOSTWIRE_OPERATOR_DEFAULT_WEBHOOK_LIMIT,
   GHOSTWIRE_OPERATOR_DEFAULT_WORKFLOW_LIMIT,
   GHOSTWIRE_OPERATOR_MAX_LIMIT,
   processGhostWireOperatorTick,
-  recordGhostWireExecutionBatch,
   resolveGhostWireOperatorSnapshot,
 } from "@/lib/ghostwire-operator";
 
@@ -30,42 +23,6 @@ const parseLimitValue = (value: unknown, fallback: number): number =>
     fallback,
     max: GHOSTWIRE_OPERATOR_MAX_LIMIT,
   });
-
-const parseWireTxHash = (value: unknown): string | null => {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim().toLowerCase();
-  return /^0x[a-f0-9]{64}$/.test(trimmed) ? trimmed : null;
-};
-
-const parseExecutionRecord = (
-  value: unknown,
-): {
-  jobId: string;
-  contractAddress: string;
-  contractJobId: string;
-  createTxHash: string;
-  fundTxHash: string;
-} | null => {
-  if (!isRecord(value)) return null;
-
-  const jobId = parseRequiredString(value.jobId);
-  const contractAddress = parseAddressString(value.contractAddress);
-  const contractJobId = parseRequiredString(value.contractJobId);
-  const createTxHash = parseWireTxHash(value.createTxHash);
-  const fundTxHash = parseWireTxHash(value.fundTxHash);
-
-  if (!jobId || !contractAddress || !contractJobId || !createTxHash || !fundTxHash) {
-    return null;
-  }
-
-  return {
-    jobId,
-    contractAddress,
-    contractJobId,
-    createTxHash,
-    fundTxHash,
-  };
-};
 
 export async function GET(request: NextRequest) {
   if (!isGhostWireOperatorAuthorized(request)) {
@@ -96,7 +53,7 @@ export async function GET(request: NextRequest) {
       {
         ok: true,
         authMode: "bearer-secret",
-        operatorMode: "hosted-create-fund-reconcile-terminal",
+        operatorMode: "direct-artifact-reconcile-webhooks",
         ...snapshot,
       },
       200,
@@ -142,26 +99,8 @@ export async function POST(request: NextRequest) {
 
   const workflowLimit = parseLimitValue(parsed.body.workflowLimit, GHOSTWIRE_OPERATOR_DEFAULT_WORKFLOW_LIMIT);
   const webhookLimit = parseLimitValue(parsed.body.webhookLimit, GHOSTWIRE_OPERATOR_DEFAULT_WEBHOOK_LIMIT);
-  const recordsInput = Array.isArray(parsed.body.records) ? parsed.body.records : [];
-  const invalidRecordCount = recordsInput.filter((record) => !parseExecutionRecord(record)).length;
-
-  if (invalidRecordCount > 0) {
-    return ghostWireJson(
-      {
-        code: 400,
-        error: "GhostWire operator records must include jobId, contractAddress, contractJobId, createTxHash, and fundTxHash.",
-        errorCode: "INVALID_GHOSTWIRE_OPERATOR_RECORDS",
-      },
-      400,
-    );
-  }
-
-  const records = recordsInput
-    .map((record) => parseExecutionRecord(record))
-    .filter((record): record is NonNullable<typeof record> => record !== null);
 
   try {
-    const recording = records.length > 0 ? await recordGhostWireExecutionBatch(records) : null;
     const tick = await processGhostWireOperatorTick({
       workflowLimit,
       webhookLimit,
@@ -170,7 +109,6 @@ export async function POST(request: NextRequest) {
     return ghostWireAdminJson(
       {
         authMode: "bearer-secret",
-        recording,
         ...tick,
       },
       200,

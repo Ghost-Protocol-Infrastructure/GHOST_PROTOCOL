@@ -1,6 +1,6 @@
 # GhostWire Webhooks
 
-GhostWire can POST signed lifecycle events to your backend when a wire job moves through the ERC-8183 state machine.
+GhostWire can POST signed lifecycle events to your backend when a direct wire job moves through the ERC-8183 state machine.
 
 ## Event model
 
@@ -68,7 +68,7 @@ Rules:
   "pricing": {
     "principal": { "asset": "USDC", "amount": "500000000", "decimals": 6 },
     "protocolFee": { "asset": "USDC", "amount": "12500000", "decimals": 6, "bps": 250 },
-    "networkReserve": { "asset": "ETH", "amount": "3000000000000000", "decimals": 18, "chainId": 8453 }
+    "networkReserve": { "asset": "ETH", "amount": "0", "decimals": 18, "chainId": 8453 }
   }
 }
 ```
@@ -89,7 +89,7 @@ Rules:
   "pricing": {
     "principal": { "asset": "USDC", "amount": "500000000", "decimals": 6 },
     "protocolFee": { "asset": "USDC", "amount": "12500000", "decimals": 6, "bps": 250 },
-    "networkReserve": { "asset": "ETH", "amount": "3000000000000000", "decimals": 18, "chainId": 8453 }
+    "networkReserve": { "asset": "ETH", "amount": "0", "decimals": 18, "chainId": 8453 }
   }
 }
 ```
@@ -109,7 +109,7 @@ Rules:
   "pricing": {
     "principal": { "asset": "USDC", "amount": "500000000", "decimals": 6 },
     "protocolFee": { "asset": "USDC", "amount": "12500000", "decimals": 6, "bps": 250 },
-    "networkReserve": { "asset": "ETH", "amount": "3000000000000000", "decimals": 18, "chainId": 8453 }
+    "networkReserve": { "asset": "ETH", "amount": "0", "decimals": 18, "chainId": 8453 }
   }
 }
 ```
@@ -130,7 +130,7 @@ Rules:
   "pricing": {
     "principal": { "asset": "USDC", "amount": "500000000", "decimals": 6 },
     "protocolFee": { "asset": "USDC", "amount": "12500000", "decimals": 6, "bps": 250 },
-    "networkReserve": { "asset": "ETH", "amount": "3000000000000000", "decimals": 18, "chainId": 8453 }
+    "networkReserve": { "asset": "ETH", "amount": "0", "decimals": 18, "chainId": 8453 }
   },
   "settlement": {
     "providerPayout": { "asset": "USDC", "amount": "500000000", "decimals": 6 },
@@ -157,7 +157,7 @@ Rules:
   "pricing": {
     "principal": { "asset": "USDC", "amount": "500000000", "decimals": 6 },
     "protocolFee": { "asset": "USDC", "amount": "12500000", "decimals": 6, "bps": 250 },
-    "networkReserve": { "asset": "ETH", "amount": "3000000000000000", "decimals": 18, "chainId": 8453 }
+    "networkReserve": { "asset": "ETH", "amount": "0", "decimals": 18, "chainId": 8453 }
   },
   "settlement": {
     "providerPayout": { "asset": "USDC", "amount": "0", "decimals": 6 },
@@ -184,7 +184,7 @@ Rules:
   "pricing": {
     "principal": { "asset": "USDC", "amount": "500000000", "decimals": 6 },
     "protocolFee": { "asset": "USDC", "amount": "12500000", "decimals": 6, "bps": 250 },
-    "networkReserve": { "asset": "ETH", "amount": "3000000000000000", "decimals": 18, "chainId": 8453 }
+    "networkReserve": { "asset": "ETH", "amount": "0", "decimals": 18, "chainId": 8453 }
   },
   "settlement": {
     "providerPayout": { "asset": "USDC", "amount": "0", "decimals": 6 },
@@ -283,5 +283,5 @@ def ghostwire_webhook():
 
 - `wire.job.submitted` is automatic only after the underlying ERC-8183 `submit` transaction is on-chain and confirmed.
 - `wire.job.completed` and `wire.job.rejected` are reconciled automatically once the evaluator finalizes the on-chain job.
-- `wire.job.expired` can be triggered automatically by the hosted GhostWire operator when an expired funded/submitted job is eligible for `claimRefund`.
+- `wire.job.expired` can be triggered automatically by the GhostWire operator when an expired funded/submitted job is eligible for `claimRefund`.
 - If your receiver returns `5xx`, `408`, `409`, `425`, or `429`, GhostWire retries with exponential backoff and preserves the same `eventId`.

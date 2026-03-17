@@ -39,20 +39,16 @@ GHOST_OPENCLAW_TIMEOUT_MS=15000
 ## 6. GhostWire quote helper (optional)
 
 ```bash
-node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --provider 0x... --evaluator 0x... --principal-amount 1000000
+node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --client 0x... --provider 0x... --evaluator 0x... --principal-amount 1000000
 ```
 
-## 7. GhostWire create from quote (optional)
+## 7. GhostWire prepare from quote (optional)
 
 ```bash
 node integrations/openclaw-ghost-pay/bin/create-wire-job-from-quote.mjs --quote-id wq_... --client 0x... --provider 0x... --evaluator 0x... --spec-hash 0x...
 ```
 
-Requires:
-
-```bash
-GHOSTWIRE_EXEC_SECRET=...
-```
+The command returns wallet-ready direct GhostWire transaction requests. The client wallet still sends the on-chain transactions.
 
 ## 8. GhostWire job status helper (optional)
 

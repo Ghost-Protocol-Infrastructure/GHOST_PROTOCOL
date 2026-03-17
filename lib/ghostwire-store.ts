@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   Prisma,
+  type WireArtifactValidationState,
   type WireContractState,
   type WireOperatorActionType,
   type WireTerminalDisposition,
@@ -9,7 +10,6 @@ import {
 } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import {
-  estimateGhostWireReserveUsdcMicro,
   GHOSTWIRE_JOB_EXPIRY_SECONDS,
   GHOSTWIRE_PROTOCOL_FEE_BPS,
   GHOSTWIRE_QUOTE_TTL_SECONDS,
@@ -17,9 +17,18 @@ import {
   GHOSTWIRE_SUPPORTED_SETTLEMENT_ASSET,
   resolveGhostWireContractBudgetAmount,
   resolveGhostWireMinConfirmations,
-  resolveGhostWireNetworkReserveWei,
   type GhostWireSupportedChainId,
 } from "@/lib/ghostwire-config";
+import {
+  buildGhostWireJobDescription,
+  buildGhostWireCreateTxRequest,
+  buildGhostWireFundTxRequest,
+  buildGhostWireSetBudgetTxRequest,
+  getGhostWireContractDetails,
+  getGhostWireDirectPreflight,
+  type GhostWireWalletTxRequest,
+  type WireApprovalMode,
+} from "@/lib/ghostwire-direct";
 
 const buildGhostWireId = (prefix: "wq" | "wj"): string => `${prefix}_${randomUUID().replace(/-/g, "")}`;
 const buildWireOpenEventId = (jobId: string): string => `wire_job_open:${jobId}`;
@@ -93,8 +102,15 @@ export class WireJobExecutionConflictError extends Error {
   }
 }
 
+export class WireJobInsufficientBalanceError extends Error {
+  constructor() {
+    super("Client wallet does not hold enough USDC to prepare this GhostWire job.");
+    this.name = "WireJobInsufficientBalanceError";
+  }
+}
+
 export const createWireQuote = async (input: {
-  clientAddress?: string | null;
+  clientAddress: string;
   providerAddress: string;
   providerAgentId?: string | null;
   providerServiceSlug?: string | null;
@@ -127,8 +143,8 @@ export const createWireQuote = async (input: {
   const ttlSeconds = input.ttlSeconds ?? GHOSTWIRE_QUOTE_TTL_SECONDS;
   const expiresAt = new Date(now.getTime() + ttlSeconds * 1000);
   const protocolFeeAmount = calculateProtocolFeeAmount(input.principalAmount);
-  const networkReserveAmount = resolveGhostWireNetworkReserveWei(input.chainId);
-  const displayReserveEstimateAmount = estimateGhostWireReserveUsdcMicro(networkReserveAmount);
+  const networkReserveAmount = 0n;
+  const displayReserveEstimateAmount = null;
 
   const record = await prisma.wireQuote.create({
     data: {
@@ -157,8 +173,6 @@ export const createWireQuote = async (input: {
       expiresAt: true,
       principalAmount: true,
       protocolFeeAmount: true,
-      networkReserveAmount: true,
-      displayReserveEstimateAmount: true,
     },
   });
 
@@ -180,19 +194,12 @@ export const createWireQuote = async (input: {
       },
       networkReserve: {
         asset: GHOSTWIRE_SUPPORTED_RESERVE_ASSET,
-        amount: record.networkReserveAmount.toString(),
+        amount: "0",
         decimals: 18,
         chainId: record.chainId as GhostWireSupportedChainId,
       },
       display: {
-        networkReserveSettlementAssetEstimate:
-          record.displayReserveEstimateAmount == null
-            ? null
-            : {
-                asset: GHOSTWIRE_SUPPORTED_SETTLEMENT_ASSET,
-                amount: record.displayReserveEstimateAmount.toString(),
-                decimals: 6,
-              },
+        networkReserveSettlementAssetEstimate: null,
       },
     },
     confirmations: {
@@ -392,7 +399,7 @@ const hasWireWebhookTarget = (job: {
   webhookSecret?: string | null;
 }): boolean => Boolean(job.webhookTargetUrl && job.webhookSecret);
 
-export const createWireJobFromQuote = async (input: {
+export const prepareWireJobFromQuote = async (input: {
   quoteId: string;
   clientAddress: string;
   providerAddress: string;
@@ -403,22 +410,93 @@ export const createWireJobFromQuote = async (input: {
   metadataUri?: string | null;
   webhookTargetUrl?: string | null;
   webhookSecret?: string | null;
+  approvalMode?: WireApprovalMode;
 }): Promise<{
   id: string;
   jobId: string;
   quoteId: string;
   chainId: number;
+  jobExpiresAt: string;
   state: WireContractState;
   contractState: WireContractState;
   pricing: ReturnType<typeof buildWirePricingPayload>;
   operator: {
+    artifactStatus: WireWorkflowStatus;
     createStatus: WireWorkflowStatus;
     fundStatus: WireWorkflowStatus;
     confirmationStatus: WireWorkflowStatus;
     reconcileStatus: WireWorkflowStatus;
   };
-}> =>
-  prisma.$transaction(async (tx) => {
+  direct: {
+    approvalMode: WireApprovalMode;
+    contractAddress: string;
+    paymentTokenAddress: string;
+    expectedBudgetAmount: string;
+    description: string;
+    allowance: Awaited<ReturnType<typeof getGhostWireDirectPreflight>>["allowance"];
+    balance: Awaited<ReturnType<typeof getGhostWireDirectPreflight>>["balance"];
+    nativeBalance: Awaited<ReturnType<typeof getGhostWireDirectPreflight>>["nativeBalance"];
+    approveTxRequest: GhostWireWalletTxRequest | null;
+    createTxRequest: GhostWireWalletTxRequest;
+    setBudgetTxRequest: GhostWireWalletTxRequest | null;
+    fundTxRequest: GhostWireWalletTxRequest | null;
+    nextAction: "submit_create_artifact";
+  };
+}> => {
+  const approvalMode = input.approvalMode ?? "exact";
+  const quoteForPreflight = await prisma.wireQuote.findUnique({
+    where: { quoteId: input.quoteId },
+    select: {
+      quoteId: true,
+      chainId: true,
+      principalAmount: true,
+      expiresAt: true,
+      consumedAt: true,
+      clientAddress: true,
+      providerAddress: true,
+      providerAgentId: true,
+      providerServiceSlug: true,
+      evaluatorAddress: true,
+    },
+  });
+  if (!quoteForPreflight) throw new WireQuoteNotFoundError();
+  if (quoteForPreflight.expiresAt <= new Date()) throw new WireQuoteExpiredError();
+  if (quoteForPreflight.consumedAt) throw new WireQuoteConsumedError();
+  if (quoteForPreflight.clientAddress && quoteForPreflight.clientAddress !== input.clientAddress) {
+    throw new WireQuoteMismatchError("Quote client address does not match create request.");
+  }
+  if (quoteForPreflight.providerAddress !== input.providerAddress) {
+    throw new WireQuoteMismatchError("Quote provider address does not match create request.");
+  }
+  if (
+    quoteForPreflight.providerAgentId &&
+    input.providerAgentId &&
+    quoteForPreflight.providerAgentId !== input.providerAgentId
+  ) {
+    throw new WireQuoteMismatchError("Quote provider agent attribution does not match create request.");
+  }
+  if (
+    quoteForPreflight.providerServiceSlug &&
+    input.providerServiceSlug &&
+    quoteForPreflight.providerServiceSlug !== input.providerServiceSlug
+  ) {
+    throw new WireQuoteMismatchError("Quote provider service attribution does not match create request.");
+  }
+  if (quoteForPreflight.evaluatorAddress !== input.evaluatorAddress) {
+    throw new WireQuoteMismatchError("Quote evaluator address does not match create request.");
+  }
+
+  const preflight = await getGhostWireDirectPreflight({
+    chainId: quoteForPreflight.chainId as GhostWireSupportedChainId,
+    clientAddress: input.clientAddress,
+    budgetAmount: resolveGhostWireContractBudgetAmount(quoteForPreflight.principalAmount),
+    approvalMode,
+  });
+  if (!preflight.balance.sufficient) {
+    throw new WireJobInsufficientBalanceError();
+  }
+
+  const prepared = await prisma.$transaction(async (tx) => {
     const quote = await tx.wireQuote.findUnique({
       where: { quoteId: input.quoteId },
     });
@@ -484,6 +562,7 @@ export const createWireJobFromQuote = async (input: {
         publicState: "OPEN",
         workflow: {
           create: {
+            artifactStatus: "PENDING",
             createStatus: "PENDING",
             fundStatus: "PENDING",
             confirmationStatus: "PENDING",
@@ -538,10 +617,15 @@ export const createWireJobFromQuote = async (input: {
       jobId: job.jobId,
       quoteId: job.quoteId,
       chainId: job.chainId,
+      jobExpiresAt: job.jobExpiresAt.toISOString(),
+      contractBudgetAmount: job.contractBudgetAmount,
+      specHash: job.specHash,
+      metadataUri: job.metadataUri,
       state: job.publicState,
       contractState: job.contractState,
       pricing: buildWirePricingPayload(job),
       operator: {
+        artifactStatus: job.workflow?.artifactStatus ?? "PENDING",
         createStatus: job.workflow?.createStatus ?? "PENDING",
         fundStatus: job.workflow?.fundStatus ?? "PENDING",
         confirmationStatus: job.workflow?.confirmationStatus ?? "PENDING",
@@ -549,6 +633,47 @@ export const createWireJobFromQuote = async (input: {
       },
     };
   });
+
+  const description = buildGhostWireJobDescription({
+    metadataUri: prepared.metadataUri,
+    specHash: prepared.specHash,
+  });
+  const createTxRequest = buildGhostWireCreateTxRequest({
+    chainId: prepared.chainId as GhostWireSupportedChainId,
+    providerAddress: input.providerAddress,
+    evaluatorAddress: input.evaluatorAddress,
+    jobExpiresAt: new Date(prepared.jobExpiresAt),
+    description,
+  });
+
+  const contractDetails = getGhostWireContractDetails(prepared.chainId as GhostWireSupportedChainId);
+  return {
+    id: prepared.id,
+    jobId: prepared.jobId,
+    quoteId: prepared.quoteId,
+    chainId: prepared.chainId,
+    jobExpiresAt: prepared.jobExpiresAt,
+    state: prepared.state,
+    contractState: prepared.contractState,
+    pricing: prepared.pricing,
+    operator: prepared.operator,
+    direct: {
+      approvalMode,
+      contractAddress: contractDetails.contractAddress,
+      paymentTokenAddress: contractDetails.paymentTokenAddress,
+      expectedBudgetAmount: prepared.contractBudgetAmount.toString(),
+      description,
+      allowance: preflight.allowance,
+      balance: preflight.balance,
+      nativeBalance: preflight.nativeBalance,
+      approveTxRequest: preflight.approveTxRequest,
+      createTxRequest,
+      setBudgetTxRequest: null,
+      fundTxRequest: null,
+      nextAction: "submit_create_artifact",
+    },
+  };
+};
 
 export const getWireJobById = async (jobId: string): Promise<{
   id: string;
@@ -569,12 +694,19 @@ export const getWireJobById = async (jobId: string): Promise<{
   contractAddress: string | null;
   contractJobId: string | null;
   createTxHash: string | null;
+  createTxSender: string | null;
   fundTxHash: string | null;
+  fundTxSender: string | null;
   terminalTxHash: string | null;
+  artifactsRecordedAt: string | null;
+  artifactValidationState: WireArtifactValidationState;
+  artifactValidationError: string | null;
   createdAt: string;
   updatedAt: string;
   pricing: ReturnType<typeof buildWirePricingPayload>;
   operator: {
+    artifactStatus: WireWorkflowStatus | null;
+    artifactCheckedAt: string | null;
     createStatus: WireWorkflowStatus | null;
     fundStatus: WireWorkflowStatus | null;
     confirmationStatus: WireWorkflowStatus | null;
@@ -619,12 +751,19 @@ export const getWireJobById = async (jobId: string): Promise<{
     contractAddress: job.contractAddress,
     contractJobId: job.contractJobId,
     createTxHash: job.createTxHash,
+    createTxSender: job.createTxSender,
     fundTxHash: job.fundTxHash,
+    fundTxSender: job.fundTxSender,
     terminalTxHash: job.terminalTxHash,
+    artifactsRecordedAt: job.artifactsRecordedAt?.toISOString() ?? null,
+    artifactValidationState: job.artifactValidationState,
+    artifactValidationError: job.artifactValidationError,
     createdAt: job.createdAt.toISOString(),
     updatedAt: job.updatedAt.toISOString(),
     pricing: buildWirePricingPayload(job),
     operator: {
+      artifactStatus: job.workflow?.artifactStatus ?? null,
+      artifactCheckedAt: job.workflow?.artifactCheckedAt?.toISOString() ?? null,
       createStatus: job.workflow?.createStatus ?? null,
       fundStatus: job.workflow?.fundStatus ?? null,
       confirmationStatus: job.workflow?.confirmationStatus ?? null,
@@ -659,8 +798,7 @@ const buildWireOperatorWorkWhere = (now: Date): Prisma.WireJobWhereInput => ({
     {
       workflow: {
         OR: [
-          { createStatus: { in: ["PENDING", "FAILED", "IN_PROGRESS"] } },
-          { fundStatus: { in: ["PENDING", "FAILED", "IN_PROGRESS"] } },
+          { artifactStatus: { in: ["PENDING", "FAILED", "IN_PROGRESS"] } },
           { confirmationStatus: { in: ["PENDING", "FAILED", "IN_PROGRESS"] } },
           { reconcileStatus: { in: ["PENDING", "FAILED", "IN_PROGRESS"] } },
         ],
@@ -689,8 +827,13 @@ export const listWireJobsNeedingOperatorWork = async (limit: number) =>
       contractJobId: true,
       contractBudgetAmount: true,
       createTxHash: true,
+      createTxSender: true,
       fundTxHash: true,
+      fundTxSender: true,
       terminalTxHash: true,
+      artifactsRecordedAt: true,
+      artifactValidationState: true,
+      artifactValidationError: true,
       clientAddress: true,
       providerAddress: true,
       providerAgentId: true,
@@ -702,6 +845,9 @@ export const listWireJobsNeedingOperatorWork = async (limit: number) =>
       updatedAt: true,
       workflow: {
         select: {
+          artifactStatus: true,
+          artifactCheckedAt: true,
+          artifactLastCheckedBlock: true,
           createStatus: true,
           fundStatus: true,
           confirmationStatus: true,
@@ -738,6 +884,8 @@ export const listPendingWireWebhookOutboxEvents = async (limit: number) =>
   });
 
 const buildWireOperatorPayload = (workflow: {
+  artifactStatus: WireWorkflowStatus | null;
+  artifactCheckedAt: Date | null;
   createStatus: WireWorkflowStatus | null;
   fundStatus: WireWorkflowStatus | null;
   confirmationStatus: WireWorkflowStatus | null;
@@ -748,6 +896,8 @@ const buildWireOperatorPayload = (workflow: {
   manualReviewRequired: boolean | null;
   manualReviewReason: string | null;
 }) => ({
+  artifactStatus: workflow.artifactStatus,
+  artifactCheckedAt: workflow.artifactCheckedAt?.toISOString() ?? null,
   createStatus: workflow.createStatus,
   fundStatus: workflow.fundStatus,
   confirmationStatus: workflow.confirmationStatus,
@@ -782,13 +932,18 @@ export const listWireJobs = async (input: {
     contractAddress: string | null;
     contractJobId: string | null;
     createTxHash: string | null;
+    createTxSender?: string | null;
     fundTxHash: string | null;
+    fundTxSender?: string | null;
     terminalTxHash: string | null;
+    artifactsRecordedAt?: string | null;
     metadataUri: string | null;
     createdAt: string;
     updatedAt: string;
     pricing: ReturnType<typeof buildWirePricingPayload>;
     operator: ReturnType<typeof buildWireOperatorPayload>;
+    artifactValidationState: WireArtifactValidationState;
+    artifactValidationError: string | null;
   }>;
   nextCursor: string | null;
 }> => {
@@ -835,13 +990,20 @@ export const listWireJobs = async (input: {
       contractAddress: job.contractAddress,
       contractJobId: job.contractJobId,
       createTxHash: job.createTxHash,
+      createTxSender: job.createTxSender,
       fundTxHash: job.fundTxHash,
+      fundTxSender: job.fundTxSender,
       terminalTxHash: job.terminalTxHash,
+      artifactsRecordedAt: job.artifactsRecordedAt?.toISOString() ?? null,
       metadataUri: job.metadataUri,
+      artifactValidationState: job.artifactValidationState,
+      artifactValidationError: job.artifactValidationError,
       createdAt: job.createdAt.toISOString(),
       updatedAt: job.updatedAt.toISOString(),
       pricing: buildWirePricingPayload(job),
       operator: buildWireOperatorPayload({
+        artifactStatus: job.workflow?.artifactStatus ?? null,
+        artifactCheckedAt: job.workflow?.artifactCheckedAt ?? null,
         createStatus: job.workflow?.createStatus ?? null,
         fundStatus: job.workflow?.fundStatus ?? null,
         confirmationStatus: job.workflow?.confirmationStatus ?? null,
@@ -885,10 +1047,12 @@ export const markWireJobForManualReview = async (input: {
   prisma.wireJobWorkflow.update({
     where: { wireJobId: input.jobId },
     data: {
+      artifactStatus: input.stage === "create" || input.stage === "fund" ? "FAILED" : undefined,
       createStatus: input.stage === "create" ? "FAILED" : undefined,
       fundStatus: input.stage === "fund" ? "FAILED" : undefined,
       confirmationStatus: input.stage === "confirmation" ? "FAILED" : undefined,
       reconcileStatus: input.stage === "reconcile" ? "FAILED" : undefined,
+      artifactCheckedAt: new Date(),
       manualReviewRequired: true,
       manualReviewReason: input.reason,
       lastError: input.reason,
@@ -896,6 +1060,7 @@ export const markWireJobForManualReview = async (input: {
       lastAttemptAt: new Date(),
     },
     select: {
+      artifactStatus: true,
       createStatus: true,
       fundStatus: true,
       confirmationStatus: true,
@@ -911,7 +1076,18 @@ export const recordWireJobExecutionArtifacts = async (input: {
   contractAddress?: string | null;
   contractJobId?: string | null;
   createTxHash?: string | null;
+  createTxSender?: string | null;
   fundTxHash?: string | null;
+  fundTxSender?: string | null;
+  artifactValidationState?: WireArtifactValidationState;
+  artifactValidationError?: string | null;
+  artifactStatus?: WireWorkflowStatus;
+  createStatus?: WireWorkflowStatus;
+  fundStatus?: WireWorkflowStatus;
+  confirmationStatus?: WireWorkflowStatus;
+  reconcileStatus?: WireWorkflowStatus;
+  artifactCheckedAt?: Date | null;
+  artifactLastCheckedBlock?: bigint | null;
 }) =>
   prisma.$transaction(async (tx) => {
     const job = await tx.wireJob.findUnique({
@@ -923,7 +1099,9 @@ export const recordWireJobExecutionArtifacts = async (input: {
     const nextContractAddress = input.contractAddress ?? job.contractAddress;
     const nextContractJobId = input.contractJobId ?? job.contractJobId;
     const nextCreateTxHash = input.createTxHash ?? job.createTxHash;
+    const nextCreateTxSender = input.createTxSender ?? job.createTxSender;
     const nextFundTxHash = input.fundTxHash ?? job.fundTxHash;
+    const nextFundTxSender = input.fundTxSender ?? job.fundTxSender;
 
     if (job.contractAddress && input.contractAddress && job.contractAddress.toLowerCase() !== input.contractAddress.toLowerCase()) {
       throw new WireJobExecutionConflictError("Wire job contract address conflicts with existing execution record.");
@@ -934,37 +1112,29 @@ export const recordWireJobExecutionArtifacts = async (input: {
     if (job.createTxHash && input.createTxHash && job.createTxHash.toLowerCase() !== input.createTxHash.toLowerCase()) {
       throw new WireJobExecutionConflictError("Wire job create transaction hash conflicts with existing execution record.");
     }
+    if (job.createTxSender && input.createTxSender && job.createTxSender.toLowerCase() !== input.createTxSender.toLowerCase()) {
+      throw new WireJobExecutionConflictError("Wire job create transaction sender conflicts with existing execution record.");
+    }
     if (job.fundTxHash && input.fundTxHash && job.fundTxHash.toLowerCase() !== input.fundTxHash.toLowerCase()) {
       throw new WireJobExecutionConflictError("Wire job fund transaction hash conflicts with existing execution record.");
+    }
+    if (job.fundTxSender && input.fundTxSender && job.fundTxSender.toLowerCase() !== input.fundTxSender.toLowerCase()) {
+      throw new WireJobExecutionConflictError("Wire job fund transaction sender conflicts with existing execution record.");
     }
 
     const workflow = await tx.wireJobWorkflow.update({
       where: { wireJobId: job.id },
       data: {
-        createStatus:
-          nextContractAddress && nextContractJobId && nextCreateTxHash
-            ? job.workflow?.createStatus === "SUCCEEDED"
-              ? "SUCCEEDED"
-              : "IN_PROGRESS"
-            : job.workflow?.createStatus ?? "PENDING",
-        fundStatus:
-          nextFundTxHash
-            ? job.workflow?.fundStatus === "SUCCEEDED"
-              ? "SUCCEEDED"
-              : "IN_PROGRESS"
-            : job.workflow?.fundStatus ?? "PENDING",
-        confirmationStatus:
-          nextFundTxHash
-            ? job.workflow?.confirmationStatus === "SUCCEEDED"
-              ? "SUCCEEDED"
-              : "IN_PROGRESS"
-            : job.workflow?.confirmationStatus ?? "PENDING",
-        reconcileStatus:
-          nextFundTxHash
-            ? job.workflow?.reconcileStatus === "SUCCEEDED"
-              ? "SUCCEEDED"
-              : "PENDING"
-            : job.workflow?.reconcileStatus ?? "PENDING",
+        artifactStatus: input.artifactStatus ?? job.workflow?.artifactStatus ?? "PENDING",
+        createStatus: input.createStatus ?? job.workflow?.createStatus ?? "PENDING",
+        fundStatus: input.fundStatus ?? job.workflow?.fundStatus ?? "PENDING",
+        confirmationStatus: input.confirmationStatus ?? job.workflow?.confirmationStatus ?? "PENDING",
+        reconcileStatus: input.reconcileStatus ?? job.workflow?.reconcileStatus ?? "PENDING",
+        artifactCheckedAt: input.artifactCheckedAt ?? job.workflow?.artifactCheckedAt ?? null,
+        artifactLastCheckedBlock:
+          input.artifactLastCheckedBlock !== undefined
+            ? input.artifactLastCheckedBlock
+            : job.workflow?.artifactLastCheckedBlock ?? null,
         lastError: null,
         nextRetryAt: null,
         lastAttemptAt: new Date(),
@@ -972,6 +1142,8 @@ export const recordWireJobExecutionArtifacts = async (input: {
         manualReviewReason: null,
       },
       select: {
+        artifactStatus: true,
+        artifactCheckedAt: true,
         createStatus: true,
         fundStatus: true,
         confirmationStatus: true,
@@ -987,7 +1159,16 @@ export const recordWireJobExecutionArtifacts = async (input: {
         contractAddress: nextContractAddress,
         contractJobId: nextContractJobId,
         createTxHash: nextCreateTxHash,
+        createTxSender: nextCreateTxSender,
         fundTxHash: nextFundTxHash,
+        fundTxSender: nextFundTxSender,
+        artifactsRecordedAt:
+          input.createTxHash || input.fundTxHash || input.createTxSender || input.fundTxSender
+            ? new Date()
+            : job.artifactsRecordedAt,
+        artifactValidationState: input.artifactValidationState ?? job.artifactValidationState,
+        artifactValidationError:
+          input.artifactValidationError !== undefined ? input.artifactValidationError : job.artifactValidationError,
       },
       select: {
         id: true,
@@ -997,7 +1178,12 @@ export const recordWireJobExecutionArtifacts = async (input: {
         contractAddress: true,
         contractJobId: true,
         createTxHash: true,
+        createTxSender: true,
         fundTxHash: true,
+        fundTxSender: true,
+        artifactsRecordedAt: true,
+        artifactValidationState: true,
+        artifactValidationError: true,
         publicState: true,
         contractState: true,
       },
@@ -1007,6 +1193,218 @@ export const recordWireJobExecutionArtifacts = async (input: {
       ...updatedJob,
       operator: workflow,
     };
+  });
+
+export const prepareWireJobFunding = async (input: {
+  jobId: string;
+  approvalMode?: WireApprovalMode;
+}) => {
+  const job = await prisma.wireJob.findUnique({
+    where: { jobId: input.jobId },
+    select: {
+      jobId: true,
+      chainId: true,
+      clientAddress: true,
+      contractAddress: true,
+      contractJobId: true,
+      contractBudgetAmount: true,
+    },
+  });
+  if (!job) throw new WireJobNotFoundError();
+  if (!job.contractJobId) {
+    throw new WireJobExecutionConflictError("Wire job contract identifier is not available yet.");
+  }
+
+  const approvalMode = input.approvalMode ?? "exact";
+  const preflight = await getGhostWireDirectPreflight({
+    chainId: job.chainId as GhostWireSupportedChainId,
+    clientAddress: job.clientAddress,
+    budgetAmount: job.contractBudgetAmount,
+    approvalMode,
+  });
+
+  return {
+    approvalMode,
+    contractAddress: job.contractAddress ?? preflight.contractAddress,
+    paymentTokenAddress: preflight.paymentTokenAddress,
+    expectedBudgetAmount: job.contractBudgetAmount.toString(),
+    allowance: preflight.allowance,
+    balance: preflight.balance,
+    nativeBalance: preflight.nativeBalance,
+    approveTxRequest: preflight.approveTxRequest,
+    setBudgetTxRequest: buildGhostWireSetBudgetTxRequest({
+      chainId: job.chainId as GhostWireSupportedChainId,
+      contractJobId: job.contractJobId,
+      budgetAmount: job.contractBudgetAmount,
+    }),
+    fundTxRequest: buildGhostWireFundTxRequest({
+      chainId: job.chainId as GhostWireSupportedChainId,
+      contractJobId: job.contractJobId,
+      budgetAmount: job.contractBudgetAmount,
+    }),
+  };
+};
+
+export const getWireJobArtifactContext = async (jobId: string) => {
+  const job = await prisma.wireJob.findUnique({
+    where: { jobId },
+    select: {
+      id: true,
+      jobId: true,
+      quoteId: true,
+      chainId: true,
+      jobExpiresAt: true,
+      clientAddress: true,
+      providerAddress: true,
+      evaluatorAddress: true,
+      contractAddress: true,
+      contractJobId: true,
+      contractBudgetAmount: true,
+      specHash: true,
+      metadataUri: true,
+      createTxHash: true,
+      createTxSender: true,
+      fundTxHash: true,
+      fundTxSender: true,
+      contractState: true,
+      publicState: true,
+      artifactValidationState: true,
+      artifactValidationError: true,
+      workflow: {
+        select: {
+          artifactStatus: true,
+          artifactCheckedAt: true,
+          artifactLastCheckedBlock: true,
+          createStatus: true,
+          fundStatus: true,
+          confirmationStatus: true,
+          reconcileStatus: true,
+          manualReviewRequired: true,
+          manualReviewReason: true,
+        },
+      },
+    },
+  });
+  if (!job) throw new WireJobNotFoundError();
+  return job;
+};
+
+export const failWireJobArtifactValidation = async (input: {
+  jobId: string;
+  stage: "create" | "fund";
+  reason: string;
+  artifactLastCheckedBlock?: bigint | null;
+}) => {
+  const job = await prisma.wireJob.findUnique({
+    where: { jobId: input.jobId },
+    select: { id: true },
+  });
+  if (!job) throw new WireJobNotFoundError();
+
+  await prisma.$transaction(async (tx) => {
+    await tx.wireJob.update({
+      where: { id: job.id },
+      data: {
+        artifactValidationState: "MANUAL_REVIEW",
+        artifactValidationError: input.reason,
+      },
+    });
+    await tx.wireJobWorkflow.update({
+      where: { wireJobId: job.id },
+      data: {
+        artifactStatus: "FAILED",
+        artifactCheckedAt: new Date(),
+        artifactLastCheckedBlock:
+          input.artifactLastCheckedBlock !== undefined ? input.artifactLastCheckedBlock : undefined,
+        lastError: input.reason,
+        manualReviewRequired: true,
+        manualReviewReason: input.reason,
+        createStatus: input.stage === "create" ? "FAILED" : undefined,
+        fundStatus: input.stage === "fund" ? "FAILED" : undefined,
+        nextRetryAt: null,
+        lastAttemptAt: new Date(),
+      },
+    });
+  });
+};
+
+export const updateWireArtifactRecoveryCheckpoint = async (input: {
+  jobId: string;
+  artifactStatus?: WireWorkflowStatus;
+  artifactCheckedAt?: Date | null;
+  artifactLastCheckedBlock?: bigint | null;
+  lastError?: string | null;
+  nextRetryAt?: Date | null;
+}) =>
+  prisma.wireJobWorkflow.update({
+    where: { wireJobId: input.jobId },
+    data: {
+      artifactStatus: input.artifactStatus,
+      artifactCheckedAt: input.artifactCheckedAt ?? undefined,
+      artifactLastCheckedBlock: input.artifactLastCheckedBlock ?? undefined,
+      lastError: input.lastError ?? undefined,
+      nextRetryAt: input.nextRetryAt ?? undefined,
+      lastAttemptAt: new Date(),
+    },
+    select: {
+      artifactStatus: true,
+      artifactCheckedAt: true,
+      artifactLastCheckedBlock: true,
+    },
+  });
+
+export const listWireJobsForArtifactRecovery = async (input: {
+  limit: number;
+  notCheckedBefore: Date;
+  createdAfter: Date;
+}) =>
+  prisma.wireJob.findMany({
+    where: {
+      createdAt: { gte: input.createdAfter, lte: input.notCheckedBefore },
+      publicState: "OPEN",
+      OR: [{ createTxHash: null }, { fundTxHash: null }],
+      workflow: {
+        manualReviewRequired: false,
+      },
+    },
+    orderBy: { createdAt: "asc" },
+    take: input.limit,
+    select: {
+      id: true,
+      jobId: true,
+      chainId: true,
+      jobExpiresAt: true,
+      contractAddress: true,
+      contractJobId: true,
+      contractBudgetAmount: true,
+      createTxHash: true,
+      createTxSender: true,
+      fundTxHash: true,
+      fundTxSender: true,
+      clientAddress: true,
+      providerAddress: true,
+      evaluatorAddress: true,
+      specHash: true,
+      metadataUri: true,
+      createdAt: true,
+      updatedAt: true,
+      workflow: {
+        select: {
+          artifactStatus: true,
+          artifactCheckedAt: true,
+          artifactLastCheckedBlock: true,
+          createStatus: true,
+          fundStatus: true,
+          confirmationStatus: true,
+          reconcileStatus: true,
+          retryCount: true,
+          nextRetryAt: true,
+          lastError: true,
+          manualReviewRequired: true,
+          manualReviewReason: true,
+        },
+      },
+    },
   });
 
 export const recordWireJobTerminalArtifacts = async (input: {
@@ -1123,6 +1521,8 @@ export const reconcileWireJobSubmittedState = async (input: {
       data: {
         contractState: "SUBMITTED",
         publicState: "SUBMITTED",
+        artifactValidationState: "VALID",
+        artifactValidationError: null,
       },
       select: {
         id: true,
@@ -1146,6 +1546,8 @@ export const reconcileWireJobSubmittedState = async (input: {
     const workflow = await tx.wireJobWorkflow.update({
       where: { wireJobId: job.id },
       data: {
+        artifactStatus: "SUCCEEDED",
+        artifactCheckedAt: input.confirmedAt,
         confirmationStatus: "SUCCEEDED",
         reconcileStatus: "SUCCEEDED",
         lastError: null,
@@ -1155,6 +1557,7 @@ export const reconcileWireJobSubmittedState = async (input: {
         manualReviewReason: null,
       },
       select: {
+        artifactStatus: true,
         createStatus: true,
         fundStatus: true,
         confirmationStatus: true,
@@ -1249,6 +1652,8 @@ export const reconcileWireJobTerminalState = async (input: {
         publicState: input.state,
         terminalDisposition: input.state,
         terminalTxHash: input.terminalTxHash ?? job.terminalTxHash,
+        artifactValidationState: "VALID",
+        artifactValidationError: null,
       },
       select: {
         id: true,
@@ -1273,6 +1678,8 @@ export const reconcileWireJobTerminalState = async (input: {
     const workflow = await tx.wireJobWorkflow.update({
       where: { wireJobId: job.id },
       data: {
+        artifactStatus: "SUCCEEDED",
+        artifactCheckedAt: input.confirmedAt,
         confirmationStatus: "SUCCEEDED",
         reconcileStatus: "SUCCEEDED",
         lastError: null,
@@ -1282,6 +1689,7 @@ export const reconcileWireJobTerminalState = async (input: {
         manualReviewReason: null,
       },
       select: {
+        artifactStatus: true,
         createStatus: true,
         fundStatus: true,
         confirmationStatus: true,
@@ -1374,6 +1782,8 @@ export const reconcileWireJobFundedState = async (input: {
       data: {
         contractState: job.contractState === "FUNDED" ? job.contractState : "FUNDED",
         publicState: job.publicState === "FUNDED" ? job.publicState : "FUNDED",
+        artifactValidationState: "VALID",
+        artifactValidationError: null,
       },
       select: {
         id: true,
@@ -1398,6 +1808,8 @@ export const reconcileWireJobFundedState = async (input: {
     const workflow = await tx.wireJobWorkflow.update({
       where: { wireJobId: job.id },
       data: {
+        artifactStatus: "SUCCEEDED",
+        artifactCheckedAt: input.confirmedAt,
         createStatus: "SUCCEEDED",
         fundStatus: "SUCCEEDED",
         confirmationStatus: "SUCCEEDED",
@@ -1409,6 +1821,7 @@ export const reconcileWireJobFundedState = async (input: {
         manualReviewReason: null,
       },
       select: {
+        artifactStatus: true,
         createStatus: true,
         fundStatus: true,
         confirmationStatus: true,

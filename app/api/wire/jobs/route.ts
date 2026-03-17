@@ -3,13 +3,10 @@ import { type WireContractState } from "@prisma/client";
 import { parsePositiveIntBounded } from "@/lib/fulfillment-route";
 import { prisma } from "@/lib/db";
 import { GhostWireProviderAttributionError, resolveGhostWireProviderAttribution } from "@/lib/ghostwire-attribution";
-import {
-  isGhostWireExecAuthorized,
-  isGhostWireExecSecretConfigured,
-} from "@/lib/ghostwire-exec-auth";
 import { evaluateGhostWireExecutionPolicy } from "@/lib/ghostwire-exec-policy";
 import {
-  createWireJobFromQuote,
+  prepareWireJobFromQuote,
+  WireJobInsufficientBalanceError,
   listWireJobs,
   WireQuoteConsumedError,
   WireQuoteExpiredError,
@@ -22,6 +19,7 @@ import {
   parseAddressString,
   parseHttpUrlString,
   parseGhostWireJsonBody,
+  parseWireApprovalMode,
   parseHex32String,
   parseOptionalString,
   parseRequiredString,
@@ -75,28 +73,6 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!isGhostWireExecSecretConfigured()) {
-    return ghostWireJson(
-      {
-        code: 503,
-        error: "GhostWire execution secret is not configured.",
-        errorCode: "GHOSTWIRE_EXEC_NOT_CONFIGURED",
-      },
-      503,
-    );
-  }
-
-  if (!isGhostWireExecAuthorized(request)) {
-    return ghostWireJson(
-      {
-        code: 401,
-        error: "Unauthorized GhostWire execution request.",
-        errorCode: "UNAUTHORIZED_GHOSTWIRE_EXEC",
-      },
-      401,
-    );
-  }
-
   const parsed = await parseGhostWireJsonBody(request);
   if (!parsed.ok) {
     return ghostWireJson(
@@ -122,6 +98,7 @@ export async function POST(request: NextRequest) {
   const providerServiceSlug = parseOptionalString(parsed.body.providerServiceSlug);
   const webhookTargetUrl = parseHttpUrlString(parsed.body.webhookUrl);
   const webhookSecret = parseOptionalString(parsed.body.webhookSecret);
+  const approvalMode = parseWireApprovalMode(parsed.body.approvalMode) ?? "exact";
 
   if (!quoteId || !client || !provider || !evaluator || !specHash) {
     return ghostWireJson(
@@ -203,7 +180,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const job = await createWireJobFromQuote({
+    const job = await prepareWireJobFromQuote({
       quoteId,
       clientAddress: client,
       providerAddress: provider,
@@ -214,6 +191,7 @@ export async function POST(request: NextRequest) {
       metadataUri,
       webhookTargetUrl,
       webhookSecret,
+      approvalMode,
     });
 
     return ghostWireJson({
@@ -222,10 +200,12 @@ export async function POST(request: NextRequest) {
       jobId: job.jobId,
       quoteId: job.quoteId,
       chainId: job.chainId,
+      jobExpiresAt: job.jobExpiresAt,
       state: job.state,
       contractState: job.contractState,
       pricing: job.pricing,
       operator: job.operator,
+      direct: job.direct,
     });
   } catch (error) {
     if (error instanceof WireQuoteNotFoundError) {
@@ -239,6 +219,12 @@ export async function POST(request: NextRequest) {
     }
     if (error instanceof WireQuoteMismatchError) {
       return ghostWireJson({ code: 409, error: error.message, errorCode: "WIRE_QUOTE_MISMATCH" }, 409);
+    }
+    if (error instanceof WireJobInsufficientBalanceError) {
+      return ghostWireJson(
+        { code: 409, error: error.message, errorCode: "WIRE_CLIENT_INSUFFICIENT_BALANCE" },
+        409,
+      );
     }
     if (error instanceof GhostWireProviderAttributionError) {
       return ghostWireJson(

@@ -1,6 +1,6 @@
 ---
 name: openclaw-ghost-pay
-description: Discover Ghost payment requirements, execute GhostGate Express payments, and run GhostWire quote/create/status flows with execution controls.
+description: Discover Ghost payment requirements, execute GhostGate Express payments, and run GhostWire quote/prepare/status flows for direct escrow.
 version: 1.2.2
 metadata: {"clawdis":{"emoji":"👻","homepage":"https://github.com/Ghost-Protocol-Infrastructure/GHOST_PROTOCOL/tree/main/integrations/openclaw-ghost-pay","os":["darwin","linux","win32"],"requires":{"env":["GHOST_SIGNER_PRIVATE_KEY"],"bins":["node"]},"primaryEnv":"GHOST_SIGNER_PRIVATE_KEY","install":[{"id":"viem","kind":"node","package":"viem","label":"Install viem (required for GhostGate EIP-712 signing)"}]}}
 ---
@@ -11,9 +11,9 @@ Use this skill when an agent must:
 
 1. Query authoritative payment requirements for a service.
 2. Execute a paid request against GhostGate with x402-compatible transport headers.
-3. Optionally run GhostWire quote/create/status flow for escrow-mode jobs.
+3. Optionally run GhostWire quote/prepare/status flow for escrow-mode jobs.
 
-This skill executes Express mode payments and can request GhostWire job creation using guarded execution secrets.
+This skill executes Express mode payments and can prepare GhostWire direct escrow jobs for a client wallet.
 
 ## Required Environment
 
@@ -22,7 +22,8 @@ This skill executes Express mode payments and can request GhostWire job creation
 - `GHOST_OPENCLAW_CHAIN_ID` (optional, default: `8453`)
 - `GHOST_OPENCLAW_SERVICE_SLUG` (optional convenience default)
 - `GHOST_OPENCLAW_TIMEOUT_MS` (optional, default: `15000`)
-- `GHOSTWIRE_EXEC_SECRET` (required for wire job creation)
+- `GHOSTWIRE_CLIENT_ADDRESS` (required for wire quote/create helpers)
+- `GHOSTWIRE_APPROVAL_MODE` (optional: `exact` or `unlimited`)
 
 Never put private keys in prompts, code blocks, or frontend output.
 
@@ -50,10 +51,10 @@ This signs the Ghost EIP-712 `Access` payload and wraps it in `payment-signature
 ## Step 3 (Optional): Create GhostWire Quote
 
 ```bash
-node {baseDir}/../../bin/get-wire-quote.mjs --provider 0x... --evaluator 0x... --principal-amount 1000000
+node {baseDir}/../../bin/get-wire-quote.mjs --client 0x... --provider 0x... --evaluator 0x... --principal-amount 1000000
 ```
 
-## Step 4 (Optional): Create GhostWire Job from Quote
+## Step 4 (Optional): Prepare GhostWire Job from Quote
 
 ```bash
 node {baseDir}/../../bin/create-wire-job-from-quote.mjs --quote-id wq_... --client 0x... --provider 0x... --evaluator 0x... --spec-hash 0x...

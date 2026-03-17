@@ -27,6 +27,7 @@ ActivateResult = dict[str, Any]
 WireQuoteResult = dict[str, Any]
 WireJobResult = dict[str, Any]
 WireDeliverableResult = dict[str, Any]
+WireArtifactResult = dict[str, Any]
 
 
 class HeartbeatController:
@@ -238,7 +239,7 @@ class GhostGate:
         evaluator: str,
         principal_amount: str,
         chain_id: Optional[int] = None,
-        client: Optional[str] = None,
+        client: str,
         provider_agent_id: Optional[str] = None,
         provider_service_slug: Optional[str] = None,
         timeout_seconds: Optional[float] = None,
@@ -271,9 +272,15 @@ class GhostGate:
             "payload": payload,
             "quoteId": payload.get("quoteId") if isinstance(payload, dict) else None,
             "expiresAt": payload.get("expiresAt") if isinstance(payload, dict) else None,
+            "chainId": payload.get("chainId") if isinstance(payload, dict) else None,
+            "contractAddress": payload.get("contractAddress") if isinstance(payload, dict) else None,
+            "paymentTokenAddress": payload.get("paymentTokenAddress") if isinstance(payload, dict) else None,
+            "pricing": payload.get("pricing") if isinstance(payload, dict) else None,
+            "confirmations": payload.get("confirmations") if isinstance(payload, dict) else None,
+            "directExecution": payload.get("directExecution") if isinstance(payload, dict) else None,
         }
 
-    def create_wire_job(
+    def prepare_wire_job(
         self,
         *,
         quote_id: str,
@@ -286,15 +293,9 @@ class GhostGate:
         metadata_uri: Optional[str] = None,
         webhook_url: Optional[str] = None,
         webhook_secret: Optional[str] = None,
-        exec_secret: Optional[str] = None,
+        approval_mode: Optional[str] = None,
         timeout_seconds: Optional[float] = None,
     ) -> WireJobResult:
-        resolved_exec_secret = self._normalize_optional_string(exec_secret) or self._normalize_optional_string(
-            os.getenv("GHOSTWIRE_EXEC_SECRET")
-        )
-        if not resolved_exec_secret:
-            raise ValueError("create_wire_job requires exec_secret or GHOSTWIRE_EXEC_SECRET.")
-
         endpoint = f"{self.base_url}/api/wire/jobs"
         response = requests.post(
             endpoint,
@@ -313,11 +314,9 @@ class GhostGate:
                 **({"metadataUri": metadata_uri} if self._normalize_optional_string(metadata_uri) else {}),
                 **({"webhookUrl": webhook_url} if self._normalize_optional_string(webhook_url) else {}),
                 **({"webhookSecret": webhook_secret} if self._normalize_optional_string(webhook_secret) else {}),
+                **({"approvalMode": approval_mode} if self._normalize_optional_string(approval_mode) else {}),
             },
-            headers={
-                "accept": "application/json, text/plain;q=0.9, */*;q=0.8",
-                "Authorization": f"Bearer {resolved_exec_secret}",
-            },
+            headers={"accept": "application/json, text/plain;q=0.9, */*;q=0.8"},
             timeout=self._resolve_timeout(timeout_seconds),
         )
         payload = self._parse_response_payload(response)
@@ -327,6 +326,73 @@ class GhostGate:
             "status": response.status_code,
             "payload": payload,
             "jobId": payload.get("jobId") if isinstance(payload, dict) else None,
+            "quoteId": payload.get("quoteId") if isinstance(payload, dict) else None,
+            "chainId": payload.get("chainId") if isinstance(payload, dict) else None,
+            "jobExpiresAt": payload.get("jobExpiresAt") if isinstance(payload, dict) else None,
+            "direct": payload.get("direct") if isinstance(payload, dict) else None,
+        }
+
+    def record_wire_artifacts(
+        self,
+        *,
+        job_id: str,
+        client_address: str,
+        create_tx_hash: Optional[str] = None,
+        fund_tx_hash: Optional[str] = None,
+        create_tx_sender: Optional[str] = None,
+        fund_tx_sender: Optional[str] = None,
+        approval_mode: Optional[str] = None,
+        client_private_key: Optional[str] = None,
+        timeout_seconds: Optional[float] = None,
+    ) -> WireArtifactResult:
+        normalized_job_id = self._normalize_optional_string(job_id)
+        if not normalized_job_id:
+            raise ValueError("record_wire_artifacts requires a non-empty job_id.")
+
+        normalized_create_tx_hash = self._normalize_wire_hash(create_tx_hash)
+        normalized_fund_tx_hash = self._normalize_wire_hash(fund_tx_hash)
+        if not normalized_create_tx_hash and not normalized_fund_tx_hash:
+            raise ValueError("record_wire_artifacts requires at least one of create_tx_hash or fund_tx_hash.")
+
+        resolved_private_key = client_private_key or self.private_key
+        client_account = Account.from_key(resolved_private_key)
+        if client_account.address.lower() != client_address.lower():
+            raise ValueError("record_wire_artifacts client_private_key does not match client_address.")
+
+        auth_payload = self._build_wire_artifact_auth_payload(
+            job_id=normalized_job_id,
+            client_address=client_address,
+            create_tx_hash=normalized_create_tx_hash,
+            fund_tx_hash=normalized_fund_tx_hash,
+        )
+        auth_signature = Account.sign_message(
+            encode_defunct(text=self._build_wire_artifact_auth_message(auth_payload)),
+            private_key=resolved_private_key,
+        ).signature.hex()
+
+        endpoint = f"{self.base_url}/api/wire/jobs/{quote(normalized_job_id, safe='')}/artifacts"
+        response = requests.post(
+            endpoint,
+            json={
+                **({"createTxHash": normalized_create_tx_hash} if normalized_create_tx_hash else {}),
+                **({"fundTxHash": normalized_fund_tx_hash} if normalized_fund_tx_hash else {}),
+                **({"createTxSender": create_tx_sender} if self._normalize_optional_string(create_tx_sender) else {}),
+                **({"fundTxSender": fund_tx_sender} if self._normalize_optional_string(fund_tx_sender) else {}),
+                **({"approvalMode": approval_mode} if self._normalize_optional_string(approval_mode) else {}),
+                "authPayload": auth_payload,
+                "authSignature": auth_signature,
+            },
+            headers={"accept": "application/json, text/plain;q=0.9, */*;q=0.8"},
+            timeout=self._resolve_timeout(timeout_seconds),
+        )
+        payload = self._parse_response_payload(response)
+        return {
+            "ok": response.ok,
+            "endpoint": endpoint,
+            "status": response.status_code,
+            "payload": payload,
+            "job": payload.get("job") if isinstance(payload, dict) else None,
+            "direct": payload.get("direct") if isinstance(payload, dict) else None,
         }
 
     def get_wire_job(self, job_id: str, *, timeout_seconds: Optional[float] = None) -> WireJobResult:
@@ -645,6 +711,50 @@ class GhostGate:
                 f"serviceSlug:{payload['serviceSlug']}",
                 f"ownerAddress:{payload['ownerAddress']}",
                 f"actorAddress:{payload['actorAddress']}",
+                f"issuedAt:{payload['issuedAt']}",
+                f"nonce:{payload['nonce']}",
+            ]
+        )
+
+    @staticmethod
+    def _normalize_wire_hash(value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        trimmed = value.strip().lower()
+        return trimmed if len(trimmed) == 66 and trimmed.startswith("0x") else None
+
+    def _build_wire_artifact_auth_payload(
+        self,
+        *,
+        job_id: str,
+        client_address: str,
+        create_tx_hash: Optional[str] = None,
+        fund_tx_hash: Optional[str] = None,
+        issued_at: Optional[int] = None,
+        nonce: Optional[str] = None,
+    ) -> dict[str, Any]:
+        return {
+            "scope": "ghostwire_artifacts",
+            "version": "1",
+            "jobId": job_id,
+            "clientAddress": client_address.lower(),
+            "createTxHash": self._normalize_wire_hash(create_tx_hash),
+            "fundTxHash": self._normalize_wire_hash(fund_tx_hash),
+            "issuedAt": issued_at or int(time.time()),
+            "nonce": nonce or uuid.uuid4().hex,
+        }
+
+    @staticmethod
+    def _build_wire_artifact_auth_message(payload: dict[str, Any]) -> str:
+        return "\n".join(
+            [
+                "Ghost Protocol GhostWire Artifact Authorization",
+                f"scope:{payload['scope']}",
+                f"version:{payload['version']}",
+                f"jobId:{payload['jobId']}",
+                f"clientAddress:{payload['clientAddress']}",
+                f"createTxHash:{payload['createTxHash'] or ''}",
+                f"fundTxHash:{payload['fundTxHash'] or ''}",
                 f"issuedAt:{payload['issuedAt']}",
                 f"nonce:{payload['nonce']}",
             ]

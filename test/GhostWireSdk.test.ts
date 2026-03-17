@@ -14,7 +14,6 @@ const createJsonResponse = (status: number, payload: unknown): Response =>
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
-  delete process.env.GHOSTWIRE_EXEC_SECRET;
 });
 
 describe("GhostAgent GhostWire helpers", () => {
@@ -41,22 +40,24 @@ describe("GhostAgent GhostWire helpers", () => {
       provider: "0x2222222222222222222222222222222222222222",
       evaluator: "0x3333333333333333333333333333333333333333",
       principalAmount: "1000000",
+      client: "0x1111111111111111111111111111111111111111",
       providerAgentId: "18755",
       providerServiceSlug: "agent-18755",
     });
 
     assert.equal(result.ok, true);
     assert.equal(result.quoteId, "wq_123");
+    assert.equal(result.chainId, null);
     assert.equal(calls.length, 1);
     assert.match(calls[0]!.url, /\/api\/wire\/quote$/);
     assert.equal(calls[0]!.method, "POST");
+    assert.equal(calls[0]!.body?.client, "0x1111111111111111111111111111111111111111");
     assert.equal(calls[0]!.body?.providerAgentId, "18755");
     assert.equal(calls[0]!.body?.providerServiceSlug, "agent-18755");
   });
 
-  it("creates a hosted GhostWire job with execution auth", async () => {
+  it("prepares a direct GhostWire job with wallet-ready transaction data", async () => {
     const calls: Array<{ url: string; method: string; auth: string | null; body: Record<string, unknown> | null }> = [];
-    process.env.GHOSTWIRE_EXEC_SECRET = "super-secret";
 
     globalThis.fetch = async (input: URL | RequestInfo, init?: RequestInit): Promise<Response> => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
@@ -76,15 +77,40 @@ describe("GhostAgent GhostWire helpers", () => {
         jobId: "wj_123",
         quoteId: "wq_123",
         chainId: 8453,
+        jobExpiresAt: new Date().toISOString(),
         state: "OPEN",
         contractState: "OPEN",
         pricing: {},
-        operator: {},
+        operator: { artifactStatus: "PENDING" },
+        direct: {
+          approvalMode: "exact",
+          contractAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          paymentTokenAddress: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          expectedBudgetAmount: "1025000",
+          allowance: { asset: "USDC", amount: "0", decimals: 6, requiredAmount: "1025000", sufficient: false },
+          balance: { asset: "USDC", amount: "2000000", decimals: 6, requiredAmount: "1025000", sufficient: true },
+          nativeBalance: { asset: "ETH", amount: "1000000000000000", decimals: 18 },
+          approveTxRequest: {
+            to: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            data: "0xabcdef",
+            value: "0x0",
+            chainId: 8453,
+          },
+          createTxRequest: {
+            to: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            data: "0x1234",
+            value: "0x0",
+            chainId: 8453,
+          },
+          setBudgetTxRequest: null,
+          fundTxRequest: null,
+          nextAction: "submit_create_artifact",
+        },
       });
     };
 
     const agent = new GhostAgent({ privateKey: "0x59c6995e998f97a5a0044966f0945387dc9ce6468f4b4c0f2b7f36f58b6c0e88" });
-    const result = await agent.createWireJob({
+    const result = await agent.prepareWireJob({
       quoteId: "wq_123",
       client: "0x1111111111111111111111111111111111111111",
       provider: "0x2222222222222222222222222222222222222222",
@@ -100,10 +126,112 @@ describe("GhostAgent GhostWire helpers", () => {
     assert.equal(calls.length, 1);
     assert.match(calls[0]!.url, /\/api\/wire\/jobs$/);
     assert.equal(calls[0]!.method, "POST");
-    assert.equal(calls[0]!.auth, "Bearer super-secret");
+    assert.equal(calls[0]!.auth, null);
     assert.equal(calls[0]!.body?.quoteId, "wq_123");
     assert.equal(calls[0]!.body?.providerAgentId, "18755");
     assert.equal(calls[0]!.body?.providerServiceSlug, "agent-18755");
+    assert.equal(result.direct?.nextAction, "submit_create_artifact");
+  });
+
+  it("records direct GhostWire artifacts with signed client-wallet authorization", async () => {
+    const calls: Array<{ url: string; method: string; body: Record<string, unknown> | null }> = [];
+
+    globalThis.fetch = async (input: URL | RequestInfo, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      const method = init?.method ?? "GET";
+      const body =
+        typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : null;
+      calls.push({ url, method, body });
+
+      return createJsonResponse(200, {
+        ok: true,
+        apiVersion: 1,
+        job: {
+          id: "1",
+          jobId: "wj_123",
+          quoteId: "wq_123",
+          chainId: 8453,
+          jobExpiresAt: new Date().toISOString(),
+          state: "OPEN",
+          contractState: "OPEN",
+          terminalDisposition: null,
+          clientAddress: "0x1111111111111111111111111111111111111111",
+          providerAddress: "0x2222222222222222222222222222222222222222",
+          evaluatorAddress: "0x3333333333333333333333333333333333333333",
+          specHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          metadataUri: null,
+          contractAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          contractJobId: "77",
+          createTxHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          fundTxHash: null,
+          terminalTxHash: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          pricing: {
+            principal: { asset: "USDC", amount: "1000000", decimals: 6 },
+            protocolFee: { asset: "USDC", amount: "25000", decimals: 6, bps: 250 },
+            networkReserve: { asset: "ETH", amount: "0", decimals: 18, chainId: 8453 },
+          },
+          operator: {
+            artifactStatus: "SUCCEEDED",
+            createStatus: "SUCCEEDED",
+            fundStatus: "PENDING",
+            confirmationStatus: "PENDING",
+            reconcileStatus: "PENDING",
+            retryCount: 0,
+            nextRetryAt: null,
+            lastError: null,
+          },
+        },
+        direct: {
+          approvalMode: "exact",
+          contractAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          paymentTokenAddress: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          expectedBudgetAmount: "1025000",
+          allowance: { asset: "USDC", amount: "0", decimals: 6, requiredAmount: "1025000", sufficient: false },
+          balance: { asset: "USDC", amount: "2000000", decimals: 6, requiredAmount: "1025000", sufficient: true },
+          nativeBalance: { asset: "ETH", amount: "1000000000000000", decimals: 18 },
+          approveTxRequest: {
+            to: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            data: "0xabcdef",
+            value: "0x0",
+            chainId: 8453,
+          },
+          setBudgetTxRequest: {
+            to: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            data: "0x5678",
+            value: "0x0",
+            chainId: 8453,
+          },
+          fundTxRequest: {
+            to: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            data: "0x9abc",
+            value: "0x0",
+            chainId: 8453,
+          },
+          nextAction: "submit_fund_artifact",
+        },
+      });
+    };
+
+    const agent = new GhostAgent({ privateKey: "0x59c6995e998f97a5a0044966f0945387dc9ce6468f4b4c0f2b7f36f58b6c0e88" });
+    const result = await agent.recordWireArtifacts({
+      jobId: "wj_123",
+      clientAddress: "0xab3d9542d5ccf40526b22ac072fba32538e22d8c",
+      createTxHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.job?.jobId, "wj_123");
+    assert.match(calls[0]!.url, /\/api\/wire\/jobs\/wj_123\/artifacts$/);
+    assert.equal(calls[0]!.method, "POST");
+    assert.equal(calls[0]!.body?.createTxHash, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    assert.equal(typeof calls[0]!.body?.authSignature, "string");
+    assert.equal(
+      (calls[0]!.body?.authPayload as Record<string, unknown>).clientAddress,
+      "0xab3d9542d5ccf40526b22ac072fba32538e22d8c",
+    );
+    assert.equal(result.direct?.nextAction, "submit_fund_artifact");
   });
 
   it("resolves a completed GhostWire deliverable from the job locator", async () => {
@@ -128,16 +256,23 @@ describe("GhostAgent GhostWire helpers", () => {
           contractAddress: null,
           contractJobId: null,
           createTxHash: null,
+          createTxSender: null,
           fundTxHash: null,
+          fundTxSender: null,
           terminalTxHash: null,
+          artifactsRecordedAt: null,
+          artifactValidationState: "VALID",
+          artifactValidationError: null,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           pricing: {
             principal: { asset: "USDC", amount: "1000000", decimals: 6 },
             protocolFee: { asset: "USDC", amount: "25000", decimals: 6, bps: 250 },
-            networkReserve: { asset: "ETH", amount: "3000000000000000", decimals: 18, chainId: 8453 },
+            networkReserve: { asset: "ETH", amount: "0", decimals: 18, chainId: 8453 },
           },
           operator: {
+            artifactStatus: "SUCCEEDED",
+            artifactCheckedAt: new Date().toISOString(),
             createStatus: "SUCCEEDED",
             fundStatus: "SUCCEEDED",
             confirmationStatus: "SUCCEEDED",

@@ -259,11 +259,11 @@ Auth:
 
 ## GhostWire API
 
-Hosted GhostWire is the current GhostWire launch surface.
+GhostWire is a direct escrow rail.
 
-- Ghost hosts quote creation, job creation, funding, reconciliation, and webhooks.
-- Ghost is the on-chain client in Hosted mode.
-- `metadataUri` should be treated as the merchant-controlled deliverable locator when consumer-friendly retrieval is needed.
+- the external client wallet is the on-chain client
+- Ghost prepares transaction payloads, validates reported artifacts, reconciles status, and delivers provider-facing webhooks
+- `metadataUri` should be treated as the merchant-controlled deliverable locator when consumer-friendly retrieval is needed
 
 ### `POST /api/wire/quote`
 
@@ -275,7 +275,7 @@ Request body:
 - `principalAmount`
 - `settlementAsset` (`USDC`)
 - `chainId`
-- `client` (optional)
+- `client` (required)
 - `providerAgentId` (optional, recommended for GhostRank attribution)
 - `providerServiceSlug` (optional, recommended for GhostRank attribution)
 
@@ -294,8 +294,15 @@ Attribution behavior:
 Returns:
 - `quoteId`
 - `expiresAt`
+- `chainId`
+- `contractAddress`
+- `paymentTokenAddress`
 - `pricing`
 - `confirmations`
+- `directExecution`
+  - `customerFundsEscrow: true`
+  - `customerPaysGas: true`
+  - `sponsorshipSupported: false`
 
 ### `GET /api/wire/jobs`
 
@@ -313,11 +320,7 @@ Returns:
 
 ### `POST /api/wire/jobs`
 
-Creates a GhostWire job from a quote and enqueues hosted execution.
-
-Auth:
-- `Authorization: Bearer <GHOSTWIRE_EXEC_SECRET>`
-- or `x-ghostwire-exec-secret`
+Prepares a GhostWire job from a quote and returns wallet-ready transaction payloads for the client-funded direct flow.
 
 Request body:
 - `quoteId`
@@ -328,19 +331,20 @@ Request body:
 - `providerAgentId` (optional override/debug parity with quote attribution)
 - `providerServiceSlug` (optional override/debug parity with quote attribution)
 - `metadataUri` (optional, recommended)
-  - In Hosted GhostWire v1, use this as the merchant-controlled deliverable locator URL.
+  - Use this as the merchant-controlled deliverable locator URL.
   - Recommended shape: `https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123`
 - `webhookUrl` + `webhookSecret` (optional, both-or-neither)
+- `approvalMode` (optional: `exact` or `unlimited`, default `exact`)
 
 Role note:
-- Hosted GhostWire wallet-role selection is currently integration-driven, not dashboard-driven.
+- GhostWire wallet-role selection is currently integration-driven, not dashboard-driven.
 - normal client mapping:
   - `provider` = merchant payout / delivery wallet
   - `evaluator` = merchant approval / review wallet
 
 GhostRank note:
 - GhostWire activity only contributes to GhostRank when provider attribution is resolvable.
-- GhostRank credit is provider-side only in Hosted GhostWire v1; client/evaluator roles do not receive rank credit from wire jobs.
+- GhostRank credit is provider-side only; client/evaluator roles do not receive rank credit from wire jobs.
 - only terminal reconciled jobs count:
   - `COMPLETED`
   - `REJECTED`
@@ -351,10 +355,19 @@ Returns:
 - `jobId`
 - `quoteId`
 - `chainId`
+- `jobExpiresAt`
 - `state`
 - `contractState`
 - `pricing`
 - `operator`
+- `direct`
+  - `approvalMode`
+  - `allowance`
+  - `balance`
+  - `nativeBalance`
+  - `approveTxRequest` (nullable)
+  - `createTxRequest`
+  - `nextAction`
 
 ### `GET /api/wire/jobs/[jobId]`
 
@@ -371,9 +384,40 @@ Response notes:
 
 When `job.contractState === "COMPLETED"` and `job.deliverable.available === true`, consumer SDKs can resolve the deliverable directly from the merchant locator.
 
+When artifact validation fails, the response also surfaces:
+
+- `recoveryAction`
+- `recoveryHint`
+
+### `POST /api/wire/jobs/[jobId]/artifacts`
+
+Records and validates direct GhostWire transaction artifacts.
+
+Request body:
+
+- `createTxHash` (optional, required before `fundTxHash`)
+- `fundTxHash` (optional)
+- `createTxSender` (optional override check)
+- `fundTxSender` (optional override check)
+- `approvalMode` (optional: `exact` or `unlimited`)
+- `authPayload`
+- `authSignature`
+
+Artifact auth:
+
+- must be signed by the wallet matching `job.clientAddress`
+- the signed payload must match the submitted `jobId` and tx hashes exactly
+
+Behavior:
+
+- create artifact validation records `contractJobId` and returns the next direct funding payloads
+- fund artifact validation records the funding tx and advances reconciliation once confirmations are sufficient
+- late artifact submission is accepted when the on-chain state is valid, even if the original quote has already expired
+- invalid artifacts return `409` with updated job snapshot and recovery guidance
+
 ### `GET/POST /api/admin/wire/operator`
 
-Hosted GhostWire operator inspection/execute endpoint.
+Direct GhostWire operator inspection/execute endpoint.
 
 Auth:
 - `Authorization: Bearer <GHOSTWIRE_OPERATOR_SECRET>`
@@ -383,8 +427,9 @@ Auth:
 - returns current GhostWire workflow/webhook backlog snapshot
 
 `POST`:
-- optionally records `createTxHash` / `fundTxHash` pairs for known jobs
-- runs one hosted operator tick
+- runs one direct reconciliation tick
+- performs bounded passive artifact recovery for recently prepared jobs
+- delivers/retries provider-facing webhooks
 
 ## `GET/POST /api/fulfillment/expire-sweep`
 

@@ -4,9 +4,9 @@ This package bridges OpenClaw agents to Ghost Protocol's existing stack:
 
 - Discovery + pricing via read-only MCP (`/api/mcp/read-only`)
 - Paid gate requests via x402-compatible `payment-signature` envelopes
-- GhostWire quote + guarded job-create + job-status flows for escrow-mode workflows
+- GhostWire quote + direct job-prepare + job-status flows for escrow-mode workflows
 
-Express mode is fully executable here. Wire mode execution is available through guarded GhostWire APIs (`/api/wire/jobs`) and runs through GhostWire operator reconciliation.
+Express mode is fully executable here. GhostWire helpers prepare direct escrow jobs and inspect status; the client wallet still submits the on-chain transactions.
 
 ## ClawHub publish path
 
@@ -25,7 +25,7 @@ Do not rely on a web-form-only publish if it only captures `SKILL.md`; the insta
 - `bin/get-payment-requirements.mjs` - MCP-based payment requirement lookup
 - `bin/pay-gate-x402.mjs` - EIP-712 signer + x402 header wrapper for gate calls
 - `bin/get-wire-quote.mjs` - MCP wrapper for GhostWire quote creation
-- `bin/create-wire-job-from-quote.mjs` - guarded GhostWire job creation from an issued quote
+- `bin/create-wire-job-from-quote.mjs` - direct GhostWire job preparation from an issued quote
 - `bin/get-wire-job-status.mjs` - MCP wrapper for GhostWire job status polling
 
 ## Usage
@@ -45,7 +45,7 @@ node integrations/openclaw-ghost-pay/bin/pay-gate-x402.mjs --service agent-18755
 ```
 
 ```bash
-node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --provider 0x... --evaluator 0x... --principal-amount 1000000
+node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --client 0x... --provider 0x... --evaluator 0x... --principal-amount 1000000
 ```
 
 ```bash
@@ -66,11 +66,11 @@ node integrations/openclaw-ghost-pay/bin/get-wire-job-status.mjs --job-id wj_...
 - `GHOSTWIRE_PROVIDER_ADDRESS` (optional default for `get-wire-quote`)
 - `GHOSTWIRE_EVALUATOR_ADDRESS` (optional default for `get-wire-quote`)
 - `GHOSTWIRE_PRINCIPAL_AMOUNT` (optional default for `get-wire-quote`)
-- `GHOSTWIRE_EXEC_SECRET` (required for `create-wire-job-from-quote`)
 - `GHOSTWIRE_CLIENT_ADDRESS` (optional default for wire create)
 - `GHOSTWIRE_SPEC_HASH` (optional default for wire create, required by API)
 - `GHOSTWIRE_METADATA_URI` (optional)
 - `GHOSTWIRE_WEBHOOK_URL` + `GHOSTWIRE_WEBHOOK_SECRET` (optional pair)
+- `GHOSTWIRE_APPROVAL_MODE` (optional: `exact` or `unlimited`)
 
 ## OpenClaw Registration
 
@@ -112,8 +112,8 @@ Use this copy when submitting `openclaw-ghost-pay` to directories.
 - Display Name: Ghost Protocol OpenClaw Pay
 - Slug: openclaw-ghost-pay
 - Version: 1.2.2
-- Short Description: Discover Ghost payment requirements, execute GhostGate Express payments, and run GhostWire quote/create/status flows with execution controls.
-- Long Description: Ghost Protocol gives OpenClaw agents a low-latency payment path for paywalled APIs. Agents can discover payment requirements, sign EIP-712 GhostGate access envelopes, and execute Hosted GhostWire quote/create/status flows from a single skill bundle. The ClawHub bundle includes the helper scripts it references and requires a trusted server-side signer key.
+- Short Description: Discover Ghost payment requirements, execute GhostGate Express payments, and prepare GhostWire direct escrow jobs.
+- Long Description: Ghost Protocol gives OpenClaw agents a low-latency payment path for paywalled APIs plus direct escrow prep for higher-value jobs. Agents can discover payment requirements, sign EIP-712 GhostGate access envelopes, and prepare GhostWire quote/status flows from a single skill bundle. The ClawHub bundle includes the helper scripts it references and requires a trusted server-side signer key.
 
 Verified production benchmark:
 

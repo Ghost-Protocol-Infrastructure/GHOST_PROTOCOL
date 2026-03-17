@@ -8,6 +8,7 @@ import {
   GHOSTWIRE_SUPPORTED_SETTLEMENT_ASSET,
   isGhostWireSupportedChainId,
 } from "@/lib/ghostwire-config";
+import { getGhostWireContractDetails } from "@/lib/ghostwire-direct";
 import {
   ghostWireJson,
   isRecord,
@@ -50,11 +51,11 @@ export async function POST(request: NextRequest) {
         ? Number.parseInt(chainIdRaw.trim(), 10)
         : null;
 
-  if (!provider || !evaluator || principalAmount == null || !chainId || !isGhostWireSupportedChainId(chainId)) {
+  if (!client || !provider || !evaluator || principalAmount == null || !chainId || !isGhostWireSupportedChainId(chainId)) {
     return ghostWireJson(
       {
         code: 400,
-        error: "provider, evaluator, principalAmount, and supported chainId are required.",
+        error: "client, provider, evaluator, principalAmount, and supported chainId are required.",
         errorCode: "INVALID_WIRE_QUOTE_PARAMS",
       },
       400,
@@ -95,8 +96,16 @@ export async function POST(request: NextRequest) {
       apiVersion: 1,
       quoteId: quote.quoteId,
       expiresAt: quote.expiresAt,
+      chainId,
+      contractAddress: getGhostWireContractDetails(chainId).contractAddress,
+      paymentTokenAddress: getGhostWireContractDetails(chainId).paymentTokenAddress,
       pricing: quote.pricing,
       confirmations: quote.confirmations,
+      directExecution: {
+        customerFundsEscrow: true,
+        customerPaysGas: true,
+        sponsorshipSupported: false,
+      },
     });
   } catch (error) {
     if (error instanceof GhostWireProviderAttributionError) {

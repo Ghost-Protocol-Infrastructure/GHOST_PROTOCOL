@@ -1,4 +1,4 @@
-# Onboarding and Configuration (Gate + Fulfillment + Hosted GhostWire)
+# Onboarding and Configuration (Gate + Fulfillment + GhostWire)
 
 This guide documents the current onboarding path for the live codebase, including fulfillment.
 
@@ -16,9 +16,9 @@ Ghost Protocol currently supports three production paths:
 2. `Fulfillment path` (ticket -> merchant runtime -> capture)
    - Endpoint family: `/api/fulfillment/*`
    - Use this when consumers execute merchant-owned runtimes through Ghost Protocol settlement.
-3. `Hosted GhostWire path` (managed ERC-8183 escrow)
+3. `GhostWire path` (direct ERC-8183 escrow)
    - Endpoint family: `/api/wire/*`
-   - Use this when job-level escrow matters more than low-latency API access and Ghost should host create/fund/reconcile.
+   - Use this when job-level escrow matters more than low-latency API access and the buyer should fund escrow directly.
 
 ## 2. Merchant Onboarding (Fulfillment)
 
@@ -59,14 +59,12 @@ Complete these steps in order for each merchant agent.
    - `FULFILLMENT_PATH` (merchant-bound request path, commonly `/ask`)
    - `FULFILLMENT_COST`
 
-## 3A. Hosted GhostWire onboarding
-
-Hosted GhostWire is the launch model for GhostWire today.
+## 3A. GhostWire onboarding
 
 Role model:
 
-- Ghost hosts quote creation, job creation, funding, reconciliation, and webhooks.
-- Ghost is the on-chain client in Hosted mode.
+- Ghost prepares the job and tracks reconciliation state.
+- The external client wallet is the on-chain client.
 - The provider still submits the deliverable hash on-chain.
 - The evaluator still finalizes `complete` or `reject` on-chain.
 
@@ -82,7 +80,7 @@ Role model:
    - should normally be a merchant-controlled approval wallet
    - should be separate from your settlement key at production scale
 3. Expose a deliverable locator endpoint.
-   - Hosted GhostWire v1 uses `metadataUri` as the consumer-facing deliverable locator.
+   - GhostWire uses `metadataUri` as the consumer-facing deliverable locator.
    - Recommended pattern:
 
 ```text
@@ -91,12 +89,12 @@ https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123
 
 4. Optionally configure GhostWire lifecycle webhooks.
    - see `docs/developer-portal/ghostwire-webhooks.md`
-5. Configure GhostRank attribution for Hosted GhostWire providers.
+5. Configure GhostRank attribution for GhostWire providers.
    - preferred: send `providerAgentId` and `providerServiceSlug` on `POST /api/wire/quote`
    - fallback: Ghost auto-derives attribution from a unique provider-wallet-to-agent mapping
    - ambiguous provider-wallet mappings remain unattributed and will not count toward GhostRank
 6. Provide provider/evaluator wallets through the integration surface.
-   - current Hosted GhostWire wallet selection is SDK/API-driven, not dashboard-driven
+   - current GhostWire wallet selection is SDK/API-driven, not dashboard-driven
    - pass `provider` and `evaluator` on:
      - `POST /api/wire/quote`
      - `POST /api/wire/jobs`
@@ -107,24 +105,23 @@ https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123
 ### Consumer requirements
 
 1. Request a quote from `POST /api/wire/quote`.
-2. Create the Hosted job from `POST /api/wire/jobs`.
-3. Provide `metadataUri` when you want the consumer SDK to resolve the final deliverable automatically after completion.
-4. Poll `GET /api/wire/jobs/[jobId]` or consume webhook events until the job reaches terminal state.
-5. Only terminal reconciled GhostWire jobs affect GhostRank:
+2. Prepare the direct job from `POST /api/wire/jobs`.
+3. Send the returned wallet transaction requests from the client wallet.
+4. Record `createTxHash` and `fundTxHash` through `POST /api/wire/jobs/[jobId]/artifacts`.
+5. Provide `metadataUri` when you want the consumer SDK to resolve the final deliverable automatically after completion.
+6. Poll `GET /api/wire/jobs/[jobId]` or consume webhook events until the job reaches terminal state.
+7. Only terminal reconciled GhostWire jobs affect GhostRank:
    - `COMPLETED`
    - `REJECTED`
    - `EXPIRED`
-6. GhostRank credit is provider-side only for Hosted GhostWire v1.
-7. Current Hosted GhostWire scoring uses a rolling 30-day window once attributed terminal jobs exist.
+8. GhostRank credit is provider-side only for GhostWire.
+9. Current GhostWire scoring uses a rolling 30-day window once attributed terminal jobs exist.
 
-### Hosted GhostWire runtime secrets
+GhostWire is customer-native:
 
-| Variable | Used by | Required | Notes |
-|---|---|---|---|
-| `GHOSTWIRE_EXEC_SECRET` | `POST /api/wire/jobs` | Yes (hosted job creation) | Required for trusted callers creating Hosted GhostWire jobs. |
-| `GHOSTWIRE_OPERATOR_SECRET` | `/api/admin/wire/operator` | Yes (hosted operator) | Used by Ghost-hosted operator automation only. |
-
-Hosted GhostWire is a managed rollout surface, not a fully open customer-native rail.
+- the client wallet funds escrow
+- the client wallet pays gas
+- Ghost does not sponsor or relay transactions in the current launch
 
 ## 4. Environment Variable Matrix
 
@@ -159,12 +156,11 @@ Hosted GhostWire is a managed rollout surface, not a fully open customer-native 
 | `GHOST_SETTLEMENT_OPERATOR_SECRET` | `/api/admin/settlement/allocate`, `/api/admin/settlement/reconcile`, `/api/admin/settlement/operator-health` | Yes (hosted settlement automation) | Dedicated secret required. No fallback secret path. |
 | `GHOST_SETTLEMENT_SUPPORT_SECRET` | `/api/admin/settlement/metrics` | Recommended for ops/support | Supports bearer auth or `x-ghost-settlement-support-secret`. |
 
-### 4.4 Hosted GhostWire secrets
+### 4.4 GhostWire operator secret
 
 | Variable | Used by | Required | Notes |
 |---|---|---|---|
-| `GHOSTWIRE_EXEC_SECRET` | `POST /api/wire/jobs` | Yes | Trusted caller auth for Hosted GhostWire job creation. |
-| `GHOSTWIRE_OPERATOR_SECRET` | `/api/admin/wire/operator` | Yes | Hosted operator inspection/execute auth. |
+| `GHOSTWIRE_OPERATOR_SECRET` | `/api/admin/wire/operator` | Internal only | Direct GhostWire reconciliation and webhook operator auth. |
 
 ### 4.5 Dashboard wallet connectivity
 

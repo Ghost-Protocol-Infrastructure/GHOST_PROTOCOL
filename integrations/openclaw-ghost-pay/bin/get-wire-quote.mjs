@@ -30,12 +30,12 @@ const principalAmount = String(
 const chainId = parsePositiveInt(args["chain-id"] || process.env.GHOST_OPENCLAW_CHAIN_ID, DEFAULT_CHAIN_ID);
 const settlementAsset = String(args["settlement-asset"] || process.env.GHOSTWIRE_SETTLEMENT_ASSET || "USDC").trim();
 
-if (!providerAddress || !evaluatorAddress || !principalAmount) {
+if (!clientAddress || !providerAddress || !evaluatorAddress || !principalAmount) {
   printJson({
     ok: false,
-    error: "Missing required --provider, --evaluator, or --principal-amount.",
+    error: "Missing required --client, --provider, --evaluator, or --principal-amount.",
     example:
-      "node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --provider 0x... --evaluator 0x... --principal-amount 1000000",
+      "node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --client 0x... --provider 0x... --evaluator 0x... --principal-amount 1000000",
   });
   process.exitCode = 1;
 } else {
@@ -49,7 +49,7 @@ if (!providerAddress || !evaluatorAddress || !principalAmount) {
         arguments: {
           provider_address: providerAddress,
           evaluator_address: evaluatorAddress,
-          client_address: clientAddress || undefined,
+          client_address: clientAddress,
           principal_amount: principalAmount,
           chain_id: chainId,
           settlement_asset: settlementAsset,

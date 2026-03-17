@@ -47,7 +47,7 @@ GHOSTWIRE_EVALUATOR_ADDRESS=0x...
 GHOSTWIRE_PRINCIPAL_AMOUNT=1000000
 GHOSTWIRE_CLIENT_ADDRESS=0x...
 GHOSTWIRE_SPEC_HASH=0x...
-GHOSTWIRE_EXEC_SECRET=...
+GHOSTWIRE_APPROVAL_MODE=exact
 ```
 
 ## 3. Register plugin in local OpenClaw config
@@ -87,7 +87,7 @@ node integrations/openclaw-ghost-pay/bin/pay-gate-x402.mjs --service agent-18755
 Optional GhostWire wrappers:
 
 ```bash
-node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --provider 0x... --evaluator 0x... --principal-amount 1000000
+node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --client 0x... --provider 0x... --evaluator 0x... --principal-amount 1000000
 ```
 
 ```bash

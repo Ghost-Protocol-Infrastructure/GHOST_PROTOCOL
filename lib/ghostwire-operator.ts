@@ -1,29 +1,19 @@
-import {
-  type WireTerminalDisposition,
-  type WireWorkflowStatus,
-} from "@prisma/client";
-import {
-  createPublicClient,
-  createWalletClient,
-  erc20Abi,
-  getAbiItem,
-  getAddress,
-  http,
-  maxUint256,
-  parseEventLogs,
-  type Hash,
-} from "viem";
+import { type WireTerminalDisposition, type WireWorkflowStatus } from "@prisma/client";
+import { createPublicClient, getAbiItem, getAddress, http, type Hash } from "viem";
 import { base, baseSepolia } from "viem/chains";
 import { prisma } from "@/lib/db";
+import {
+  createGhostWirePublicClient,
+  parseGhostWireFundedLogs,
+  validateGhostWireCreateArtifact,
+  validateGhostWireFundArtifact,
+} from "@/lib/ghostwire-direct";
 import { GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI } from "@/lib/ghostwire-contract";
 import {
-  getGhostWireOperatorAccount,
   GHOSTWIRE_ERC8183_PINNED_COMMIT,
   GHOSTWIRE_ERC8183_PINNED_CONTRACT,
   GHOSTWIRE_ERC8183_PINNED_REPOSITORY,
   GHOSTWIRE_JOB_EXPIRY_SECONDS,
-  GHOSTWIRE_MIN_CONFIRMATIONS_MAINNET,
-  GHOSTWIRE_MIN_CONFIRMATIONS_TESTNET,
   GHOSTWIRE_MAX_EXPIRY_WINDOW_SECONDS,
   GHOSTWIRE_PROTOCOL_FEE_BPS,
   GHOSTWIRE_QUOTE_TTL_SECONDS,
@@ -34,22 +24,21 @@ import {
   resolveGhostWireContractAddress,
   resolveGhostWireMinConfirmations,
   resolveGhostWireRpcUrl,
-  resolveGhostWireUsdcAddress,
   type GhostWireSupportedChainId,
 } from "@/lib/ghostwire-config";
 import {
   countWireJobsNeedingOperatorWork,
+  failWireJobArtifactValidation,
   listPendingWireWebhookOutboxEvents,
+  listWireJobsForArtifactRecovery,
   listWireJobsNeedingOperatorWork,
   markWireJobForManualReview,
   recordWireJobExecutionArtifacts,
-  recordWireJobTerminalArtifacts,
   reconcileWireJobFundedState,
   reconcileWireJobSubmittedState,
   reconcileWireJobTerminalState,
+  updateWireArtifactRecoveryCheckpoint,
   updateWireWebhookOutboxDelivery,
-  upsertWireOperatorSpend,
-  WireJobExecutionConflictError,
 } from "@/lib/ghostwire-store";
 import { signGhostWireWebhookPayload } from "@/lib/ghostwire-webhooks";
 
@@ -57,65 +46,45 @@ export const GHOSTWIRE_OPERATOR_DEFAULT_WORKFLOW_LIMIT = 25;
 export const GHOSTWIRE_OPERATOR_DEFAULT_WEBHOOK_LIMIT = 25;
 export const GHOSTWIRE_OPERATOR_MAX_LIMIT = 100;
 
+const GHOSTWIRE_OPERATOR_MODE = "direct-artifact-reconcile-webhooks";
 const GHOSTWIRE_OPERATOR_RETRY_DELAY_MS = 5 * 60 * 1000;
 const GHOSTWIRE_WEBHOOK_MAX_ATTEMPTS = 6;
 const GHOSTWIRE_WEBHOOK_BASE_RETRY_DELAY_MS = 60 * 1000;
 const GHOSTWIRE_WEBHOOK_MAX_RETRY_DELAY_MS = 30 * 60 * 1000;
-const GHOSTWIRE_ONCHAIN_VISIBILITY_MAX_ATTEMPTS = 8;
-const GHOSTWIRE_ONCHAIN_VISIBILITY_DELAY_MS = 1_500;
-const GHOSTWIRE_ONCHAIN_WRITE_RETRY_ATTEMPTS = 4;
-const GHOSTWIRE_ONCHAIN_WRITE_RETRY_DELAY_MS = 1_500;
 const GHOSTWIRE_LOG_SCAN_BLOCK_RANGE = 9_000n;
-
-export type GhostWireWorkflowStage = "create" | "fund" | "confirmation" | "reconcile";
+const GHOSTWIRE_ARTIFACT_RECOVERY_GRACE_WINDOW_MS = 2 * 60 * 1000;
+const GHOSTWIRE_ARTIFACT_RECOVERY_ELIGIBILITY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const GHOSTWIRE_ARTIFACT_RECOVERY_MAX_BLOCK_SCAN = 2_000n;
 
 type ReconcileResultStatus =
   | "already_reconciled"
-  | "waiting_execution"
+  | "waiting_artifacts"
   | "waiting_confirmation"
   | "confirmed_funded"
   | "confirmed_submitted"
   | "confirmed_terminal"
+  | "recovered_create"
+  | "recovered_fund"
   | "manual_review"
-  | "submitted"
+  | "retrying"
   | "failed";
 
-type GhostWireExecutionRecordInput = {
-  jobId: string;
-  contractAddress: string;
-  contractJobId: string;
-  createTxHash: string;
-  fundTxHash: string;
-};
-
 type GhostWirePendingJob = Awaited<ReturnType<typeof listWireJobsNeedingOperatorWork>>[number];
+type GhostWireArtifactRecoveryJob = Awaited<ReturnType<typeof listWireJobsForArtifactRecovery>>[number];
 type GhostWirePendingWebhook = Awaited<ReturnType<typeof listPendingWireWebhookOutboxEvents>>[number];
 
-const buildWorkflowStagePatch = (
-  stage: GhostWireWorkflowStage,
-  status: WireWorkflowStatus,
-): Partial<{
-  createStatus: WireWorkflowStatus;
-  fundStatus: WireWorkflowStatus;
-  confirmationStatus: WireWorkflowStatus;
-  reconcileStatus: WireWorkflowStatus;
-}> => {
-  switch (stage) {
-    case "create":
-      return { createStatus: status };
-    case "fund":
-      return { fundStatus: status };
-    case "confirmation":
-      return { confirmationStatus: status };
-    case "reconcile":
-      return { reconcileStatus: status };
-  }
+type GhostWireLifecycleEvent = {
+  state: "SUBMITTED" | WireTerminalDisposition;
+  txHash: Hash;
+  blockNumber: bigint;
+  logIndex: number;
+  confirmations: number;
 };
 
 const resolveWireChain = (chainId: GhostWireSupportedChainId) =>
   chainId === GHOSTWIRE_SUPPORTED_MAINNET_CHAIN_ID ? base : baseSepolia;
 
-const createGhostWirePublicClient = (chainId: GhostWireSupportedChainId) =>
+const createGhostWireLifecycleClient = (chainId: GhostWireSupportedChainId) =>
   createPublicClient({
     chain: resolveWireChain(chainId),
     transport: http(resolveGhostWireRpcUrl(chainId), {
@@ -124,21 +93,6 @@ const createGhostWirePublicClient = (chainId: GhostWireSupportedChainId) =>
       timeout: 15_000,
     }),
   });
-
-const createGhostWireWalletClient = (chainId: GhostWireSupportedChainId) => {
-  const account = getGhostWireOperatorAccount();
-  if (!account) return null;
-
-  return createWalletClient({
-    account,
-    chain: resolveWireChain(chainId),
-    transport: http(resolveGhostWireRpcUrl(chainId), {
-      retryCount: 2,
-      retryDelay: 250,
-      timeout: 15_000,
-    }),
-  });
-};
 
 const normalizeHash = (value: string | null | undefined): Hash | null => {
   const trimmed = value?.trim().toLowerCase();
@@ -155,10 +109,63 @@ const nextWebhookRetryAt = (attemptCount: number): Date => {
   return new Date(Date.now() + delay);
 };
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
 const isRetryableWebhookStatus = (status: number): boolean =>
   status >= 500 || status === 408 || status === 409 || status === 425 || status === 429;
+
+const buildWorkflowStagePatch = (
+  stage: "artifact" | "confirmation" | "reconcile",
+  status: WireWorkflowStatus,
+): Partial<{
+  artifactStatus: WireWorkflowStatus;
+  confirmationStatus: WireWorkflowStatus;
+  reconcileStatus: WireWorkflowStatus;
+}> => {
+  switch (stage) {
+    case "artifact":
+      return { artifactStatus: status };
+    case "confirmation":
+      return { confirmationStatus: status };
+    case "reconcile":
+      return { reconcileStatus: status };
+  }
+};
+
+const updateGhostWireWorkflowStage = async (input: {
+  wireJobId: string;
+  stage: "artifact" | "confirmation" | "reconcile";
+  status: WireWorkflowStatus;
+  lastError?: string | null;
+  nextRetryAt?: Date | null;
+  incrementRetryCount?: boolean;
+}) =>
+  prisma.wireJobWorkflow.update({
+    where: { wireJobId: input.wireJobId },
+    data: {
+      ...buildWorkflowStagePatch(input.stage, input.status),
+      lastError: input.lastError ?? null,
+      nextRetryAt: input.nextRetryAt ?? null,
+      lastAttemptAt: new Date(),
+      retryCount: input.incrementRetryCount ? { increment: 1 } : undefined,
+      manualReviewRequired: false,
+      manualReviewReason: null,
+    },
+  });
+
+const markManualReview = async (
+  wireJobId: string,
+  stage: "create" | "fund" | "confirmation" | "reconcile",
+  reason: string,
+) => {
+  await markWireJobForManualReview({
+    jobId: wireJobId,
+    stage,
+    reason,
+  });
+  return {
+    status: "manual_review" as const,
+    detail: reason,
+  };
+};
 
 const getReceiptObservation = async (input: { chainId: GhostWireSupportedChainId; txHash: Hash }) => {
   const client = createGhostWirePublicClient(input.chainId);
@@ -182,7 +189,9 @@ const getReceiptObservation = async (input: { chainId: GhostWireSupportedChainId
   }
 };
 
-const mapGhostWireContractStatus = (status: bigint | number): WireTerminalDisposition | "OPEN" | "FUNDED" | "SUBMITTED" => {
+const mapGhostWireContractStatus = (
+  status: bigint | number,
+): "OPEN" | "FUNDED" | "SUBMITTED" | WireTerminalDisposition => {
   const normalized = typeof status === "bigint" ? Number(status) : status;
   switch (normalized) {
     case 0:
@@ -202,27 +211,18 @@ const mapGhostWireContractStatus = (status: bigint | number): WireTerminalDispos
   }
 };
 
-type GhostWireLifecycleEvent = {
-  state: "SUBMITTED" | WireTerminalDisposition;
-  txHash: Hash;
-  blockNumber: bigint;
-  logIndex: number;
-  confirmations: number;
-};
-
 const getLatestGhostWireLifecycleEvent = async (input: {
   chainId: GhostWireSupportedChainId;
   contractAddress: `0x${string}`;
   contractJobId: string;
 }) => {
-  const client = createGhostWirePublicClient(input.chainId);
+  const client = createGhostWireLifecycleClient(input.chainId);
   const jobId = BigInt(input.contractJobId);
   const latestBlock = await client.getBlockNumber();
   let toBlock = latestBlock;
 
   while (true) {
-    const fromBlock =
-      toBlock > GHOSTWIRE_LOG_SCAN_BLOCK_RANGE ? toBlock - GHOSTWIRE_LOG_SCAN_BLOCK_RANGE : 0n;
+    const fromBlock = toBlock > GHOSTWIRE_LOG_SCAN_BLOCK_RANGE ? toBlock - GHOSTWIRE_LOG_SCAN_BLOCK_RANGE : 0n;
 
     const [submittedLogs, completedLogs, rejectedLogs, expiredLogs] = await Promise.all([
       client.getLogs({
@@ -314,847 +314,376 @@ const getLatestGhostWireLifecycleEvent = async (input: {
   }
 };
 
-const recordOperatorSpendFromReceipt = async (input: {
-  wireJobId: string;
-  actionType: "APPROVE" | "CREATE" | "FUND" | "EXPIRE";
-  txHash: Hash;
-  receipt: Awaited<ReturnType<ReturnType<typeof createGhostWirePublicClient>["getTransactionReceipt"]>>;
-}) =>
-  upsertWireOperatorSpend({
-    wireJobId: input.wireJobId,
-    actionType: input.actionType,
-    txHash: input.txHash,
-    gasUsed: input.receipt.gasUsed,
-    effectiveGasPrice: input.receipt.effectiveGasPrice ?? 0n,
-    nativeAmountSpent: input.receipt.gasUsed * (input.receipt.effectiveGasPrice ?? 0n),
-  });
-
-const updateGhostWireWorkflowStage = async (input: {
-  jobId: string;
-  stage: GhostWireWorkflowStage;
-  status: WireWorkflowStatus;
-  lastError?: string | null;
-  nextRetryAt?: Date | null;
-  incrementRetryCount?: boolean;
-}) =>
-  prisma.wireJobWorkflow.update({
-    where: { wireJobId: input.jobId },
-    data: {
-      ...buildWorkflowStagePatch(input.stage, input.status),
-      lastError: input.lastError ?? null,
-      nextRetryAt: input.nextRetryAt ?? null,
-      lastAttemptAt: new Date(),
-      retryCount: input.incrementRetryCount ? { increment: 1 } : undefined,
-      manualReviewRequired: false,
-      manualReviewReason: null,
-    },
-  });
-
-const markManualReview = async (jobId: string, stage: GhostWireWorkflowStage, reason: string) => {
-  await markWireJobForManualReview({
-    jobId,
-    stage,
-    reason,
-  });
-
+const buildArtifactDiscoveryRange = (lastCheckedBlock: bigint | null, latestBlock: bigint) => {
+  const initialFromBlock =
+    latestBlock > GHOSTWIRE_ARTIFACT_RECOVERY_MAX_BLOCK_SCAN
+      ? latestBlock - GHOSTWIRE_ARTIFACT_RECOVERY_MAX_BLOCK_SCAN + 1n
+      : 0n;
+  const fromBlock = lastCheckedBlock == null ? initialFromBlock : lastCheckedBlock + 1n;
+  if (fromBlock > latestBlock) {
+    return null;
+  }
   return {
-    status: "manual_review" as const,
-    detail: reason,
+    fromBlock,
+    toBlock: latestBlock,
   };
 };
 
-const resolveGhostWireHostedContext = async (
-  job: GhostWirePendingJob,
-  options?: {
-    requireClientMatch?: boolean;
+const updateArtifactCheckpoint = async (input: {
+  wireJobId: string;
+  artifactStatus?: WireWorkflowStatus;
+  artifactLastCheckedBlock?: bigint | null;
+  lastError?: string | null;
+  nextRetryAt?: Date | null;
+}) =>
+  updateWireArtifactRecoveryCheckpoint({
+    jobId: input.wireJobId,
+    artifactStatus: input.artifactStatus,
+    artifactCheckedAt: new Date(),
+    artifactLastCheckedBlock: input.artifactLastCheckedBlock,
+    lastError: input.lastError,
+    nextRetryAt: input.nextRetryAt,
+  });
+
+const attemptCreateArtifactRecovery = async (job: GhostWireArtifactRecoveryJob) => {
+  const chainId = job.chainId as GhostWireSupportedChainId;
+  const contractAddress = resolveGhostWireContractAddress(chainId);
+  if (!contractAddress) {
+    const result = await markManualReview(
+      job.id,
+      "create",
+      `No AgenticCommerce contract address is configured for chain ${chainId}.`,
+    );
+    return { jobId: job.jobId, ...result };
+  }
+
+  const publicClient = createGhostWirePublicClient(chainId);
+  const latestBlock = await publicClient.getBlockNumber();
+  const range = buildArtifactDiscoveryRange(job.workflow?.artifactLastCheckedBlock ?? null, latestBlock);
+  if (!range) {
+    await updateArtifactCheckpoint({
+      wireJobId: job.id,
+      artifactStatus: job.workflow?.artifactStatus ?? "PENDING",
+      artifactLastCheckedBlock: latestBlock,
+      lastError: null,
+      nextRetryAt: nextRetryAt(),
+    });
+    return {
+      jobId: job.jobId,
+      status: "waiting_artifacts" as ReconcileResultStatus,
+      detail: "No newer blocks are available for create-artifact recovery yet.",
+    };
+  }
+
+  const logs = await publicClient.getLogs({
+    address: contractAddress,
+    event: getAbiItem({ abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI, name: "JobCreated" }),
+    args: {
+      client: getAddress(job.clientAddress),
+      provider: getAddress(job.providerAddress),
+    },
+    fromBlock: range.fromBlock,
+    toBlock: range.toBlock,
+  });
+
+  const orderedLogs = [...logs].sort((left, right) => {
+    const leftBlock = left.blockNumber ?? 0n;
+    const rightBlock = right.blockNumber ?? 0n;
+    if (leftBlock === rightBlock) {
+      return (right.logIndex ?? 0) - (left.logIndex ?? 0);
+    }
+    return leftBlock > rightBlock ? -1 : 1;
+  });
+
+  let firstValidationError: string | null = null;
+  const expectedDescription = job.metadataUri?.trim() || job.specHash;
+
+  for (const log of orderedLogs) {
+    if (!log.transactionHash) continue;
+
+    try {
+      const createValidation = await validateGhostWireCreateArtifact({
+        chainId,
+        expectedClientAddress: job.clientAddress,
+        expectedProviderAddress: job.providerAddress,
+        expectedEvaluatorAddress: job.evaluatorAddress,
+        expectedJobExpiresAt: job.jobExpiresAt,
+        expectedDescription,
+        createTxHash: log.transactionHash,
+      });
+
+      await recordWireJobExecutionArtifacts({
+        jobId: job.jobId,
+        contractAddress: createValidation.contractAddress,
+        contractJobId: createValidation.contractJobId,
+        createTxHash: createValidation.createTxHash,
+        createTxSender: createValidation.createTxSender,
+        artifactValidationState: "PARTIAL",
+        artifactValidationError: null,
+        artifactStatus: "SUCCEEDED",
+        createStatus: "SUCCEEDED",
+        fundStatus: "PENDING",
+        confirmationStatus: "PENDING",
+        reconcileStatus: "PENDING",
+        artifactCheckedAt: new Date(),
+        artifactLastCheckedBlock: range.toBlock,
+      });
+
+      return {
+        jobId: job.jobId,
+        status: "recovered_create" as ReconcileResultStatus,
+        detail: `Recovered create artifact ${createValidation.createTxHash}.`,
+        contractJobId: createValidation.contractJobId,
+        createTxHash: createValidation.createTxHash,
+      };
+    } catch (error) {
+      firstValidationError = error instanceof Error ? error.message : "Create artifact validation failed.";
+    }
+  }
+
+  await updateArtifactCheckpoint({
+    wireJobId: job.id,
+    artifactStatus: job.workflow?.artifactStatus ?? "PENDING",
+    artifactLastCheckedBlock: range.toBlock,
+    lastError: firstValidationError,
+    nextRetryAt: nextRetryAt(),
+  });
+  return {
+    jobId: job.jobId,
+    status: "waiting_artifacts" as ReconcileResultStatus,
+    detail: firstValidationError ?? "No matching create artifact was discovered yet.",
+  };
+};
+
+const attemptFundArtifactRecovery = async (
+  job: GhostWireArtifactRecoveryJob,
+  overrides?: {
+    contractJobId?: string;
+    createTxHash?: string;
   },
 ) => {
   const chainId = job.chainId as GhostWireSupportedChainId;
-  const account = getGhostWireOperatorAccount();
-  if (!account) {
-    return {
-      ok: false as const,
-      reason: "GHOSTWIRE_OPERATOR_PRIVATE_KEY is not configured for hosted GhostWire execution.",
-    };
-  }
-
   const contractAddress = resolveGhostWireContractAddress(chainId);
-  if (!contractAddress) {
+  const contractJobId = overrides?.contractJobId ?? job.contractJobId;
+  if (!contractAddress || !contractJobId) {
     return {
-      ok: false as const,
-      reason: `No GhostWire ERC-8183 contract address is configured for chain ${chainId}.`,
-    };
-  }
-
-  if (options?.requireClientMatch !== false && job.clientAddress.toLowerCase() !== account.address.toLowerCase()) {
-    return {
-      ok: false as const,
-      reason:
-        "Hosted GhostWire create/fund execution only supports jobs whose client address matches the configured operator account.",
+      jobId: job.jobId,
+      status: "waiting_artifacts" as ReconcileResultStatus,
+      detail: "Fund-artifact recovery requires a discovered contract job id first.",
     };
   }
 
   const publicClient = createGhostWirePublicClient(chainId);
-  const walletClient = createGhostWireWalletClient(chainId);
-  if (!walletClient) {
-    return {
-      ok: false as const,
-      reason: "GhostWire wallet client could not be created from the configured operator key.",
-    };
-  }
-
-  const [paymentToken, platformFeeBp] = await Promise.all([
-    publicClient.readContract({
-      address: contractAddress,
-      abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI,
-      functionName: "paymentToken",
-    }),
-    publicClient.readContract({
-      address: contractAddress,
-      abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI,
-      functionName: "platformFeeBP",
-    }),
-  ]);
-
-  const expectedFeeBps = BigInt(GHOSTWIRE_PROTOCOL_FEE_BPS);
-  if (platformFeeBp !== expectedFeeBps) {
-    return {
-      ok: false as const,
-      reason:
-        `GhostWire fee mismatch: expected platformFeeBP=${expectedFeeBps.toString()} from server config, contract reports ${platformFeeBp.toString()}.`,
-    };
-  }
-
-  const expectedPaymentToken = resolveGhostWireUsdcAddress(chainId);
-  if (getAddress(paymentToken) !== expectedPaymentToken) {
-    return {
-      ok: false as const,
-      reason:
-        `GhostWire v1 requires the ERC-8183 payment token to match ${GHOSTWIRE_SUPPORTED_SETTLEMENT_ASSET} on chain ${chainId}.`,
-    };
-  }
-
-  return {
-    ok: true as const,
-    chainId,
-    account,
-    contractAddress,
-    expectedPaymentToken,
-    publicClient,
-    walletClient,
-  };
-};
-
-const parseJobCreatedEvent = (job: GhostWirePendingJob, logs: readonly unknown[]) => {
-  const events = parseEventLogs({
-    abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI,
-    logs: logs as never,
-    eventName: "JobCreated",
-    strict: false,
-  });
-
-  const match = events.find((event) => {
-    const client = typeof event.args.client === "string" ? event.args.client.toLowerCase() : null;
-    const provider = typeof event.args.provider === "string" ? event.args.provider.toLowerCase() : null;
-    return client === job.clientAddress.toLowerCase() && provider === job.providerAddress.toLowerCase();
-  });
-
-  const rawJobId = match?.args.jobId;
-  return typeof rawJobId === "bigint" ? rawJobId.toString() : null;
-};
-
-const normalizeGhostWireErrorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : "GhostWire on-chain operation failed.";
-
-const isGhostWireTransientConsistencyError = (error: unknown): boolean => {
-  const message = normalizeGhostWireErrorMessage(error).toLowerCase();
-  return (
-    message.includes("0x71c8f460") ||
-    message.includes("invalidjob") ||
-    message.includes("invalid job") ||
-    message.includes("execution reverted") ||
-    message.includes("nonce too low") ||
-    message.includes("replacement transaction underpriced") ||
-    message.includes("already known")
-  );
-};
-
-const readGhostWireOnchainJob = async (input: {
-  publicClient: ReturnType<typeof createGhostWirePublicClient>;
-  contractAddress: `0x${string}`;
-  contractJobId: string;
-}) =>
-  input.publicClient.readContract({
-    address: input.contractAddress,
-    abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI,
-    functionName: "getJob",
-    args: [BigInt(input.contractJobId)],
-  });
-
-const waitForGhostWireOnchainJobVisibility = async (input: {
-  publicClient: ReturnType<typeof createGhostWirePublicClient>;
-  contractAddress: `0x${string}`;
-  contractJobId: string;
-  expectedClientAddress: string;
-  expectedProviderAddress: string;
-}) => {
-  let lastError: string | null = null;
-
-  for (let attempt = 1; attempt <= GHOSTWIRE_ONCHAIN_VISIBILITY_MAX_ATTEMPTS; attempt += 1) {
-    try {
-      const job = (await readGhostWireOnchainJob(input)) as {
-        client?: string;
-        provider?: string;
-        budget?: bigint;
-        status?: bigint | number;
-      };
-
-      const clientMatches =
-        typeof job.client === "string" &&
-        job.client.toLowerCase() === input.expectedClientAddress.toLowerCase();
-      const providerMatches =
-        typeof job.provider === "string" &&
-        job.provider.toLowerCase() === input.expectedProviderAddress.toLowerCase();
-
-      if (clientMatches && providerMatches) {
-        return {
-          ok: true as const,
-          job,
-        };
-      }
-
-      lastError = "On-chain job became visible with unexpected client/provider values.";
-    } catch (error) {
-      lastError = normalizeGhostWireErrorMessage(error);
-    }
-
-    if (attempt < GHOSTWIRE_ONCHAIN_VISIBILITY_MAX_ATTEMPTS) {
-      await sleep(GHOSTWIRE_ONCHAIN_VISIBILITY_DELAY_MS);
-    }
-  }
-
-  return {
-    ok: false as const,
-    error:
-      lastError ??
-      "GhostWire job did not become visible on-chain within the expected post-create consistency window.",
-  };
-};
-
-const waitForGhostWireBudgetVisibility = async (input: {
-  publicClient: ReturnType<typeof createGhostWirePublicClient>;
-  contractAddress: `0x${string}`;
-  contractJobId: string;
-  expectedBudgetAmount: bigint;
-}) => {
-  let lastError: string | null = null;
-
-  for (let attempt = 1; attempt <= GHOSTWIRE_ONCHAIN_VISIBILITY_MAX_ATTEMPTS; attempt += 1) {
-    try {
-      const job = (await readGhostWireOnchainJob(input)) as {
-        budget?: bigint;
-      };
-
-      if (job.budget === input.expectedBudgetAmount) {
-        return {
-          ok: true as const,
-          job,
-        };
-      }
-
-      lastError = `Observed budget ${String(job.budget ?? null)} instead of ${input.expectedBudgetAmount.toString()}.`;
-    } catch (error) {
-      lastError = normalizeGhostWireErrorMessage(error);
-    }
-
-    if (attempt < GHOSTWIRE_ONCHAIN_VISIBILITY_MAX_ATTEMPTS) {
-      await sleep(GHOSTWIRE_ONCHAIN_VISIBILITY_DELAY_MS);
-    }
-  }
-
-  return {
-    ok: false as const,
-    error:
-      lastError ??
-      "GhostWire budget was not visible on-chain within the expected post-setBudget consistency window.",
-  };
-};
-
-const runGhostWireWriteWithRetry = async <T>(operation: () => Promise<T>) => {
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= GHOSTWIRE_ONCHAIN_WRITE_RETRY_ATTEMPTS; attempt += 1) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error;
-      if (!isGhostWireTransientConsistencyError(error) || attempt >= GHOSTWIRE_ONCHAIN_WRITE_RETRY_ATTEMPTS) {
-        throw error;
-      }
-      await sleep(GHOSTWIRE_ONCHAIN_WRITE_RETRY_DELAY_MS * attempt);
-    }
-  }
-
-  throw lastError;
-};
-
-const attemptGhostWireHostedCreateAndFund = async (job: GhostWirePendingJob) => {
-  if (job.contractState !== "OPEN") {
+  const latestBlock = await publicClient.getBlockNumber();
+  const range = buildArtifactDiscoveryRange(job.workflow?.artifactLastCheckedBlock ?? null, latestBlock);
+  if (!range) {
+    await updateArtifactCheckpoint({
+      wireJobId: job.id,
+      artifactStatus: job.workflow?.artifactStatus ?? "PENDING",
+      artifactLastCheckedBlock: latestBlock,
+      lastError: null,
+      nextRetryAt: nextRetryAt(),
+    });
     return {
       jobId: job.jobId,
-      status: "waiting_confirmation" as ReconcileResultStatus,
-      detail: `Wire job is already in ${job.contractState} state.`,
+      status: "waiting_artifacts" as ReconcileResultStatus,
+      detail: "No newer blocks are available for fund-artifact recovery yet.",
     };
   }
 
-  const context = await resolveGhostWireHostedContext(job, { requireClientMatch: true });
-  if (!context.ok) {
-    const result = await markManualReview(job.id, "create", context.reason);
-    return { jobId: job.jobId, ...result };
-  }
+  const logs = await publicClient.getLogs({
+    address: contractAddress,
+    event: getAbiItem({ abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI, name: "JobFunded" }),
+    args: {
+      jobId: BigInt(contractJobId),
+      client: getAddress(job.clientAddress),
+    },
+    fromBlock: range.fromBlock,
+    toBlock: range.toBlock,
+  });
 
-  const {
-    chainId,
-    account,
-    contractAddress,
-    expectedPaymentToken,
-    publicClient,
-    walletClient,
-  } = context;
-
-  let contractJobId = job.contractJobId;
-  let createTxHash = normalizeHash(job.createTxHash);
-  let fundTxHash = normalizeHash(job.fundTxHash);
-
-  if (!createTxHash || !contractJobId || !job.contractAddress) {
-    await updateGhostWireWorkflowStage({
-      jobId: job.id,
-      stage: "create",
-      status: "IN_PROGRESS",
-      lastError: null,
-      nextRetryAt: null,
-    });
-
-    try {
-      const createHash = await walletClient.writeContract({
-        account,
-        chain: walletClient.chain,
-        address: contractAddress,
-        abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI,
-        functionName: "createJob",
-        args: [
-          getAddress(job.providerAddress),
-          getAddress(job.evaluatorAddress),
-          BigInt(Math.floor(job.jobExpiresAt.getTime() / 1000)),
-          job.metadataUri?.trim() || job.specHash,
-        ],
-      });
-      const createReceipt = await publicClient.waitForTransactionReceipt({
-        hash: createHash,
-        confirmations: 1,
-        timeout: 120_000,
-      });
-
-      if (createReceipt.status !== "success") {
-        await updateGhostWireWorkflowStage({
-          jobId: job.id,
-          stage: "create",
-          status: "FAILED",
-          lastError: "createJob transaction reverted on-chain.",
-          nextRetryAt: nextRetryAt(),
-          incrementRetryCount: true,
-        });
-        return {
-          jobId: job.jobId,
-          status: "failed" as ReconcileResultStatus,
-          detail: "createJob transaction reverted on-chain.",
-        };
-      }
-
-      const parsedContractJobId = parseJobCreatedEvent(job, createReceipt.logs);
-      if (!parsedContractJobId) {
-        const result = await markManualReview(
-          job.id,
-          "create",
-          "createJob succeeded but JobCreated event could not be decoded for the pinned ERC-8183 ABI.",
-        );
-        return { jobId: job.jobId, ...result };
-      }
-
-      await recordOperatorSpendFromReceipt({
-        wireJobId: job.id,
-        actionType: "CREATE",
-        txHash: createHash,
-        receipt: createReceipt,
-      });
-
-      await recordWireJobExecutionArtifacts({
-        jobId: job.jobId,
-        contractAddress,
-        contractJobId: parsedContractJobId,
-        createTxHash: createHash,
-      });
-
-      createTxHash = createHash;
-      contractJobId = parsedContractJobId;
-
-      const visibility = await waitForGhostWireOnchainJobVisibility({
-        publicClient,
-        contractAddress,
-        contractJobId,
-        expectedClientAddress: job.clientAddress,
-        expectedProviderAddress: job.providerAddress,
-      });
-      if (!visibility.ok) {
-        await updateGhostWireWorkflowStage({
-          jobId: job.id,
-          stage: "create",
-          status: "FAILED",
-          lastError: visibility.error,
-          nextRetryAt: nextRetryAt(),
-          incrementRetryCount: true,
-        });
-        return {
-          jobId: job.jobId,
-          status: "failed" as ReconcileResultStatus,
-          detail: visibility.error,
-        };
-      }
-    } catch (error) {
-      await updateGhostWireWorkflowStage({
-        jobId: job.id,
-        stage: "create",
-        status: "FAILED",
-        lastError: error instanceof Error ? error.message : "Failed to create hosted GhostWire job.",
-        nextRetryAt: nextRetryAt(),
-        incrementRetryCount: true,
-      });
-      return {
-        jobId: job.jobId,
-        status: "failed" as ReconcileResultStatus,
-        detail: error instanceof Error ? error.message : "Failed to create hosted GhostWire job.",
-      };
+  const orderedLogs = [...logs].sort((left, right) => {
+    const leftBlock = left.blockNumber ?? 0n;
+    const rightBlock = right.blockNumber ?? 0n;
+    if (leftBlock === rightBlock) {
+      return (right.logIndex ?? 0) - (left.logIndex ?? 0);
     }
-  }
+    return leftBlock > rightBlock ? -1 : 1;
+  });
 
-  if (!contractJobId || !createTxHash) {
-    const result = await markManualReview(
-      job.id,
-      "create",
-      "GhostWire execution is missing create artifacts after hosted job creation.",
-    );
-    return { jobId: job.jobId, ...result };
-  }
+  let firstValidationError: string | null = null;
 
-  try {
-    const visibility = await waitForGhostWireOnchainJobVisibility({
-      publicClient,
-      contractAddress,
-      contractJobId,
+  for (const log of orderedLogs) {
+    if (!log.transactionHash) continue;
+
+    const matchingEvent = parseGhostWireFundedLogs({
+      logs: [log],
       expectedClientAddress: job.clientAddress,
-      expectedProviderAddress: job.providerAddress,
-    });
-    if (!visibility.ok) {
-      await updateGhostWireWorkflowStage({
-        jobId: job.id,
-        stage: "create",
-        status: "FAILED",
-        lastError: visibility.error,
-        nextRetryAt: nextRetryAt(),
-        incrementRetryCount: true,
-      });
-      return {
-        jobId: job.jobId,
-        status: "failed" as ReconcileResultStatus,
-        detail: visibility.error,
-      };
-    }
-
-    const budgetHash = await runGhostWireWriteWithRetry(() =>
-      walletClient.writeContract({
-        account,
-        chain: walletClient.chain,
-        address: contractAddress,
-        abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI,
-        functionName: "setBudget",
-        args: [BigInt(contractJobId), job.contractBudgetAmount],
-      }),
-    );
-    const budgetReceipt = await publicClient.waitForTransactionReceipt({
-      hash: budgetHash,
-      confirmations: 1,
-      timeout: 120_000,
-    });
-
-    if (budgetReceipt.status !== "success") {
-      await updateGhostWireWorkflowStage({
-        jobId: job.id,
-        stage: "create",
-        status: "FAILED",
-        lastError: "setBudget transaction reverted on-chain.",
-        nextRetryAt: nextRetryAt(),
-        incrementRetryCount: true,
-      });
-      return {
-        jobId: job.jobId,
-        status: "failed" as ReconcileResultStatus,
-        detail: "setBudget transaction reverted on-chain.",
-      };
-    }
-
-    await recordOperatorSpendFromReceipt({
-      wireJobId: job.id,
-      actionType: "CREATE",
-      txHash: budgetHash,
-      receipt: budgetReceipt,
-    });
-
-    const budgetVisibility = await waitForGhostWireBudgetVisibility({
-      publicClient,
-      contractAddress,
-      contractJobId,
+      expectedContractJobId: contractJobId,
       expectedBudgetAmount: job.contractBudgetAmount,
     });
-    if (!budgetVisibility.ok) {
-      await updateGhostWireWorkflowStage({
-        jobId: job.id,
-        stage: "create",
-        status: "FAILED",
-        lastError: budgetVisibility.error,
-        nextRetryAt: nextRetryAt(),
-        incrementRetryCount: true,
-      });
-      return {
-        jobId: job.jobId,
-        status: "failed" as ReconcileResultStatus,
-        detail: budgetVisibility.error,
-      };
-    }
-
-    await updateGhostWireWorkflowStage({
-      jobId: job.id,
-      stage: "create",
-      status: "SUCCEEDED",
-      lastError: null,
-      nextRetryAt: null,
-    });
-  } catch (error) {
-    await updateGhostWireWorkflowStage({
-      jobId: job.id,
-      stage: "create",
-      status: "FAILED",
-      lastError: error instanceof Error ? error.message : "Failed to set hosted GhostWire budget.",
-      nextRetryAt: nextRetryAt(),
-      incrementRetryCount: true,
-    });
-    return {
-      jobId: job.jobId,
-      status: "failed" as ReconcileResultStatus,
-      detail: error instanceof Error ? error.message : "Failed to set hosted GhostWire budget.",
-    };
-  }
-
-  if (!fundTxHash) {
-    await updateGhostWireWorkflowStage({
-      jobId: job.id,
-      stage: "fund",
-      status: "IN_PROGRESS",
-      lastError: null,
-      nextRetryAt: null,
-    });
+    if (!matchingEvent) continue;
 
     try {
-      const allowance = await publicClient.readContract({
-        address: expectedPaymentToken,
-        abi: erc20Abi,
-        functionName: "allowance",
-        args: [account.address, contractAddress],
-      });
-
-      if (allowance < job.contractBudgetAmount) {
-        const approveHash = await walletClient.writeContract({
-          account,
-          chain: walletClient.chain,
-          address: expectedPaymentToken,
-          abi: erc20Abi,
-          functionName: "approve",
-          args: [contractAddress, maxUint256],
-        });
-        const approveReceipt = await publicClient.waitForTransactionReceipt({
-          hash: approveHash,
-          confirmations: 1,
-          timeout: 120_000,
-        });
-
-        if (approveReceipt.status !== "success") {
-          await updateGhostWireWorkflowStage({
-            jobId: job.id,
-            stage: "fund",
-            status: "FAILED",
-            lastError: "approve transaction reverted on-chain.",
-            nextRetryAt: nextRetryAt(),
-            incrementRetryCount: true,
-          });
-          return {
-            jobId: job.jobId,
-            status: "failed" as ReconcileResultStatus,
-            detail: "approve transaction reverted on-chain.",
-          };
-        }
-
-        await recordOperatorSpendFromReceipt({
-          wireJobId: job.id,
-          actionType: "APPROVE",
-          txHash: approveHash,
-          receipt: approveReceipt,
-        });
-      }
-
-      const nextFundHash = await runGhostWireWriteWithRetry(() =>
-        walletClient.writeContract({
-          account,
-          chain: walletClient.chain,
-          address: contractAddress,
-          abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI,
-          functionName: "fund",
-          args: [BigInt(contractJobId), job.contractBudgetAmount],
-        }),
-      );
-      const fundReceipt = await publicClient.waitForTransactionReceipt({
-        hash: nextFundHash,
-        confirmations: 1,
-        timeout: 120_000,
-      });
-
-      if (fundReceipt.status !== "success") {
-        await updateGhostWireWorkflowStage({
-          jobId: job.id,
-          stage: "fund",
-          status: "FAILED",
-          lastError: "fund transaction reverted on-chain.",
-          nextRetryAt: nextRetryAt(),
-          incrementRetryCount: true,
-        });
-        return {
-          jobId: job.jobId,
-          status: "failed" as ReconcileResultStatus,
-          detail: "fund transaction reverted on-chain.",
-        };
-      }
-
-      await recordOperatorSpendFromReceipt({
-        wireJobId: job.id,
-        actionType: "FUND",
-        txHash: nextFundHash,
-        receipt: fundReceipt,
+      const fundValidation = await validateGhostWireFundArtifact({
+        chainId,
+        expectedClientAddress: job.clientAddress,
+        expectedProviderAddress: job.providerAddress,
+        expectedEvaluatorAddress: job.evaluatorAddress,
+        expectedBudgetAmount: job.contractBudgetAmount,
+        expectedContractJobId: contractJobId,
+        fundTxHash: log.transactionHash,
       });
 
       await recordWireJobExecutionArtifacts({
         jobId: job.jobId,
-        contractAddress,
+        contractAddress: fundValidation.contractAddress,
         contractJobId,
-        fundTxHash: nextFundHash,
+        createTxHash: overrides?.createTxHash ?? job.createTxHash ?? undefined,
+        fundTxHash: fundValidation.fundTxHash,
+        fundTxSender: fundValidation.fundTxSender,
+        artifactValidationState: "VALID",
+        artifactValidationError: null,
+        artifactStatus: "SUCCEEDED",
+        createStatus: "SUCCEEDED",
+        fundStatus: "SUCCEEDED",
+        confirmationStatus: fundValidation.confirmations >= fundValidation.minConfirmations ? "SUCCEEDED" : "IN_PROGRESS",
+        reconcileStatus: fundValidation.confirmations >= fundValidation.minConfirmations ? "SUCCEEDED" : "PENDING",
+        artifactCheckedAt: new Date(),
+        artifactLastCheckedBlock: range.toBlock,
       });
 
-      fundTxHash = nextFundHash;
-
-      const minConfirmations = resolveGhostWireMinConfirmations(chainId);
-      if (minConfirmations <= 1) {
-        const reconciled = await reconcileWireJobFundedState({
+      if (fundValidation.confirmations >= fundValidation.minConfirmations) {
+        await reconcileWireJobFundedState({
           jobId: job.jobId,
-          createTxHash,
-          fundTxHash,
+          createTxHash: overrides?.createTxHash ?? job.createTxHash ?? "",
+          fundTxHash: fundValidation.fundTxHash,
           confirmedAt: new Date(),
-          blockNumber: fundReceipt.blockNumber,
-          confirmations: 1,
+          blockNumber: fundValidation.blockNumber,
+          confirmations: fundValidation.confirmations,
         });
-        return {
-          jobId: job.jobId,
-          status: "confirmed_funded" as ReconcileResultStatus,
-          state: reconciled.publicState,
-          contractState: reconciled.contractState,
-          createTxHash,
-          fundTxHash,
-        };
       }
-
-      await updateGhostWireWorkflowStage({
-        jobId: job.id,
-        stage: "fund",
-        status: "IN_PROGRESS",
-        lastError: null,
-        nextRetryAt: nextRetryAt(),
-      });
-      await updateGhostWireWorkflowStage({
-        jobId: job.id,
-        stage: "confirmation",
-        status: "IN_PROGRESS",
-        lastError: null,
-        nextRetryAt: nextRetryAt(),
-      });
 
       return {
         jobId: job.jobId,
-        status: "submitted" as ReconcileResultStatus,
-        detail: "Hosted create/fund path submitted successfully and is awaiting confirmations.",
-        createTxHash,
-        fundTxHash,
+        status: "recovered_fund" as ReconcileResultStatus,
+        detail: `Recovered fund artifact ${fundValidation.fundTxHash}.`,
       };
     } catch (error) {
-      if (error instanceof WireJobExecutionConflictError) {
-        const result = await markManualReview(job.id, "fund", error.message);
-        return { jobId: job.jobId, ...result };
-      }
-
-      await updateGhostWireWorkflowStage({
-        jobId: job.id,
-        stage: "fund",
-        status: "FAILED",
-        lastError: error instanceof Error ? error.message : "Failed to fund hosted GhostWire job.",
-        nextRetryAt: nextRetryAt(),
-        incrementRetryCount: true,
-      });
-      return {
-        jobId: job.jobId,
-        status: "failed" as ReconcileResultStatus,
-        detail: error instanceof Error ? error.message : "Failed to fund hosted GhostWire job.",
-      };
+      firstValidationError = error instanceof Error ? error.message : "Fund artifact validation failed.";
     }
+  }
+
+  await updateArtifactCheckpoint({
+    wireJobId: job.id,
+    artifactStatus: job.workflow?.artifactStatus ?? "PENDING",
+    artifactLastCheckedBlock: range.toBlock,
+    lastError: firstValidationError,
+    nextRetryAt: nextRetryAt(),
+  });
+  return {
+    jobId: job.jobId,
+    status: "waiting_artifacts" as ReconcileResultStatus,
+    detail: firstValidationError ?? "No matching fund artifact was discovered yet.",
+  };
+};
+
+const attemptGhostWireArtifactRecovery = async (job: GhostWireArtifactRecoveryJob) => {
+  if (!job.createTxHash) {
+    const createResult = await attemptCreateArtifactRecovery(job);
+    if (createResult.status === "recovered_create" && !job.fundTxHash) {
+      return attemptFundArtifactRecovery(job, {
+        contractJobId: createResult.contractJobId,
+        createTxHash: createResult.createTxHash,
+      });
+    }
+    return createResult;
+  }
+
+  if (!job.fundTxHash) {
+    return attemptFundArtifactRecovery(job, {
+      contractJobId: job.contractJobId ?? undefined,
+      createTxHash: job.createTxHash ?? undefined,
+    });
   }
 
   return {
     jobId: job.jobId,
-    status: "waiting_confirmation" as ReconcileResultStatus,
-    detail: "Hosted create/fund artifacts already recorded; waiting for confirmation reconciliation.",
-    createTxHash,
-    fundTxHash,
+    status: "already_reconciled" as ReconcileResultStatus,
+    detail: "Both create and fund artifacts are already recorded.",
   };
 };
 
 const reconcileWireJobFundedConfirmation = async (job: GhostWirePendingJob) => {
-  const createTxHash = normalizeHash(job.createTxHash);
-  const fundTxHash = normalizeHash(job.fundTxHash);
   const chainId = job.chainId as GhostWireSupportedChainId;
   const minConfirmations = resolveGhostWireMinConfirmations(chainId);
+  const fundTxHash = normalizeHash(job.fundTxHash);
 
-  if (!job.contractAddress || !job.contractJobId || !createTxHash || !fundTxHash) {
+  if (!fundTxHash || !job.createTxHash) {
     return {
       jobId: job.jobId,
-      status: "waiting_execution" as ReconcileResultStatus,
-      detail: "Execution artifacts have not been recorded yet.",
+      status: "waiting_artifacts" as ReconcileResultStatus,
+      detail: "GhostWire is waiting for validated create/fund artifacts from the client wallet.",
     };
   }
 
-  await updateGhostWireWorkflowStage({
-    jobId: job.id,
-    stage: "confirmation",
-    status: "IN_PROGRESS",
-    lastError: null,
-    nextRetryAt: null,
+  const observation = await getReceiptObservation({
+    chainId,
+    txHash: fundTxHash,
   });
-
-  const createObservation = await getReceiptObservation({ chainId, txHash: createTxHash });
-  if (!createObservation.found) {
+  if (!observation.found) {
     await updateGhostWireWorkflowStage({
-      jobId: job.id,
+      wireJobId: job.id,
       stage: "confirmation",
       status: "IN_PROGRESS",
-      lastError: createObservation.error,
+      lastError: observation.error,
       nextRetryAt: nextRetryAt(),
       incrementRetryCount: true,
     });
     return {
       jobId: job.jobId,
       status: "waiting_confirmation" as ReconcileResultStatus,
-      detail: createObservation.error,
+      detail: observation.error,
     };
   }
 
-  if (createObservation.receipt.status !== "success") {
-    await updateGhostWireWorkflowStage({
-      jobId: job.id,
-      stage: "create",
-      status: "FAILED",
-      lastError: "Create transaction reverted on-chain.",
-      nextRetryAt: nextRetryAt(),
-      incrementRetryCount: true,
+  if (observation.receipt.status !== "success") {
+    const reason = "Fund transaction reverted on-chain after artifact recording.";
+    await failWireJobArtifactValidation({
+      jobId: job.jobId,
+      stage: "fund",
+      reason,
+      artifactLastCheckedBlock: observation.receipt.blockNumber,
     });
     return {
       jobId: job.jobId,
-      status: "failed" as ReconcileResultStatus,
-      detail: "Create transaction reverted on-chain.",
+      status: "manual_review" as ReconcileResultStatus,
+      detail: reason,
     };
   }
 
-  await recordOperatorSpendFromReceipt({
-    wireJobId: job.id,
-    actionType: "CREATE",
-    txHash: createTxHash,
-    receipt: createObservation.receipt,
-  });
-
-  const fundObservation = await getReceiptObservation({ chainId, txHash: fundTxHash });
-  if (!fundObservation.found) {
+  if (observation.confirmations < minConfirmations) {
     await updateGhostWireWorkflowStage({
-      jobId: job.id,
-      stage: "fund",
+      wireJobId: job.id,
+      stage: "confirmation",
       status: "IN_PROGRESS",
-      lastError: fundObservation.error,
-      nextRetryAt: nextRetryAt(),
-      incrementRetryCount: true,
-    });
-    return {
-      jobId: job.jobId,
-      status: "waiting_confirmation" as ReconcileResultStatus,
-      detail: fundObservation.error,
-    };
-  }
-
-  if (fundObservation.receipt.status !== "success") {
-    await updateGhostWireWorkflowStage({
-      jobId: job.id,
-      stage: "fund",
-      status: "FAILED",
-      lastError: "Fund transaction reverted on-chain.",
-      nextRetryAt: nextRetryAt(),
-      incrementRetryCount: true,
-    });
-    return {
-      jobId: job.jobId,
-      status: "failed" as ReconcileResultStatus,
-      detail: "Fund transaction reverted on-chain.",
-    };
-  }
-
-  if (fundObservation.confirmations < minConfirmations) {
-    await updateGhostWireWorkflowStage({
-      jobId: job.id,
-      stage: "fund",
-      status: "IN_PROGRESS",
-      lastError: `Fund transaction has ${fundObservation.confirmations}/${minConfirmations} confirmations.`,
+      lastError: `Fund transaction has ${observation.confirmations}/${minConfirmations} confirmations.`,
       nextRetryAt: nextRetryAt(),
     });
     return {
       jobId: job.jobId,
       status: "waiting_confirmation" as ReconcileResultStatus,
-      detail: `Fund transaction has ${fundObservation.confirmations}/${minConfirmations} confirmations.`,
+      detail: `Fund transaction has ${observation.confirmations}/${minConfirmations} confirmations.`,
     };
   }
-
-  await recordOperatorSpendFromReceipt({
-    wireJobId: job.id,
-    actionType: "FUND",
-    txHash: fundTxHash,
-    receipt: fundObservation.receipt,
-  });
 
   const reconciled = await reconcileWireJobFundedState({
     jobId: job.jobId,
-    createTxHash,
-    fundTxHash,
+    createTxHash: job.createTxHash,
+    fundTxHash: fundTxHash,
     confirmedAt: new Date(),
-    blockNumber: fundObservation.receipt.blockNumber,
-    confirmations: fundObservation.confirmations,
+    blockNumber: observation.receipt.blockNumber,
+    confirmations: observation.confirmations,
   });
 
   return {
@@ -1165,206 +694,43 @@ const reconcileWireJobFundedConfirmation = async (job: GhostWirePendingJob) => {
   };
 };
 
-const attemptGhostWireHostedExpiry = async (job: GhostWirePendingJob) => {
+const reconcileWireJobDirectLifecycle = async (job: GhostWirePendingJob) => {
   if (!job.contractAddress || !job.contractJobId) {
     return {
       jobId: job.jobId,
-      status: "waiting_execution" as ReconcileResultStatus,
-      detail: "Hosted expiry cannot run until contract artifacts are recorded.",
-    };
-  }
-
-  if (job.terminalTxHash) {
-    return {
-      jobId: job.jobId,
-      status: "waiting_confirmation" as ReconcileResultStatus,
-      detail: "Terminal execution already recorded; waiting for reconciliation.",
-    };
-  }
-
-  const context = await resolveGhostWireHostedContext(job, { requireClientMatch: false });
-  if (!context.ok) {
-    const result = await markManualReview(job.id, "reconcile", context.reason);
-    return { jobId: job.jobId, ...result };
-  }
-
-  const { account, contractAddress, publicClient, walletClient } = context;
-  await updateGhostWireWorkflowStage({
-    jobId: job.id,
-    stage: "reconcile",
-    status: "IN_PROGRESS",
-    lastError: null,
-    nextRetryAt: null,
-  });
-
-  try {
-    const terminalHash = await walletClient.writeContract({
-      account,
-      chain: walletClient.chain,
-      address: contractAddress,
-      abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI,
-      functionName: "claimRefund",
-      args: [BigInt(job.contractJobId)],
-    });
-    const terminalReceipt = await publicClient.waitForTransactionReceipt({
-      hash: terminalHash,
-      confirmations: 1,
-      timeout: 120_000,
-    });
-
-    if (terminalReceipt.status !== "success") {
-      await updateGhostWireWorkflowStage({
-        jobId: job.id,
-        stage: "reconcile",
-        status: "FAILED",
-        lastError: "claimRefund transaction reverted on-chain.",
-        nextRetryAt: nextRetryAt(),
-        incrementRetryCount: true,
-      });
-      return {
-        jobId: job.jobId,
-        status: "failed" as ReconcileResultStatus,
-        detail: "claimRefund transaction reverted on-chain.",
-      };
-    }
-
-    await recordOperatorSpendFromReceipt({
-      wireJobId: job.id,
-      actionType: "EXPIRE",
-      txHash: terminalHash,
-      receipt: terminalReceipt,
-    });
-    await recordWireJobTerminalArtifacts({
-      jobId: job.jobId,
-      terminalTxHash: terminalHash,
-    });
-    await updateGhostWireWorkflowStage({
-      jobId: job.id,
-      stage: "confirmation",
-      status: "IN_PROGRESS",
-      lastError: null,
-      nextRetryAt: nextRetryAt(),
-    });
-    await updateGhostWireWorkflowStage({
-      jobId: job.id,
-      stage: "reconcile",
-      status: "IN_PROGRESS",
-      lastError: null,
-      nextRetryAt: nextRetryAt(),
-    });
-
-    return {
-      jobId: job.jobId,
-      status: "submitted" as ReconcileResultStatus,
-      detail: "Hosted expiry refund submitted successfully and is awaiting confirmations.",
-      terminalTxHash: terminalHash,
-    };
-  } catch (error) {
-    await updateGhostWireWorkflowStage({
-      jobId: job.id,
-      stage: "reconcile",
-      status: "FAILED",
-      lastError: error instanceof Error ? error.message : "Failed to trigger GhostWire expiry refund.",
-      nextRetryAt: nextRetryAt(),
-      incrementRetryCount: true,
-    });
-    return {
-      jobId: job.jobId,
-      status: "failed" as ReconcileResultStatus,
-      detail: error instanceof Error ? error.message : "Failed to trigger GhostWire expiry refund.",
-    };
-  }
-};
-
-const reconcileWireJobPostFundingLifecycle = async (job: GhostWirePendingJob) => {
-  if (!job.contractAddress || !job.contractJobId) {
-    return {
-      jobId: job.jobId,
-      status: "waiting_execution" as ReconcileResultStatus,
-      detail: "Execution artifacts have not been recorded yet.",
+      status: "waiting_artifacts" as ReconcileResultStatus,
+      detail: "GhostWire lifecycle reconciliation requires recorded contract artifacts first.",
     };
   }
 
   const chainId = job.chainId as GhostWireSupportedChainId;
   const minConfirmations = resolveGhostWireMinConfirmations(chainId);
   const publicClient = createGhostWirePublicClient(chainId);
-  const contractJobId = BigInt(job.contractJobId);
-
   const onchainJob = await publicClient.readContract({
     address: getAddress(job.contractAddress),
     abi: GHOSTWIRE_ERC8183_AGENTIC_COMMERCE_ABI,
     functionName: "getJob",
-    args: [contractJobId],
+    args: [BigInt(job.contractJobId)],
   });
 
   const onchainState = mapGhostWireContractStatus(onchainJob.status);
-
-  if (job.terminalTxHash) {
-    const terminalTxHash = normalizeHash(job.terminalTxHash);
-    if (!terminalTxHash) {
-      const result = await markManualReview(job.id, "reconcile", "GhostWire terminal transaction hash is malformed.");
-      return { jobId: job.jobId, ...result };
-    }
-
-    const observation = await getReceiptObservation({ chainId, txHash: terminalTxHash });
-    if (!observation.found) {
-      await updateGhostWireWorkflowStage({
-        jobId: job.id,
-        stage: "confirmation",
-        status: "IN_PROGRESS",
-        lastError: observation.error,
-        nextRetryAt: nextRetryAt(),
-        incrementRetryCount: true,
-      });
-      return {
-        jobId: job.jobId,
-        status: "waiting_confirmation" as ReconcileResultStatus,
-        detail: observation.error,
-      };
-    }
-
-    if (observation.receipt.status !== "success") {
-      await updateGhostWireWorkflowStage({
-        jobId: job.id,
-        stage: "reconcile",
-        status: "FAILED",
-        lastError: "Terminal transaction reverted on-chain.",
-        nextRetryAt: nextRetryAt(),
-        incrementRetryCount: true,
-      });
-      return {
-        jobId: job.jobId,
-        status: "failed" as ReconcileResultStatus,
-        detail: "Terminal transaction reverted on-chain.",
-      };
-    }
-
-    if (observation.confirmations < minConfirmations) {
-      await updateGhostWireWorkflowStage({
-        jobId: job.id,
-        stage: "confirmation",
-        status: "IN_PROGRESS",
-        lastError: `Terminal transaction has ${observation.confirmations}/${minConfirmations} confirmations.`,
-        nextRetryAt: nextRetryAt(),
-      });
-      return {
-        jobId: job.jobId,
-        status: "waiting_confirmation" as ReconcileResultStatus,
-        detail: `Terminal transaction has ${observation.confirmations}/${minConfirmations} confirmations.`,
-      };
-    }
+  if (onchainState === "OPEN") {
+    const result = await markManualReview(
+      job.id,
+      "reconcile",
+      "On-chain GhostWire job is still OPEN even though direct funding artifacts are already recorded.",
+    );
+    return { jobId: job.jobId, ...result };
   }
 
   if (onchainState === "FUNDED") {
     const expired = Math.floor(Date.now() / 1000) >= Number(onchainJob.expiredAt);
-    if (expired) {
-      return attemptGhostWireHostedExpiry(job);
-    }
-
     return {
       jobId: job.jobId,
       status: "already_reconciled" as ReconcileResultStatus,
-      detail: "Wire job remains funded and is awaiting provider submission.",
+      detail: expired
+        ? "GhostWire job is funded but expired on-chain; the client or evaluator must call claimRefund()."
+        : "GhostWire job remains funded and is awaiting provider submission.",
     };
   }
 
@@ -1374,9 +740,18 @@ const reconcileWireJobPostFundingLifecycle = async (job: GhostWirePendingJob) =>
     contractJobId: job.contractJobId,
   });
 
-  if (latestLifecycleEvent && latestLifecycleEvent.confirmations < minConfirmations) {
+  if (!latestLifecycleEvent || latestLifecycleEvent.state !== onchainState) {
+    const result = await markManualReview(
+      job.id,
+      "reconcile",
+      `On-chain GhostWire job is ${onchainState} but the matching lifecycle event could not be resolved from logs.`,
+    );
+    return { jobId: job.jobId, ...result };
+  }
+
+  if (latestLifecycleEvent.confirmations < minConfirmations) {
     await updateGhostWireWorkflowStage({
-      jobId: job.id,
+      wireJobId: job.id,
       stage: "confirmation",
       status: "IN_PROGRESS",
       lastError: `${latestLifecycleEvent.state} transaction has ${latestLifecycleEvent.confirmations}/${minConfirmations} confirmations.`,
@@ -1390,15 +765,6 @@ const reconcileWireJobPostFundingLifecycle = async (job: GhostWirePendingJob) =>
   }
 
   if (onchainState === "SUBMITTED") {
-    if (!latestLifecycleEvent || latestLifecycleEvent.state !== "SUBMITTED") {
-      const result = await markManualReview(
-        job.id,
-        "reconcile",
-        "On-chain job is submitted but no submitted lifecycle event could be resolved from logs.",
-      );
-      return { jobId: job.jobId, ...result };
-    }
-
     const reconciled = await reconcileWireJobSubmittedState({
       jobId: job.jobId,
       submitTxHash: latestLifecycleEvent.txHash,
@@ -1407,22 +773,12 @@ const reconcileWireJobPostFundingLifecycle = async (job: GhostWirePendingJob) =>
       confirmations: latestLifecycleEvent.confirmations,
       logIndex: latestLifecycleEvent.logIndex,
     });
-
     return {
       jobId: job.jobId,
       status: "confirmed_submitted" as ReconcileResultStatus,
       state: reconciled.publicState,
       contractState: reconciled.contractState,
     };
-  }
-
-  if (!latestLifecycleEvent || latestLifecycleEvent.state !== onchainState) {
-    const result = await markManualReview(
-      job.id,
-      "reconcile",
-      `On-chain job is ${onchainState} but the matching lifecycle event could not be resolved from logs.`,
-    );
-    return { jobId: job.jobId, ...result };
   }
 
   const reconciled = await reconcileWireJobTerminalState({
@@ -1434,7 +790,6 @@ const reconcileWireJobPostFundingLifecycle = async (job: GhostWirePendingJob) =>
     confirmations: latestLifecycleEvent.confirmations,
     logIndex: latestLifecycleEvent.logIndex,
   });
-
   return {
     jobId: job.jobId,
     status: "confirmed_terminal" as ReconcileResultStatus,
@@ -1445,14 +800,18 @@ const reconcileWireJobPostFundingLifecycle = async (job: GhostWirePendingJob) =>
 
 const processGhostWireWorkflowJob = async (job: GhostWirePendingJob) => {
   if (!job.createTxHash || !job.fundTxHash || !job.contractAddress || !job.contractJobId) {
-    return attemptGhostWireHostedCreateAndFund(job);
+    return {
+      jobId: job.jobId,
+      status: "waiting_artifacts" as ReconcileResultStatus,
+      detail: "GhostWire is waiting for the client wallet to report direct transaction artifacts.",
+    };
   }
 
   if (job.contractState === "OPEN") {
     return reconcileWireJobFundedConfirmation(job);
   }
 
-  return reconcileWireJobPostFundingLifecycle(job);
+  return reconcileWireJobDirectLifecycle(job);
 };
 
 const deliverGhostWireWebhookEvent = async (event: GhostWirePendingWebhook) => {
@@ -1562,38 +921,22 @@ const deliverPendingGhostWireWebhooks = async (limit: number) => {
   };
 };
 
-export const recordGhostWireExecutionBatch = async (records: GhostWireExecutionRecordInput[]) => {
-  const accepted: Array<{
-    jobId: string;
-    contractAddress: string;
-    contractJobId: string;
-    createTxHash: string;
-    fundTxHash: string;
-  }> = [];
-  const rejected: Array<{ jobId: string; error: string }> = [];
+const discoverGhostWireArtifacts = async (limit: number) => {
+  const now = new Date();
+  const recoveryCandidates = await listWireJobsForArtifactRecovery({
+    limit,
+    notCheckedBefore: new Date(now.getTime() - GHOSTWIRE_ARTIFACT_RECOVERY_GRACE_WINDOW_MS),
+    createdAfter: new Date(now.getTime() - GHOSTWIRE_ARTIFACT_RECOVERY_ELIGIBILITY_WINDOW_MS),
+  });
 
-  for (const record of records) {
-    try {
-      const result = await recordWireJobExecutionArtifacts(record);
-      accepted.push({
-        jobId: result.jobId,
-        contractAddress: result.contractAddress ?? "",
-        contractJobId: result.contractJobId ?? "",
-        createTxHash: result.createTxHash ?? "",
-        fundTxHash: result.fundTxHash ?? "",
-      });
-    } catch (error) {
-      const message =
-        error instanceof WireJobExecutionConflictError || error instanceof Error
-          ? error.message
-          : "Failed to record GhostWire execution artifacts.";
-      rejected.push({ jobId: record.jobId, error: message });
-    }
+  const results = [];
+  for (const job of recoveryCandidates) {
+    results.push(await attemptGhostWireArtifactRecovery(job));
   }
 
   return {
-    accepted,
-    rejected,
+    processedCount: recoveryCandidates.length,
+    results,
   };
 };
 
@@ -1610,6 +953,7 @@ export const processGhostWireOperatorTick = async (input?: {
     Math.min(input?.webhookLimit ?? GHOSTWIRE_OPERATOR_DEFAULT_WEBHOOK_LIMIT, GHOSTWIRE_OPERATOR_MAX_LIMIT),
   );
 
+  const artifactRecovery = await discoverGhostWireArtifacts(workflowLimit);
   const jobs = await listWireJobsNeedingOperatorWork(workflowLimit);
   const reconciled = [];
 
@@ -1625,10 +969,12 @@ export const processGhostWireOperatorTick = async (input?: {
 
   return {
     ok: true,
-    operatorMode: "hosted-create-fund-reconcile-terminal",
+    operatorMode: GHOSTWIRE_OPERATOR_MODE,
     processedAt: new Date().toISOString(),
+    processedArtifactRecoveryCount: artifactRecovery.processedCount,
     processedWorkflowCount: jobs.length,
     processedWebhookCount: webhookDelivery.processedCount,
+    artifactRecovery: artifactRecovery.results,
     reconciled,
     webhookDelivery: webhookDelivery.results,
     snapshot,
@@ -1677,7 +1023,18 @@ export const resolveGhostWireOperatorSnapshot = async (input?: {
       jobExpirySeconds: GHOSTWIRE_JOB_EXPIRY_SECONDS,
       maxExpiryWindowSeconds: GHOSTWIRE_MAX_EXPIRY_WINDOW_SECONDS,
       submittedEvaluationGraceSeconds: GHOSTWIRE_SUBMITTED_EVALUATION_GRACE_SECONDS,
-      operatorMode: "hosted-create-fund-reconcile-terminal",
+      operatorMode: GHOSTWIRE_OPERATOR_MODE,
+      directExecution: {
+        customerFundsEscrow: true,
+        customerPaysGas: true,
+        sponsorshipSupported: false,
+      },
+      artifactRecovery: {
+        graceWindowSeconds: Math.trunc(GHOSTWIRE_ARTIFACT_RECOVERY_GRACE_WINDOW_MS / 1000),
+        eligibilityWindowSeconds: Math.trunc(GHOSTWIRE_ARTIFACT_RECOVERY_ELIGIBILITY_WINDOW_MS / 1000),
+        perPassJobCap: workflowLimit,
+        perJobBlockScanCap: Number(GHOSTWIRE_ARTIFACT_RECOVERY_MAX_BLOCK_SCAN),
+      },
       contractSurface: {
         repository: GHOSTWIRE_ERC8183_PINNED_REPOSITORY,
         contract: GHOSTWIRE_ERC8183_PINNED_CONTRACT,
@@ -1686,18 +1043,17 @@ export const resolveGhostWireOperatorSnapshot = async (input?: {
       chains: {
         mainnet: {
           chainId: GHOSTWIRE_SUPPORTED_MAINNET_CHAIN_ID,
-          minConfirmations: GHOSTWIRE_MIN_CONFIRMATIONS_MAINNET,
+          minConfirmations: resolveGhostWireMinConfirmations(GHOSTWIRE_SUPPORTED_MAINNET_CHAIN_ID),
           contractAddress: resolveGhostWireContractAddress(GHOSTWIRE_SUPPORTED_MAINNET_CHAIN_ID),
           rpcUrl: resolveGhostWireRpcUrl(GHOSTWIRE_SUPPORTED_MAINNET_CHAIN_ID),
         },
         testnet: {
           chainId: GHOSTWIRE_SUPPORTED_TESTNET_CHAIN_ID,
-          minConfirmations: GHOSTWIRE_MIN_CONFIRMATIONS_TESTNET,
+          minConfirmations: resolveGhostWireMinConfirmations(GHOSTWIRE_SUPPORTED_TESTNET_CHAIN_ID),
           contractAddress: resolveGhostWireContractAddress(GHOSTWIRE_SUPPORTED_TESTNET_CHAIN_ID),
           rpcUrl: resolveGhostWireRpcUrl(GHOSTWIRE_SUPPORTED_TESTNET_CHAIN_ID),
         },
       },
-      operatorAddress: getGhostWireOperatorAccount()?.address ?? null,
     },
     workflow: {
       backlogCount: workflowBacklogCount,
@@ -1712,11 +1068,18 @@ export const resolveGhostWireOperatorSnapshot = async (input?: {
         contractAddress: job.contractAddress,
         contractJobId: job.contractJobId,
         createTxHash: job.createTxHash,
+        createTxSender: job.createTxSender,
         fundTxHash: job.fundTxHash,
+        fundTxSender: job.fundTxSender,
+        artifactsRecordedAt: job.artifactsRecordedAt?.toISOString() ?? null,
+        artifactValidationState: job.artifactValidationState,
+        artifactValidationError: job.artifactValidationError,
         jobExpiresAt: job.jobExpiresAt.toISOString(),
         createdAt: job.createdAt.toISOString(),
         updatedAt: job.updatedAt.toISOString(),
         operator: {
+          artifactStatus: job.workflow?.artifactStatus ?? null,
+          artifactCheckedAt: job.workflow?.artifactCheckedAt?.toISOString() ?? null,
           createStatus: job.workflow?.createStatus ?? null,
           fundStatus: job.workflow?.fundStatus ?? null,
           confirmationStatus: job.workflow?.confirmationStatus ?? null,

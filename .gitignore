@@ -39,6 +39,7 @@ yarn-error.log*
 
 # vercel
 .vercel
+.vercel*
 
 # typescript
 *.tsbuildinfo
@@ -50,3 +51,12 @@ PROJECT_SPEC.md
 PROJECT_ROADMAP.md
 TO-DO.md
 TO_DO.md
+docs/plans/
+score-v2-long-term-redesign-plan.md
+
+# local generated artifacts
+/artifacts/
+sdks/python/__pycache__/
+sdks/python/tests/__pycache__/
+sdks/python/*.egg-info/
+tos_*.txt

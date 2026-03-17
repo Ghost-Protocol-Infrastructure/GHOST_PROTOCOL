@@ -31,7 +31,7 @@ This demo is for GhostGate only.
 
 It does **not** need to include:
 
-- Hosted GhostWire
+- GhostWire
 - fulfillment ticket/capture flow
 - merchant dashboard setup
 - GhostRank attribution

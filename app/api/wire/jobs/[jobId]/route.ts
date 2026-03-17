@@ -16,11 +16,31 @@ export async function GET(_: NextRequest, context: RouteContext) {
 
   try {
     const job = await getWireJobById(jobId.trim());
+    const recovery =
+      job.artifactValidationState === "INVALID" || job.artifactValidationState === "MANUAL_REVIEW"
+        ? job.contractState === "OPEN"
+          ? {
+              recoveryAction: "REJECT_OPEN_JOB",
+              recoveryHint:
+                job.artifactValidationError ??
+                "The on-chain GhostWire job does not match the prepared job. Reject the open job from the client wallet, then prepare a new job.",
+            }
+          : {
+              recoveryAction: "CLAIM_REFUND_AFTER_EXPIRY",
+              recoveryHint:
+                job.artifactValidationError ??
+                "The funded GhostWire job does not match the prepared job. Wait until expiry, then call claimRefund() from the client or evaluator wallet.",
+            }
+        : {
+            recoveryAction: null,
+            recoveryHint: null,
+          };
     return ghostWireJson({
       ok: true,
       apiVersion: 1,
       job: {
         ...job,
+        ...recovery,
         deliverable: buildGhostWireDeliverableSummary({
           jobId: job.jobId,
           metadataUri: job.metadataUri,

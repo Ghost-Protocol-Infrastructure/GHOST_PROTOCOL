@@ -133,6 +133,37 @@ export type WirePricingAmount = {
   chainId?: number;
 };
 
+export type GhostWireWalletTxRequest = {
+  to: `0x${string}` | string;
+  data: `0x${string}` | string;
+  value: `0x${string}` | string;
+  chainId: number;
+};
+
+export type GhostWireBalanceAnalysis = {
+  asset: string;
+  amount: string;
+  decimals: number;
+  requiredAmount?: string;
+  sufficient?: boolean;
+};
+
+export type GhostWireDirectPrepare = {
+  approvalMode: "exact" | "unlimited";
+  contractAddress: string;
+  paymentTokenAddress: string;
+  expectedBudgetAmount: string;
+  description?: string;
+  allowance: GhostWireBalanceAnalysis;
+  balance: GhostWireBalanceAnalysis;
+  nativeBalance: GhostWireBalanceAnalysis;
+  approveTxRequest: GhostWireWalletTxRequest | null;
+  createTxRequest?: GhostWireWalletTxRequest | null;
+  setBudgetTxRequest?: GhostWireWalletTxRequest | null;
+  fundTxRequest?: GhostWireWalletTxRequest | null;
+  nextAction: "submit_create_artifact" | "submit_fund_artifact";
+};
+
 export type WireQuoteResult = {
   ok: boolean;
   endpoint: string;
@@ -140,9 +171,26 @@ export type WireQuoteResult = {
   payload: unknown;
   quoteId: string | null;
   expiresAt: string | null;
+  chainId: number | null;
+  contractAddress: string | null;
+  paymentTokenAddress: string | null;
+  pricing: {
+    principal: WirePricingAmount;
+    protocolFee: WirePricingAmount;
+    networkReserve: WirePricingAmount;
+    display?: unknown;
+  } | null;
+  confirmations: {
+    min: number;
+  } | null;
+  directExecution: {
+    customerFundsEscrow: boolean;
+    customerPaysGas: boolean;
+    sponsorshipSupported: boolean;
+  } | null;
 };
 
-export type WireJobCreateInput = {
+export type WireJobPrepareInput = {
   quoteId: string;
   client: `0x${string}` | string;
   provider: `0x${string}` | string;
@@ -153,15 +201,39 @@ export type WireJobCreateInput = {
   metadataUri?: string | null;
   webhookUrl?: string | null;
   webhookSecret?: string | null;
-  execSecret?: string | null;
+  approvalMode?: "exact" | "unlimited";
 };
 
-export type WireJobCreateResult = {
+export type WireJobPrepareResult = {
   ok: boolean;
   endpoint: string;
   status: number;
   payload: unknown;
   jobId: string | null;
+  quoteId: string | null;
+  chainId: number | null;
+  jobExpiresAt: string | null;
+  direct: GhostWireDirectPrepare | null;
+};
+
+export type WireArtifactRecordInput = {
+  jobId: string;
+  clientAddress: `0x${string}` | string;
+  createTxHash?: `0x${string}` | string | null;
+  fundTxHash?: `0x${string}` | string | null;
+  createTxSender?: `0x${string}` | string | null;
+  fundTxSender?: `0x${string}` | string | null;
+  approvalMode?: "exact" | "unlimited";
+  clientPrivateKey?: `0x${string}` | null;
+};
+
+export type WireArtifactRecordResult = {
+  ok: boolean;
+  endpoint: string;
+  status: number;
+  payload: unknown;
+  job: WireJobSnapshot | null;
+  direct: GhostWireDirectPrepare | null;
 };
 
 export type WireJobSnapshot = {
@@ -183,8 +255,15 @@ export type WireJobSnapshot = {
   contractAddress: string | null;
   contractJobId: string | null;
   createTxHash: string | null;
+  createTxSender?: string | null;
   fundTxHash: string | null;
+  fundTxSender?: string | null;
   terminalTxHash: string | null;
+  artifactsRecordedAt?: string | null;
+  artifactValidationState?: string | null;
+  artifactValidationError?: string | null;
+  recoveryAction?: string | null;
+  recoveryHint?: string | null;
   createdAt: string;
   updatedAt: string;
   pricing: {
@@ -193,6 +272,8 @@ export type WireJobSnapshot = {
     networkReserve: WirePricingAmount;
   };
   operator: {
+    artifactStatus?: string | null;
+    artifactCheckedAt?: string | null;
     createStatus: string | null;
     fundStatus: string | null;
     confirmationStatus: string | null;
@@ -303,9 +384,6 @@ const deriveAgentId = (serviceSlug: string | null): string | null => {
   return match?.[1] ?? null;
 };
 
-const resolveWireExecSecret = (explicitSecret?: string | null): string | null =>
-  normalizeOptionalString(explicitSecret) ?? normalizeOptionalString(process.env.GHOSTWIRE_EXEC_SECRET);
-
 const resolveWireDeliverableLocator = (job: WireJobSnapshot): string | null => {
   const summaryLocator = normalizeOptionalString(job.deliverable?.locatorUrl ?? null);
   if (summaryLocator) return summaryLocator;
@@ -383,6 +461,42 @@ const buildMerchantGatewayAuthMessage = (payload: MerchantGatewayAuthPayload): s
     `serviceSlug:${payload.serviceSlug}`,
     `ownerAddress:${payload.ownerAddress}`,
     `actorAddress:${payload.actorAddress}`,
+    `issuedAt:${payload.issuedAt}`,
+    `nonce:${payload.nonce}`,
+  ].join("\n");
+
+const normalizeWireHash = (value: string | null | undefined): `0x${string}` | null => {
+  const trimmed = value?.trim().toLowerCase();
+  return trimmed && /^0x[a-f0-9]{64}$/.test(trimmed) ? (trimmed as `0x${string}`) : null;
+};
+
+const buildWireArtifactAuthPayload = (input: {
+  jobId: string;
+  clientAddress: string;
+  createTxHash?: string | null;
+  fundTxHash?: string | null;
+  issuedAt?: number;
+  nonce?: string;
+}) => ({
+  scope: "ghostwire_artifacts" as const,
+  version: "1" as const,
+  jobId: input.jobId,
+  clientAddress: normalizeAddressLower(input.clientAddress),
+  createTxHash: normalizeWireHash(input.createTxHash ?? null),
+  fundTxHash: normalizeWireHash(input.fundTxHash ?? null),
+  issuedAt: input.issuedAt ?? Math.floor(Date.now() / 1000),
+  nonce: input.nonce ?? randomUUID().replace(/-/g, ""),
+});
+
+const buildWireArtifactAuthMessage = (payload: ReturnType<typeof buildWireArtifactAuthPayload>): string =>
+  [
+    "Ghost Protocol GhostWire Artifact Authorization",
+    `scope:${payload.scope}`,
+    `version:${payload.version}`,
+    `jobId:${payload.jobId}`,
+    `clientAddress:${payload.clientAddress}`,
+    `createTxHash:${payload.createTxHash ?? ""}`,
+    `fundTxHash:${payload.fundTxHash ?? ""}`,
     `issuedAt:${payload.issuedAt}`,
     `nonce:${payload.nonce}`,
   ].join("\n");
@@ -612,7 +726,7 @@ export class GhostAgent {
     evaluator: `0x${string}` | string;
     principalAmount: string;
     chainId?: number;
-    client?: `0x${string}` | string | null;
+    client: `0x${string}` | string;
     providerAgentId?: string | null;
     providerServiceSlug?: string | null;
   }): Promise<WireQuoteResult> {
@@ -642,7 +756,16 @@ export class GhostAgent {
     const payload = await parsePayload(response);
     const record =
       typeof payload === "object" && payload !== null && "quoteId" in payload
-        ? (payload as { quoteId?: unknown; expiresAt?: unknown })
+        ? (payload as {
+            quoteId?: unknown;
+            expiresAt?: unknown;
+            chainId?: unknown;
+            contractAddress?: unknown;
+            paymentTokenAddress?: unknown;
+            pricing?: unknown;
+            confirmations?: unknown;
+            directExecution?: unknown;
+          })
         : null;
 
     return {
@@ -652,22 +775,31 @@ export class GhostAgent {
       payload,
       quoteId: typeof record?.quoteId === "string" ? record.quoteId : null,
       expiresAt: typeof record?.expiresAt === "string" ? record.expiresAt : null,
+      chainId: typeof record?.chainId === "number" ? record.chainId : null,
+      contractAddress: typeof record?.contractAddress === "string" ? record.contractAddress : null,
+      paymentTokenAddress: typeof record?.paymentTokenAddress === "string" ? record.paymentTokenAddress : null,
+      pricing:
+        typeof record?.pricing === "object" && record.pricing !== null
+          ? (record.pricing as WireQuoteResult["pricing"])
+          : null,
+      confirmations:
+        typeof record?.confirmations === "object" && record.confirmations !== null
+          ? (record.confirmations as WireQuoteResult["confirmations"])
+          : null,
+      directExecution:
+        typeof record?.directExecution === "object" && record.directExecution !== null
+          ? (record.directExecution as WireQuoteResult["directExecution"])
+          : null,
     };
   }
 
-  async createWireJob(input: WireJobCreateInput): Promise<WireJobCreateResult> {
-    const execSecret = resolveWireExecSecret(input.execSecret);
-    if (!execSecret) {
-      throw new Error("createWireJob requires execSecret or GHOSTWIRE_EXEC_SECRET.");
-    }
-
+  async prepareWireJob(input: WireJobPrepareInput): Promise<WireJobPrepareResult> {
     const endpoint = `${this.baseUrl}/api/wire/jobs`;
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         accept: "application/json, text/plain;q=0.9, */*;q=0.8",
-        authorization: `Bearer ${execSecret}`,
       },
       body: JSON.stringify({
         quoteId: input.quoteId,
@@ -684,13 +816,20 @@ export class GhostAgent {
         ...(normalizeOptionalString(input.metadataUri ?? null) ? { metadataUri: input.metadataUri } : {}),
         ...(normalizeOptionalString(input.webhookUrl ?? null) ? { webhookUrl: input.webhookUrl } : {}),
         ...(normalizeOptionalString(input.webhookSecret ?? null) ? { webhookSecret: input.webhookSecret } : {}),
+        ...(input.approvalMode ? { approvalMode: input.approvalMode } : {}),
       }),
       cache: "no-store",
     });
     const payload = await parsePayload(response);
     const record =
       typeof payload === "object" && payload !== null && "jobId" in payload
-        ? (payload as { jobId?: unknown })
+        ? (payload as {
+            jobId?: unknown;
+            quoteId?: unknown;
+            chainId?: unknown;
+            jobExpiresAt?: unknown;
+            direct?: unknown;
+          })
         : null;
 
     return {
@@ -699,6 +838,88 @@ export class GhostAgent {
       status: response.status,
       payload,
       jobId: typeof record?.jobId === "string" ? record.jobId : null,
+      quoteId: typeof record?.quoteId === "string" ? record.quoteId : null,
+      chainId: typeof record?.chainId === "number" ? record.chainId : null,
+      jobExpiresAt: typeof record?.jobExpiresAt === "string" ? record.jobExpiresAt : null,
+      direct:
+        typeof record?.direct === "object" && record.direct !== null
+          ? (record.direct as GhostWireDirectPrepare)
+          : null,
+    };
+  }
+
+  async recordWireArtifacts(input: WireArtifactRecordInput): Promise<WireArtifactRecordResult> {
+    const normalizedJobId = normalizeOptionalString(input.jobId);
+    if (!normalizedJobId) {
+      throw new Error("recordWireArtifacts(jobId, ...) requires a non-empty GhostWire job id.");
+    }
+
+    const createTxHash = normalizeWireHash(input.createTxHash ?? null);
+    const fundTxHash = normalizeWireHash(input.fundTxHash ?? null);
+    if (!createTxHash && !fundTxHash) {
+      throw new Error("recordWireArtifacts requires at least one of createTxHash or fundTxHash.");
+    }
+
+    const clientPrivateKey = input.clientPrivateKey ?? this.privateKey;
+    if (!clientPrivateKey) {
+      throw new Error("recordWireArtifacts requires a clientPrivateKey or GhostAgent.privateKey.");
+    }
+
+    const clientAccount = privateKeyToAccount(clientPrivateKey);
+    if (normalizeAddressLower(clientAccount.address) !== normalizeAddressLower(input.clientAddress)) {
+      throw new Error("recordWireArtifacts clientPrivateKey does not match the provided clientAddress.");
+    }
+
+    const authPayload = buildWireArtifactAuthPayload({
+      jobId: normalizedJobId,
+      clientAddress: input.clientAddress,
+      createTxHash,
+      fundTxHash,
+    });
+    const authSignature = await clientAccount.signMessage({
+      message: buildWireArtifactAuthMessage(authPayload),
+    });
+
+    const endpoint = `${this.baseUrl}/api/wire/jobs/${encodeURIComponent(normalizedJobId)}/artifacts`;
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/plain;q=0.9, */*;q=0.8",
+      },
+      body: JSON.stringify({
+        ...(createTxHash ? { createTxHash } : {}),
+        ...(fundTxHash ? { fundTxHash } : {}),
+        ...(normalizeOptionalString(input.createTxSender ?? null) ? { createTxSender: input.createTxSender } : {}),
+        ...(normalizeOptionalString(input.fundTxSender ?? null) ? { fundTxSender: input.fundTxSender } : {}),
+        ...(input.approvalMode ? { approvalMode: input.approvalMode } : {}),
+        authPayload,
+        authSignature,
+      }),
+      cache: "no-store",
+    });
+    const payload = await parsePayload(response);
+    const record =
+      typeof payload === "object" && payload !== null
+        ? (payload as {
+            job?: unknown;
+            direct?: unknown;
+          })
+        : null;
+
+    return {
+      ok: response.ok,
+      endpoint,
+      status: response.status,
+      payload,
+      job:
+        typeof record?.job === "object" && record.job !== null
+          ? (record.job as WireJobSnapshot)
+          : null,
+      direct:
+        typeof record?.direct === "object" && record.direct !== null
+          ? (record.direct as GhostWireDirectPrepare)
+          : null,
     };
   }
 

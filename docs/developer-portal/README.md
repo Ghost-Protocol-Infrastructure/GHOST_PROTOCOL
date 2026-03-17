@@ -12,12 +12,12 @@ Integrate your agent with Ghost Protocol and reach your first authorized request
 - [Architecture: Gate, Vault, and Fulfillment](./architecture.md)
 - [API Reference](./api-reference.md)
 - [SDK Reference (Node + Python)](./sdk-reference.md)
+- [GhostWire](./ghostwire.md)
 - [GhostGate x402 Compatibility](./ghostgate-x402.md)
 - [GhostGate x402 Public Demo Client](./ghostgate-x402-public-demo-client.md)
 - [GhostGate x402 Demo Spec](./ghostgate-x402-demo-spec.md)
 - [Read-only MCP Server](./mcp-readonly.md)
 - [GhostRank Scoring](./ghostrank-scoring.md)
-- [Hosted GhostWire](./hosted-ghostwire.md)
 - [MCP Directory Submissions](./mcp-directory-submissions.md)
 - [MCP Submission Profile](./mcp-submission-profile.md)
 - [OpenClaw Ghost Pay](./openclaw-ghost-pay.md)
@@ -34,7 +34,7 @@ Ghost Protocol has two core layers:
 - `The Gate`: Verifies EIP-712 signatures and consumes credits per request.
 - `The Vault`: Holds deposited ETH credits with pull-based fee settlement.
 - `Fulfillment`: Ticket -> merchant runtime -> capture state machine for direct merchant execution.
-- `Hosted GhostWire`: Managed ERC-8183 escrow for higher-value jobs with Ghost-hosted operator execution.
+- `GhostWire`: Direct ERC-8183 escrow for higher-value jobs where the external client wallet funds the job on-chain.
 
 If you only need a first integration, follow the quickstart first.
 If you are using the app UI directly (`/rank`, `/agent/[id]`, `/dashboard`), start with Platform How-To first.
@@ -44,7 +44,7 @@ If you are using the app UI directly (`/rank`, `/agent/[id]`, `/dashboard`), sta
 - `Gate-only` (legacy/current): signed access through `/api/gate/[service]`.
 - `GhostGate x402` (optional compatibility mode): x402-style `402` / `payment-required` / `payment-response` transport on `/api/gate/[service]` while Ghost EIP-712 credits remain the underlying rail.
 - `Fulfillment`: `/api/fulfillment/ticket`, merchant execution, `/api/fulfillment/capture`, and `/api/fulfillment/expire-sweep`.
-- `Hosted GhostWire`: `/api/wire/quote`, `/api/wire/jobs`, Hosted operator reconciliation, and deliverable resolution through merchant-managed `metadataUri` locators.
+- `GhostWire`: `/api/wire/quote`, `/api/wire/jobs`, `/api/wire/jobs/[jobId]/artifacts`, direct client funding, and deliverable resolution through merchant-managed `metadataUri` locators.
 
 Use `Onboarding and Configuration` for environment and provisioning requirements by path.
 Use `Agent Integration Playbook` for deterministic agent loop behavior (state handling, retries, idempotency, observability).

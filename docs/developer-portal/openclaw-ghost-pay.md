@@ -12,12 +12,12 @@ For ClawHub publication, publish the folder root so the helper scripts ship with
    - `node {baseDir}/bin/get-payment-requirements.mjs --service agent-18755`
 2. Signs Ghost EIP-712 access payloads and wraps them in x402-compatible `payment-signature` headers:
    - `node {baseDir}/bin/pay-gate-x402.mjs --service agent-18755 --method POST --body-json "{\"prompt\":\"hello\"}"`
-3. Provides GhostWire quote/create/status tooling:
-   - `node {baseDir}/bin/get-wire-quote.mjs --provider 0x... --evaluator 0x... --principal-amount 1000000`
+3. Provides GhostWire quote/prepare/status tooling:
+   - `node {baseDir}/bin/get-wire-quote.mjs --client 0x... --provider 0x... --evaluator 0x... --principal-amount 1000000`
    - `node {baseDir}/bin/create-wire-job-from-quote.mjs --quote-id wq_... --client 0x... --provider 0x... --evaluator 0x... --spec-hash 0x...`
    - `node {baseDir}/bin/get-wire-job-status.mjs --job-id wj_...`
 
-Express mode is executable end-to-end in this package. GhostWire execution uses guarded API access (`GHOSTWIRE_EXEC_SECRET`) with operator-side policy controls.
+Express mode is executable end-to-end in this package. GhostWire helpers prepare direct escrow jobs and inspect status; the client wallet still submits the on-chain transactions.
 
 ## Why this is safe
 
@@ -32,7 +32,8 @@ Express mode is executable end-to-end in this package. GhostWire execution uses 
 - `GHOST_OPENCLAW_BASE_URL` (default `https://ghostprotocol.cc`)
 - `GHOST_OPENCLAW_CHAIN_ID` (default `8453`)
 - `GHOST_OPENCLAW_TIMEOUT_MS` (default `15000`)
-- `GHOSTWIRE_EXEC_SECRET` (required for wire create command)
+- `GHOSTWIRE_CLIENT_ADDRESS` (required for wire quote/create helpers)
+- `GHOSTWIRE_APPROVAL_MODE` (optional for wire prepare helper)
 
 Use trusted runtime secrets only.
 

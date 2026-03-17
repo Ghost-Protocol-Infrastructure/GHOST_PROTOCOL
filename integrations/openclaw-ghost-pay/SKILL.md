@@ -1,6 +1,6 @@
 ---
 name: openclaw-ghost-pay
-description: Discover Ghost payment requirements, execute GhostGate Express payments, and run GhostWire quote/create/status flows with execution controls.
+description: Discover Ghost payment requirements, execute GhostGate Express payments, and run GhostWire quote/prepare/status flows for direct escrow.
 version: 1.2.2
 metadata: {"clawdis":{"emoji":"👻","homepage":"https://github.com/Ghost-Protocol-Infrastructure/GHOST_PROTOCOL/tree/main/integrations/openclaw-ghost-pay","os":["darwin","linux","win32"],"requires":{"env":["GHOST_SIGNER_PRIVATE_KEY"],"bins":["node"]},"primaryEnv":"GHOST_SIGNER_PRIVATE_KEY","install":[{"id":"viem","kind":"node","package":"viem","label":"Install viem (required for GhostGate EIP-712 signing)"}]}}
 ---
@@ -11,7 +11,7 @@ Use this skill when an OpenClaw agent must:
 
 1. Discover Ghost payment requirements for a service.
 2. Execute a GhostGate paid request with a signed `payment-signature` envelope.
-3. Optionally run Hosted GhostWire quote/create/status flows.
+3. Optionally run GhostWire quote/prepare/status flows.
 
 This published skill bundle includes the helper scripts it references. Use `{baseDir}` when invoking them so the commands work after `clawhub install openclaw-ghost-pay`.
 
@@ -25,13 +25,13 @@ Optional:
 - `GHOST_OPENCLAW_CHAIN_ID` (default: `8453`)
 - `GHOST_OPENCLAW_SERVICE_SLUG` (optional default service slug)
 - `GHOST_OPENCLAW_TIMEOUT_MS` (default: `15000`)
-- `GHOSTWIRE_EXEC_SECRET` (required only for Hosted GhostWire job creation)
 - `GHOSTWIRE_PROVIDER_ADDRESS`
 - `GHOSTWIRE_EVALUATOR_ADDRESS`
 - `GHOSTWIRE_PRINCIPAL_AMOUNT`
 - `GHOSTWIRE_CLIENT_ADDRESS`
 - `GHOSTWIRE_SPEC_HASH`
 - `GHOSTWIRE_METADATA_URI`
+- `GHOSTWIRE_APPROVAL_MODE`
 
 Never put private keys in prompts, plaintext config screenshots, or frontend output.
 
@@ -64,12 +64,12 @@ node {baseDir}/bin/pay-gate-x402.mjs --service agent-18755 --method POST --body-
 
 This signs the Ghost EIP-712 `Access` payload and wraps it in `payment-signature` using scheme `ghost-eip712-credit-v1`.
 
-## Hosted GhostWire flow
+## GhostWire flow
 
 ### 4. Get a GhostWire quote
 
 ```bash
-node {baseDir}/bin/get-wire-quote.mjs --provider 0x... --evaluator 0x... --principal-amount 1000000
+node {baseDir}/bin/get-wire-quote.mjs --client 0x... --provider 0x... --evaluator 0x... --principal-amount 1000000
 ```
 
 ### 5. Create a GhostWire job from a quote
@@ -87,7 +87,7 @@ node {baseDir}/bin/get-wire-job-status.mjs --job-id wj_... --wait-terminal true
 ## Safe usage rules
 
 - Use only against approved Ghost service slugs and merchant-approved GhostWire roles.
-- Do not log signer private keys or `GHOSTWIRE_EXEC_SECRET`.
+- Do not log signer private keys.
 - Prefer `--dry-run true` before the first live paid request in a new runtime.
 - Treat `402` as a payment-policy failure, not a transport failure.
-- Treat GhostWire create access as privileged operator-path execution.
+- Treat GhostWire prepare output as sensitive transaction-prep data for the client wallet.

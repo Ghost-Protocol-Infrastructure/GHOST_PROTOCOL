@@ -243,7 +243,7 @@ const GITHUB_DOCS_BASE_URL = "https://github.com/Ghost-Protocol-Infrastructure/G
 const MERCHANT_ONBOARDING_DOC_URL = `${GITHUB_DOCS_BASE_URL}/onboarding-and-configuration.md`;
 const NODE_QUICKSTART_DOC_URL = `${GITHUB_DOCS_BASE_URL}/quickstart-node.md`;
 const SDK_REFERENCE_DOC_URL = `${GITHUB_DOCS_BASE_URL}/sdk-reference.md`;
-const HOSTED_GHOSTWIRE_DOC_URL = `${GITHUB_DOCS_BASE_URL}/hosted-ghostwire.md`;
+const GHOSTWIRE_DOC_URL = `${GITHUB_DOCS_BASE_URL}/ghostwire.md`;
 const SDK_CONTEXT_KEY_PREVIEW_PLACEHOLDER = "sk_live_your_sdk_context_key";
 const SDK_SECURITY_NOTICE =
   "Security Notice: Ghost Gate access is authenticated with Web3 wallet signatures (EIP-712). Configure SDKs with a signer private key in a trusted backend/server/CLI environment only. Never expose private keys in frontend code or commit them to version control.";
@@ -353,7 +353,7 @@ function SdkDocsLinks({ mode = "consumer" }: { mode?: "consumer" | "merchant" })
     <div className="mt-5 space-y-3">
       <p className="text-sm text-neutral-500">
         {mode === "merchant"
-          ? "Start with activate() onboarding, then use the Hosted GhostWire reference for wire-mode roles and deliverables."
+          ? "Start with activate() onboarding, then use the GhostWire reference for direct escrow roles, artifacts, and deliverables."
           : "Use the docs for installation steps and required environment variables (including signer key setup)."}
       </p>
       <div className="flex flex-wrap gap-3">
@@ -385,7 +385,7 @@ function SdkDocsLinks({ mode = "consumer" }: { mode?: "consumer" | "merchant" })
           SDK REFERENCE
         </a>
         <a
-          href={HOSTED_GHOSTWIRE_DOC_URL}
+          href={GHOSTWIRE_DOC_URL}
           target="_blank"
           rel="noreferrer"
           className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
@@ -2699,10 +2699,10 @@ def my_agent():
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
-                        Hosted GhostWire // Backlog
+                        GhostWire // Direct Escrow Jobs
                       </p>
                       <p className="mt-1 text-xs text-neutral-600">
-                        Recent managed wire-mode jobs involving the selected owner address. Ghost hosts create/fund/reconcile in v1; providers still deliver and evaluators still finalize.
+                        Recent GhostWire jobs involving the selected owner address. Clients fund escrow directly; providers still deliver and evaluators still finalize.
                       </p>
                       {mostRecentMerchantWireJobAt && (
                         <p className="mt-1 text-[11px] text-neutral-600">
@@ -2774,8 +2774,7 @@ def my_agent():
                                 {formatWireUsdcAmount(job.pricing.principal.amount)}
                               </p>
                               <p className="mt-1 text-[11px] text-neutral-600">
-                                Fee {formatWireUsdcAmount(job.pricing.protocolFee.amount)} {"|"} Reserve{" "}
-                                {formatWireEthAmount(job.pricing.networkReserve.amount)}
+                                Fee {formatWireUsdcAmount(job.pricing.protocolFee.amount)} {"|"} Client Gas Paid Directly
                               </p>
                             </div>
                           </div>
@@ -2827,7 +2826,7 @@ def my_agent():
                               </p>
                               <p className="mt-2 break-all text-[11px] text-neutral-500 font-mono">{job.metadataUri}</p>
                               <p className="mt-1 text-[11px] text-neutral-600">
-                                Consumers can resolve this deliverable after completion through the Hosted GhostWire SDK helpers.
+                                Consumers can resolve this deliverable after completion through the GhostWire SDK helpers.
                               </p>
                             </div>
                           )}

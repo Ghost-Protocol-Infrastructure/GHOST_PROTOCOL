@@ -71,35 +71,39 @@ Important:
 - Request signed with the expected signer.
 - Gate endpoint target is correct: `/api/gate/<serviceSlug>`.
 
-## 7. Hosted GhostWire (Managed Escrow Beta)
+## 7. GhostWire (Direct Escrow)
 
-Use Hosted GhostWire for higher-value jobs where escrow matters more than low-latency API access.
+Use GhostWire for higher-value jobs where escrow matters more than low-latency API access.
 
 Current model:
 
-- Ghost hosts quote creation, job creation, funding, reconciliation, and webhooks.
-- Ghost is the on-chain client in Hosted mode.
-- Provider and evaluator still act on-chain for delivery/finalization.
+- the customer wallet is the on-chain client
+- the customer approves USDC and pays gas directly
+- provider and evaluator still act on-chain for delivery/finalization
+- Ghost tracks status, reconciliation, and provider-facing webhooks
 
 Basic flow:
 
 1. Request a quote from `POST /api/wire/quote`.
-2. Create a job from `POST /api/wire/jobs`.
-3. Wait for Ghost's operator to move the job to `FUNDED`.
-4. Provider submits the deliverable hash on-chain.
-5. Evaluator completes or rejects on-chain.
-6. Consumer fetches the final job state from `GET /api/wire/jobs/[jobId]`.
-7. If `metadataUri` was configured as a deliverable locator, resolve the finished work through the Hosted GhostWire SDK helper.
+2. Prepare the job from `POST /api/wire/jobs`.
+3. Send the returned `approveTxRequest` if needed.
+4. Send the returned `createTxRequest`.
+5. Record the create transaction through `POST /api/wire/jobs/[jobId]/artifacts`.
+6. Send the returned `setBudgetTxRequest` and `fundTxRequest`.
+7. Record the fund transaction through `POST /api/wire/jobs/[jobId]/artifacts`.
+8. Provider submits the deliverable hash on-chain.
+9. Evaluator completes or rejects on-chain.
+10. Consumer fetches the final job state from `GET /api/wire/jobs/[jobId]`.
 
-Recommended Hosted GhostWire deliverable pattern:
+Recommended GhostWire deliverable pattern:
 
 - set `metadataUri` to a merchant-controlled HTTPS endpoint
-- key it by `quoteId`, `jobId`, or another stable reference
+- key it by `jobId`, `quoteId`, or another stable reference
 - return JSON or text
 
 See:
 
-- [`docs/developer-portal/hosted-ghostwire.md`](./developer-portal/hosted-ghostwire.md)
+- [`docs/developer-portal/ghostwire.md`](./developer-portal/ghostwire.md)
 - [`docs/developer-portal/ghostwire-webhooks.md`](./developer-portal/ghostwire-webhooks.md)
 
 ## 8. Common Issues

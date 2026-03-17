@@ -151,15 +151,16 @@ Notes:
 - Delegated signer registration is idempotent (`alreadyActive: true` is treated as success).
 - `canaryMethod` currently supports `GET` only.
 
-#### Hosted GhostWire helpers
+#### GhostWire helpers
 
 #### `createWireQuote(input): Promise<WireQuoteResult>`
 
 Calls `POST /api/wire/quote`.
 
-Use this to request a short-lived Hosted GhostWire quote before job creation.
+Use this to request a short-lived GhostWire quote before direct job preparation.
 
 Wallet-role guidance:
+- `client` is required and should be the external buyer wallet
 - `provider` should normally be the merchant-controlled payout / delivery wallet
 - `evaluator` should normally be a merchant-controlled approval / review wallet
 - both wallets need enough Base ETH for their later on-chain transactions
@@ -172,18 +173,43 @@ For GhostRank attribution, pass:
 
 If omitted, Ghost attempts to auto-derive attribution from a unique provider-wallet-to-agent mapping. Ambiguous mappings remain unattributed and will not count toward GhostRank.
 
-#### `createWireJob(input): Promise<WireJobCreateResult>`
+#### `prepareWireJob(input): Promise<WireJobPrepareResult>`
 
 Calls `POST /api/wire/jobs`.
 
 Notes:
-- requires `execSecret` or `GHOSTWIRE_EXEC_SECRET`
-- `metadataUri` is the recommended deliverable locator for Hosted GhostWire v1
-- Ghost remains the hosted on-chain client in this model
-- Hosted GhostWire wallet-role selection is currently integration-driven, not dashboard-driven
-- only terminal reconciled Hosted GhostWire jobs count toward GhostRank
-- GhostRank credit is provider-side only in Hosted GhostWire v1
+- returns wallet-ready transaction requests for the direct GhostWire path
+- `metadataUri` is the recommended deliverable locator for GhostWire
+- `approvalMode` defaults to `exact`
+- current GhostWire wallet-role selection is integration-driven, not dashboard-driven
+- only terminal reconciled GhostWire jobs count toward GhostRank
+- GhostRank credit is provider-side only
 - current GhostWire scoring uses a rolling 30-day window once attributed terminal jobs exist
+
+Returned `direct` payload includes:
+
+- `approveTxRequest` when allowance is insufficient
+- `createTxRequest`
+- after create artifact submission, `setBudgetTxRequest`
+- after create artifact submission, `fundTxRequest`
+- `allowance`, `balance`, and `nativeBalance` preflight data
+- `nextAction`
+
+#### `recordWireArtifacts(input): Promise<WireArtifactRecordResult>`
+
+Calls `POST /api/wire/jobs/[jobId]/artifacts`.
+
+Use this after the client wallet has sent:
+
+- `createTxRequest`
+- later `setBudgetTxRequest` + `fundTxRequest`
+
+Notes:
+
+- the request is signed by the client wallet
+- `clientPrivateKey` falls back to `GhostAgent.privateKey`
+- create artifact submission returns the next funding payloads
+- fund artifact submission finalizes the direct setup path and advances reconciliation
 
 #### `getWireJob(jobId): Promise<WireJobResult>`
 
@@ -193,7 +219,7 @@ The returned `job.deliverable` block is the launch-friendly summary for consumer
 
 #### `waitForWireTerminal(jobId, options?): Promise<WireJobSnapshot>`
 
-Polls Hosted GhostWire until the job reaches a terminal state:
+Polls GhostWire until the job reaches a terminal state:
 
 - `COMPLETED`
 - `REJECTED`
@@ -201,7 +227,7 @@ Polls Hosted GhostWire until the job reaches a terminal state:
 
 #### `getWireDeliverable(jobId): Promise<WireDeliverableResult>`
 
-Consumer convenience helper for Hosted GhostWire.
+Consumer convenience helper for GhostWire.
 
 Flow:
 
@@ -237,6 +263,7 @@ await sdk.pulse();
 await sdk.outcome({ success: true, statusCode: 200 });
 
 const quote = await sdk.createWireQuote({
+  client: "0xclient...",
   provider: "0xprovider...",
   evaluator: "0xevaluator...",
   principalAmount: "1000000",
@@ -245,7 +272,7 @@ const quote = await sdk.createWireQuote({
   providerServiceSlug: "agent-18755",
 });
 
-const job = await sdk.createWireJob({
+const prepared = await sdk.prepareWireJob({
   quoteId: quote.quoteId!,
   client: "0xclient...",
   provider: "0xprovider...",
@@ -253,11 +280,26 @@ const job = await sdk.createWireJob({
   specHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   providerAgentId: "18755",
   providerServiceSlug: "agent-18755",
-  metadataUri: "https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123",
-  execSecret: process.env.GHOSTWIRE_EXEC_SECRET,
+  metadataUri: "https://merchant.example.com/ghostwire/deliverable?jobId=wj_123",
 });
 
-const terminalJob = await sdk.waitForWireTerminal(job.jobId!);
+// Send prepared.direct?.approveTxRequest if present, then prepared.direct?.createTxRequest from the client wallet.
+
+const afterCreate = await sdk.recordWireArtifacts({
+  jobId: prepared.jobId!,
+  clientAddress: "0xclient...",
+  createTxHash: "0xcreate...",
+});
+
+// Send afterCreate.direct?.setBudgetTxRequest and afterCreate.direct?.fundTxRequest from the client wallet.
+
+await sdk.recordWireArtifacts({
+  jobId: prepared.jobId!,
+  clientAddress: "0xclient...",
+  fundTxHash: "0xfund...",
+});
+
+const terminalJob = await sdk.waitForWireTerminal(prepared.jobId!);
 const deliverable = await sdk.getWireDeliverable(terminalJob.jobId);
 ```
 
@@ -407,32 +449,38 @@ Notes:
 - Delegated signer registration is idempotent (`alreadyActive: true` is treated as success).
 - `canary_method` currently supports `GET` only.
 
-#### Hosted GhostWire helpers
+#### GhostWire helpers
 
-#### `create_wire_quote(provider, evaluator, principal_amount, chain_id=8453, client=None, provider_agent_id=None, provider_service_slug=None) -> WireQuoteResult`
+#### `create_wire_quote(provider, evaluator, principal_amount, chain_id=8453, client, provider_agent_id=None, provider_service_slug=None) -> WireQuoteResult`
 
 Calls `POST /api/wire/quote`.
 
 Wallet-role guidance:
+- `client` is required and should be the external buyer wallet
 - `provider` should normally be the merchant-controlled payout / delivery wallet
 - `evaluator` should normally be a merchant-controlled approval / review wallet
 - both wallets need enough Base ETH for their later on-chain transactions
 
-For GhostRank attribution, pass `provider_agent_id` and `provider_service_slug` when the provider wants Hosted GhostWire activity to count toward ranking.
+For GhostRank attribution, pass `provider_agent_id` and `provider_service_slug` when the provider wants GhostWire activity to count toward ranking.
 
 If omitted, Ghost attempts to auto-derive attribution from a unique provider-wallet-to-agent mapping. Ambiguous mappings remain unattributed and will not count toward GhostRank.
 
-#### `create_wire_job(quote_id, client, provider, evaluator, provider_agent_id=None, provider_service_slug=None, spec_hash, metadata_uri=None, webhook_url=None, webhook_secret=None, exec_secret=None) -> WireJobResult`
+#### `prepare_wire_job(quote_id, client, provider, evaluator, provider_agent_id=None, provider_service_slug=None, spec_hash, metadata_uri=None, webhook_url=None, webhook_secret=None, approval_mode=None) -> WireJobResult`
 
 Calls `POST /api/wire/jobs`.
 
 Notes:
-- requires `exec_secret` or `GHOSTWIRE_EXEC_SECRET`
-- `metadata_uri` is the recommended deliverable locator for Hosted GhostWire v1
-- Hosted GhostWire wallet-role selection is currently integration-driven, not dashboard-driven
-- only terminal reconciled Hosted GhostWire jobs count toward GhostRank
-- GhostRank credit is provider-side only in Hosted GhostWire v1
+- `metadata_uri` is the recommended deliverable locator for GhostWire
+- GhostWire wallet-role selection is currently integration-driven, not dashboard-driven
+- only terminal reconciled GhostWire jobs count toward GhostRank
+- GhostRank credit is provider-side only
 - current GhostWire scoring uses a rolling 30-day window once attributed terminal jobs exist
+
+#### `record_wire_artifacts(job_id, client_address, create_tx_hash=None, fund_tx_hash=None, create_tx_sender=None, fund_tx_sender=None, approval_mode=None, client_private_key=None) -> WireArtifactResult`
+
+Calls `POST /api/wire/jobs/[jobId]/artifacts`.
+
+Use this after the client wallet has sent the create transaction and later the fund transaction.
 
 #### `get_wire_job(job_id) -> WireJobResult`
 
@@ -440,7 +488,7 @@ Calls `GET /api/wire/jobs/[jobId]`.
 
 #### `wait_for_wire_terminal(job_id, interval_seconds=5.0, timeout_seconds=300.0) -> dict`
 
-Polls Hosted GhostWire until the job reaches terminal state.
+Polls GhostWire until the job reaches terminal state.
 
 #### `get_wire_deliverable(job_id) -> WireDeliverableResult`
 
@@ -482,6 +530,7 @@ def handler():
     return {"ok": True}
 
 quote = gate.create_wire_quote(
+    client="0xclient...",
     provider="0xprovider...",
     evaluator="0xevaluator...",
     principal_amount="1000000",
@@ -490,7 +539,7 @@ quote = gate.create_wire_quote(
     provider_service_slug="agent-18755",
 )
 
-job = gate.create_wire_job(
+prepared = gate.prepare_wire_job(
     quote_id=quote["quoteId"],
     client="0xclient...",
     provider="0xprovider...",
@@ -498,11 +547,22 @@ job = gate.create_wire_job(
     spec_hash="0x" + ("aa" * 32),
     provider_agent_id="18755",
     provider_service_slug="agent-18755",
-    metadata_uri="https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123",
-    exec_secret=os.environ["GHOSTWIRE_EXEC_SECRET"],
+    metadata_uri="https://merchant.example.com/ghostwire/deliverable?jobId=wj_123",
 )
 
-terminal = gate.wait_for_wire_terminal(job["jobId"])
+after_create = gate.record_wire_artifacts(
+    job_id=prepared["jobId"],
+    client_address="0xclient...",
+    create_tx_hash="0xcreate...",
+)
+
+gate.record_wire_artifacts(
+    job_id=prepared["jobId"],
+    client_address="0xclient...",
+    fund_tx_hash="0xfund...",
+)
+
+terminal = gate.wait_for_wire_terminal(prepared["jobId"])
 deliverable = gate.get_wire_deliverable(terminal["jobId"])
 ```
 

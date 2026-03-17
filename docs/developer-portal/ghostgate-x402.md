@@ -9,7 +9,7 @@ This page documents the current production shape.
 - GhostGate x402 compatibility is implemented behind `GHOST_GATE_X402_ENABLED`.
 - The default Gate path remains Ghost Protocol's EIP-712 credit flow.
 - `GET /api/pricing?service=<service_slug>` is the canonical source for x402 compatibility metadata.
-- GhostWire does **not** use x402. Hosted GhostWire remains a separate `/api/wire/*` escrow flow.
+- GhostWire does **not** use x402. GhostWire remains a separate `/api/wire/*` direct escrow flow.
 - The canonical demo target is `x402-demo` on `/api/gate/x402-demo`.
 - Phase A is complete in code: docs, metadata contract, SDK guidance, and demo target implementation are all in place.
 
@@ -230,12 +230,12 @@ GhostWire uses:
 - `POST /api/wire/jobs`
 - `GET /api/wire/jobs/[jobId]`
 
-Hosted GhostWire is a managed ERC-8183 escrow flow, not an x402 flow.
+GhostWire is a direct ERC-8183 escrow flow, not an x402 flow.
 
 If the same merchant wants both:
 
 - use GhostGate for fast paid API/tool access
-- use Hosted GhostWire for higher-value escrowed jobs
+- use GhostWire for higher-value escrowed jobs
 
 ## Related docs
 
@@ -243,5 +243,5 @@ If the same merchant wants both:
 - [SDK Reference](./sdk-reference.md)
 - [5-Minute Node.js Quickstart](./quickstart-node.md)
 - [GhostGate x402 Public Demo Client](./ghostgate-x402-public-demo-client.md)
-- [Hosted GhostWire](./hosted-ghostwire.md)
+- [GhostWire](./ghostwire.md)
 - [GhostGate x402 Demo Spec](./ghostgate-x402-demo-spec.md)

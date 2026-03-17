@@ -149,6 +149,14 @@ enum WireWorkflowStatus {
   FAILED
 }
 
+enum WireArtifactValidationState {
+  PENDING
+  PARTIAL
+  VALID
+  INVALID
+  MANUAL_REVIEW
+}
+
 enum WireOperatorActionType {
   APPROVE
   CREATE
@@ -677,8 +685,13 @@ model WireJob {
   publicState          WireContractState        @default(OPEN)
   terminalDisposition  WireTerminalDisposition?
   createTxHash         String?
+  createTxSender       String?
   fundTxHash           String?
+  fundTxSender         String?
   terminalTxHash       String?
+  artifactsRecordedAt  DateTime?
+  artifactValidationState WireArtifactValidationState @default(PENDING)
+  artifactValidationError String?
   webhookTargetUrl     String?
   webhookSecret        String?
   createdAt            DateTime                 @default(now())
@@ -703,10 +716,13 @@ model WireJob {
 model WireJobWorkflow {
   id                 String             @id @default(cuid())
   wireJobId          String             @unique
+  artifactStatus     WireWorkflowStatus @default(PENDING)
   createStatus       WireWorkflowStatus @default(PENDING)
   fundStatus         WireWorkflowStatus @default(PENDING)
   confirmationStatus WireWorkflowStatus @default(PENDING)
   reconcileStatus    WireWorkflowStatus @default(PENDING)
+  artifactCheckedAt  DateTime?
+  artifactLastCheckedBlock BigInt?
   lastError          String?
   lastAttemptAt      DateTime?
   retryCount         Int                @default(0)

@@ -137,7 +137,7 @@ GhostWire affects GhostRank only when:
 - provider attribution is resolvable
 - the job reaches a terminal reconciled state
 
-Current Hosted GhostWire rules:
+Current GhostWire rules:
 
 - provider-side credit only
 - only `COMPLETED`, `REJECTED`, or `EXPIRED` jobs count

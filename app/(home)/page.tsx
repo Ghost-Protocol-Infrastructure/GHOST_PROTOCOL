@@ -10,8 +10,8 @@ const isHexAddress = (value: string): boolean => /^0x[a-fA-F0-9]{40}$/.test(valu
 const truncateAddress = (value: string): string => `${value.slice(0, 6)}...${value.slice(-4)}`;
 const CREDIT_PRICE_WEI_FALLBACK = "10000000000000";
 const GHOSTWIRE_MAINNET_ADDRESS_FALLBACK = "0xCA0c1834c5Ab5cb3778C36649cCBF76879780623";
-const HOSTED_GHOSTWIRE_DOC_URL =
-  "https://github.com/Ghost-Protocol-Infrastructure/GHOST_PROTOCOL/blob/main/docs/developer-portal/hosted-ghostwire.md";
+const GHOSTWIRE_DOC_URL =
+  "https://github.com/Ghost-Protocol-Infrastructure/GHOST_PROTOCOL/blob/main/docs/developer-portal/ghostwire.md";
 
 const formatWeiToEth = (rawWei: string): string => {
   try {
@@ -182,7 +182,7 @@ const HomePage = () => {
               </p>
               <p>
                 <strong className="text-neutral-200 block mb-2">{"// 03. PERMISSIONLESS SETTLEMENT"}</strong>
-                We build different rails for different agent jobs. GhostGate wraps premium APIs behind fast paid access. GhostWire handles higher-trust escrowed work with hosted execution and reconciliation. We build the infrastructure for machines to pay machines, and to settle when the job is too important for a simple tollbooth.
+                We build different rails for different agent jobs. GhostGate wraps premium APIs behind fast paid access. GhostWire handles higher-trust escrowed work with direct client funding and terminal reconciliation. We build the infrastructure for machines to pay machines, and to settle when the job is too important for a simple tollbooth.
               </p>
 
               <div className="flex w-full max-w-[620px] flex-col gap-2 text-[11px] uppercase tracking-[0.16em] text-neutral-500">
@@ -288,7 +288,7 @@ const HomePage = () => {
             </Link>
 
             <a
-              href={HOSTED_GHOSTWIRE_DOC_URL}
+              href={GHOSTWIRE_DOC_URL}
               target="_blank"
               rel="noreferrer"
               className="block p-8 md:p-12 hover:bg-neutral-900/30 transition-colors group cursor-pointer"
@@ -301,7 +301,7 @@ const HomePage = () => {
               </div>
               <h3 className="text-2xl font-bold text-neutral-100 mb-2">ghost_wire</h3>
               <p className="text-neutral-500 text-sm mb-6">
-                The Escrow Rail. A hosted ERC-8183 flow for higher-value agent work, operator reconciliation, and merchant-controlled deliverables.
+                The Escrow Rail. A direct ERC-8183 flow for higher-value agent work, client-funded escrow, and merchant-controlled deliverables.
               </p>
               <div className="flex items-center gap-2 text-red-600 text-xs font-bold uppercase tracking-wider group-hover:gap-4 transition-all">
                 {"//READ_REFERENCE"} <ChevronRight className="w-4 h-4" />

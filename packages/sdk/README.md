@@ -1,6 +1,6 @@
 # @ghostgate/sdk
 
-Node.js SDK for Ghost Protocol gate access, fulfillment, telemetry, Hosted GhostWire helpers, and canary helpers.
+Node.js SDK for Ghost Protocol gate access, fulfillment, telemetry, direct GhostWire helpers, and canary helpers.
 
 ## Install
 
@@ -23,7 +23,8 @@ npm install ../GHOST_PROTOCOL/packages/sdk
   - `outcome()`
   - `startHeartbeat()`
   - `createWireQuote()`
-  - `createWireJob()`
+  - `prepareWireJob()`
+  - `recordWireArtifacts()`
   - `getWireJob()`
   - `waitForWireTerminal()`
   - `getWireDeliverable()`
@@ -52,20 +53,26 @@ await sdk.connect();
 await sdk.pulse();
 
 const quote = await sdk.createWireQuote({
+  client: "0xclient...",
   provider: "0xprovider...",
   evaluator: "0xevaluator...",
   principalAmount: "1000000",
   chainId: 8453,
 });
 
-const job = await sdk.createWireJob({
+const prepared = await sdk.prepareWireJob({
   quoteId: quote.quoteId!,
   client: "0xclient...",
   provider: "0xprovider...",
   evaluator: "0xevaluator...",
   specHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  metadataUri: "https://merchant.example.com/ghostwire/deliverable?quoteId=wq_123",
-  execSecret: process.env.GHOSTWIRE_EXEC_SECRET,
+  metadataUri: "https://merchant.example.com/ghostwire/deliverable?jobId=wj_123",
+});
+
+await sdk.recordWireArtifacts({
+  jobId: prepared.jobId!,
+  clientAddress: "0xclient...",
+  createTxHash: "0xcreate...",
 });
 ```
 

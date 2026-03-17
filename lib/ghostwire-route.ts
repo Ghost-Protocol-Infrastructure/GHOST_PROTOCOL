@@ -57,6 +57,18 @@ export const parseHex32String = (value: unknown): `0x${string}` | null => {
   return /^0x[a-f0-9]{64}$/.test(trimmed) ? (trimmed as `0x${string}`) : null;
 };
 
+export const parseHashString = (value: unknown): `0x${string}` | null => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().toLowerCase();
+  return /^0x[a-f0-9]{64}$/.test(trimmed) ? (trimmed as `0x${string}`) : null;
+};
+
+export const parseWireApprovalMode = (value: unknown): "exact" | "unlimited" | null => {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "exact" || normalized === "unlimited" ? normalized : null;
+};
+
 export const parseAddressString = (value: unknown): string | null => {
   if (typeof value !== "string") return null;
   try {

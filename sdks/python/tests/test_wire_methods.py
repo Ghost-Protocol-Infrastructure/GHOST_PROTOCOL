@@ -21,14 +21,26 @@ class GhostWireMethodTests(unittest.TestCase):
             response.text = text or ""
         return response
 
-    def test_create_wire_job_uses_exec_secret(self):
+    def test_prepare_wire_job_returns_direct_execution_payload(self):
         gate = GhostGate(private_key=PRIVATE_KEY, base_url="https://ghostprotocol.cc", service_slug="agent-11")
 
-        with patch("ghostgate.requests.post") as mock_post, patch("ghostgate.os.getenv") as mock_getenv:
-            mock_getenv.side_effect = lambda key, default=None: "super-secret" if key == "GHOSTWIRE_EXEC_SECRET" else default
-            mock_post.return_value = self._response(200, {"ok": True, "jobId": "wj_123"})
+        with patch("ghostgate.requests.post") as mock_post:
+            mock_post.return_value = self._response(
+                200,
+                {
+                    "ok": True,
+                    "jobId": "wj_123",
+                    "quoteId": "wq_123",
+                    "chainId": 8453,
+                    "jobExpiresAt": "2026-03-16T00:00:00.000Z",
+                    "direct": {
+                        "approvalMode": "exact",
+                        "nextAction": "submit_create_artifact",
+                    },
+                },
+            )
 
-            result = gate.create_wire_job(
+            result = gate.prepare_wire_job(
                 quote_id="wq_123",
                 client="0x1111111111111111111111111111111111111111",
                 provider="0x2222222222222222222222222222222222222222",
@@ -40,9 +52,9 @@ class GhostWireMethodTests(unittest.TestCase):
 
             self.assertTrue(result["ok"])
             self.assertEqual(result["jobId"], "wj_123")
-            self.assertEqual(mock_post.call_args.kwargs["headers"]["Authorization"], "Bearer super-secret")
             self.assertEqual(mock_post.call_args.kwargs["json"]["providerAgentId"], "18755")
             self.assertEqual(mock_post.call_args.kwargs["json"]["providerServiceSlug"], "agent-18755")
+            self.assertEqual(result["direct"]["nextAction"], "submit_create_artifact")
 
     def test_create_wire_quote_passes_provider_attribution(self):
         gate = GhostGate(private_key=PRIVATE_KEY, base_url="https://ghostprotocol.cc", service_slug="agent-11")
@@ -51,6 +63,7 @@ class GhostWireMethodTests(unittest.TestCase):
             mock_post.return_value = self._response(200, {"ok": True, "quoteId": "wq_123"})
 
             result = gate.create_wire_quote(
+                client="0x1111111111111111111111111111111111111111",
                 provider="0x2222222222222222222222222222222222222222",
                 evaluator="0x3333333333333333333333333333333333333333",
                 principal_amount="1000000",
@@ -60,8 +73,41 @@ class GhostWireMethodTests(unittest.TestCase):
 
             self.assertTrue(result["ok"])
             self.assertEqual(result["quoteId"], "wq_123")
+            self.assertEqual(mock_post.call_args.kwargs["json"]["client"], "0x1111111111111111111111111111111111111111")
             self.assertEqual(mock_post.call_args.kwargs["json"]["providerAgentId"], "18755")
             self.assertEqual(mock_post.call_args.kwargs["json"]["providerServiceSlug"], "agent-18755")
+
+    def test_record_wire_artifacts_signs_client_wallet_auth(self):
+        gate = GhostGate(private_key=PRIVATE_KEY, base_url="https://ghostprotocol.cc", service_slug="agent-11")
+
+        with patch("ghostgate.requests.post") as mock_post:
+            mock_post.return_value = self._response(
+                200,
+                {
+                    "ok": True,
+                    "job": {
+                        "jobId": "wj_123",
+                        "contractState": "OPEN",
+                    },
+                    "direct": {
+                        "nextAction": "submit_fund_artifact",
+                    },
+                },
+            )
+
+            result = gate.record_wire_artifacts(
+                job_id="wj_123",
+                client_address="0xaB3D9542d5CCF40526b22AC072Fba32538E22d8c",
+                create_tx_hash="0x" + ("aa" * 32),
+            )
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["job"]["jobId"], "wj_123")
+            payload = mock_post.call_args.kwargs["json"]
+            self.assertEqual(payload["createTxHash"], "0x" + ("aa" * 32))
+            self.assertEqual(payload["authPayload"]["jobId"], "wj_123")
+            self.assertEqual(payload["authPayload"]["clientAddress"], "0xab3d9542d5ccf40526b22ac072fba32538e22d8c")
+            self.assertTrue(isinstance(payload["authSignature"], str) and len(payload["authSignature"]) == 130)
 
     def test_get_wire_deliverable_fetches_locator(self):
         gate = GhostGate(private_key=PRIVATE_KEY, base_url="https://ghostprotocol.cc", service_slug="agent-11")

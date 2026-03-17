@@ -30,7 +30,7 @@ const specHash = String(args["spec-hash"] || process.env.GHOSTWIRE_SPEC_HASH || 
 const metadataUri = String(args["metadata-uri"] || process.env.GHOSTWIRE_METADATA_URI || "").trim();
 const webhookUrl = String(args["webhook-url"] || process.env.GHOSTWIRE_WEBHOOK_URL || "").trim();
 const webhookSecret = String(args["webhook-secret"] || process.env.GHOSTWIRE_WEBHOOK_SECRET || "").trim();
-const execSecret = String(args["exec-secret"] || process.env.GHOSTWIRE_EXEC_SECRET || "").trim();
+const approvalMode = String(args["approval-mode"] || process.env.GHOSTWIRE_APPROVAL_MODE || "").trim();
 
 if (!quoteId || !clientAddress || !providerAddress || !evaluatorAddress || !specHash) {
   printJson({
@@ -44,12 +44,6 @@ if (!quoteId || !clientAddress || !providerAddress || !evaluatorAddress || !spec
   printJson({
     ok: false,
     error: "Invalid --spec-hash; expected 32-byte hex string (0x + 64 hex chars).",
-  });
-  process.exitCode = 1;
-} else if (!execSecret) {
-  printJson({
-    ok: false,
-    error: "Missing GhostWire execution secret. Set --exec-secret or GHOSTWIRE_EXEC_SECRET.",
   });
   process.exitCode = 1;
 } else if ((webhookUrl && !webhookSecret) || (!webhookUrl && webhookSecret)) {
@@ -69,6 +63,7 @@ if (!quoteId || !clientAddress || !providerAddress || !evaluatorAddress || !spec
       metadataUri: metadataUri || undefined,
       webhookUrl: webhookUrl || undefined,
       webhookSecret: webhookSecret || undefined,
+      approvalMode: approvalMode || undefined,
     };
 
     const response = await fetchWithTimeout(
@@ -78,7 +73,6 @@ if (!quoteId || !clientAddress || !providerAddress || !evaluatorAddress || !spec
         headers: {
           accept: "application/json",
           "content-type": "application/json",
-          authorization: `Bearer ${execSecret}`,
         },
         body: JSON.stringify(body),
       },
@@ -93,7 +87,7 @@ if (!quoteId || !clientAddress || !providerAddress || !evaluatorAddress || !spec
         ok: false,
         status: response.status,
         endpoint,
-        error: payload?.error || "GhostWire job creation failed.",
+        error: payload?.error || "GhostWire job preparation failed.",
         errorCode: payload?.errorCode || null,
         details: payload?.details || null,
         body: payload || rawText,
@@ -104,7 +98,7 @@ if (!quoteId || !clientAddress || !providerAddress || !evaluatorAddress || !spec
         ok: true,
         status: response.status,
         endpoint,
-        job: payload,
+        preparedJob: payload,
       });
     }
   } catch (error) {
@@ -116,4 +110,3 @@ if (!quoteId || !clientAddress || !providerAddress || !evaluatorAddress || !spec
     process.exitCode = 1;
   }
 }
-
