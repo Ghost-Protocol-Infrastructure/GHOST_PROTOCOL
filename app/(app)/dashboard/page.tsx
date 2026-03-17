@@ -252,6 +252,7 @@ const MERCHANT_ONBOARDING_DOC_URL = `${GITHUB_DOCS_BASE_URL}/onboarding-and-conf
 const NODE_QUICKSTART_DOC_URL = `${GITHUB_DOCS_BASE_URL}/quickstart-node.md`;
 const SDK_REFERENCE_DOC_URL = `${GITHUB_DOCS_BASE_URL}/sdk-reference.md`;
 const GHOSTWIRE_DOC_URL = `${GITHUB_DOCS_BASE_URL}/ghostwire.md`;
+const OPENCLAW_DOC_URL = `${GITHUB_DOCS_BASE_URL}/openclaw-ghost-pay.md`;
 const SDK_CONTEXT_KEY_PREVIEW_PLACEHOLDER = "sk_live_your_sdk_context_key";
 const SDK_SECURITY_NOTICE =
   "Security Notice: Ghost Gate access is authenticated with Web3 wallet signatures (EIP-712). Configure SDKs with a signer private key in a trusted backend/server/CLI environment only. Never expose private keys in frontend code or commit them to version control.";
@@ -400,6 +401,16 @@ function SdkDocsLinks({ mode = "consumer" }: { mode?: "consumer" | "merchant" })
         >
           GHOSTWIRE REFERENCE
         </a>
+        {mode === "merchant" && (
+          <a
+            href={OPENCLAW_DOC_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
+          >
+            OPENCLAW SKILL
+          </a>
+        )}
       </div>
     </div>
   );
