@@ -27,6 +27,12 @@ For ClawHub publish/install, publish the folder root so the helper scripts ship 
 clawhub publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.2.3 --tags latest,agents,eip712,ghostprotocol,ghostwire,mcp,openclaw,payments,x402
 ```
 
+If `clawhub` fails with `fetch failed` in this environment, use the bundled wrapper:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ./scripts/clawhub.ps1 publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.2.3 --tags latest,agents,eip712,ghostprotocol,ghostwire,mcp,openclaw,payments,x402
+```
+
 ## 2. Set runtime env
 
 Required:

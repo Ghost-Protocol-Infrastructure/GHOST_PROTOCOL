@@ -18,6 +18,13 @@ clawhub publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --na
 
 Do not rely on a web-form-only publish if it only captures `SKILL.md`; the installable bundle needs the helper scripts under `bin/`.
 
+If `clawhub` returns `fetch failed` from this machine/network, run the bundled wrapper that applies the registry DNS shim:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ./scripts/clawhub.ps1 whoami
+powershell -ExecutionPolicy Bypass -File ./scripts/clawhub.ps1 publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.2.3 --tags latest,agents,eip712,ghostprotocol,ghostwire,mcp,openclaw,payments,x402
+```
+
 ## Contents
 
 - `openclaw.plugin.json` - plugin descriptor with local skill path
