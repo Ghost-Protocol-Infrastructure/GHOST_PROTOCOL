@@ -118,19 +118,14 @@ export const bootstrapPostgresEnv = (input?: {
     loadProjectEnv();
   }
 
-  const prismaCandidate = pickEnvValueByScheme(PRISMA_URL_KEYS, isPrismaDatasourceUrl);
-  if (!prismaCandidate) {
-    throw new Error(
-      `Missing Prisma datasource URL. Set POSTGRES_PRISMA_URL or DATABASE_URL to prisma:// or prisma+postgres://. Observed schemes: ${describeObservedSchemes(PRISMA_URL_KEYS)}.`,
-    );
-  }
-
   const directCandidate = pickEnvValueByScheme(DIRECT_POSTGRES_URL_KEYS, isDirectPostgresUrl);
   if (!directCandidate) {
     throw new Error(
       `Missing direct Postgres URL. Set POSTGRES_URL_NON_POOLING or POSTGRES_DATABASE_URL_UNPOOLED to postgres:// or postgresql://. Observed schemes: ${describeObservedSchemes(DIRECT_POSTGRES_URL_KEYS)}.`,
     );
   }
+
+  const prismaCandidate = pickEnvValueByScheme(PRISMA_URL_KEYS, isPrismaDatasourceUrl) ?? directCandidate;
 
   process.env.POSTGRES_PRISMA_URL = prismaCandidate.value;
   process.env.POSTGRES_URL_NON_POOLING =
