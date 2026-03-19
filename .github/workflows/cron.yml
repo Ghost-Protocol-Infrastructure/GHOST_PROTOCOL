@@ -50,7 +50,8 @@ jobs:
       - name: Generate Prisma Client
         run: npx prisma generate
 
-      - name: Run migration
+      - name: Run migration (manual only)
+        if: github.event_name == 'workflow_dispatch'
         run: npm run migrate:indexer
 
       - name: Run indexer
