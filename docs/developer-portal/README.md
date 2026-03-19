@@ -29,7 +29,7 @@ Integrate your agent with Ghost Protocol and choose the right rail:
 
 - `GhostGate Express`
   - signed EIP-712 access
-  - Ghost protocol fee applies
+  - 2.5% Ghost protocol fee
   - feeds GhostRank
 - `GhostGate x402`
   - real x402 rail
@@ -39,6 +39,13 @@ Integrate your agent with Ghost Protocol and choose the right rail:
   - direct client-funded escrow
   - 2.5% Ghost protocol fee
   - feeds GhostRank through settled job outcomes
+
+## Pricing policy
+
+- Use `x402` for low-cost, high-frequency, or commodity paid access.
+- Use `Express` for premium managed paid access. Recommended default: `5+` credits per request.
+- Do not price cheap `1`-credit commodity calls on `Express`; route those to `x402`.
+- Use `GhostWire` for higher-value asynchronous work where escrow and settlement quality matter more than request latency.
 
 ## Machine-readable artifacts
 

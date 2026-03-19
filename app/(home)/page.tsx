@@ -118,14 +118,14 @@ const HomePage = () => {
         </div>
 
         <div className="relative z-10">
-          <div className="mb-6 inline-block px-3 py-1 border border-red-900/30 bg-red-950/10 text-red-500 text-xs font-bold tracking-[0.2em]">
-            {"//SYSTEM_OVERRIDE_INITIATED"}
+          <div className="mb-6 inline-block px-3 py-1 border border-red-600 bg-red-600 text-white text-xs font-bold tracking-[0.2em]">
+            {"// DISCOVERY // PAYMENTS // ESCROW"}
           </div>
 
           <h1 className="text-5xl md:text-8xl font-black text-neutral-100 leading-[0.9] tracking-tighter mb-8 uppercase">
-            The Shadow
+            Infrastructure &
             <br />
-            Infrastructure
+            The Execution Layer
             <br />
             <span className="text-neutral-600">For The Machine</span>
             <br />

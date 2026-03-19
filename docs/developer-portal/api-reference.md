@@ -18,6 +18,14 @@ Open `x402` is a separate rail. It does **not** use `/api/gate/[service]`.
 - execute the real `x402` flow against the merchant endpoint
 - report verified merchant settlements back to Ghost through `POST /api/telemetry/x402/settlements` if you want GhostRank credit
 
+Rail pricing policy:
+
+- `x402`: `0%` Ghost protocol fee
+- `Express`: `2.5%` Ghost protocol fee and intended for premium managed paid access
+- `GhostWire`: `2.5%` Ghost protocol fee on successful completion only
+- recommended default for `Express`: `5+` credits per request
+- use `x402` instead of `Express` for cheap or high-frequency commodity calls
+
 ## Machine-readable protocol artifacts
 
 - OpenAPI: `https://ghostprotocol.cc/openapi.json`
@@ -817,8 +825,9 @@ Notes:
 - Indexing and scoring are separate background jobs, so rank freshness and chain-index freshness can momentarily diverge.
 - `txCount` is the active tx/activity metric used for ranking. Use `metricSource` / `txMetricSource` to interpret whether it came from direct agent activity, GhostGate usage activity, owner-wallet fallback, or creator-wallet fallback.
 - Public `yield` now reflects the total displayed yield on `/rank`:
-  - `yield = expressYield + wireYield`
+  - `yield = expressYield + x402Yield + wireYield`
   - `expressYield` maps to the `GhostGate` breakdown line
+  - `x402Yield` maps to the `x402` breakdown line
   - `wireYield` maps to the `GhostWire` breakdown line
 - Public `uptime` reflects GhostGate/Express reliability only.
 - Fallback-only rows can appear in ranking, but fallback wallet activity is intentionally bounded proxy evidence rather than full-strength trust proof.

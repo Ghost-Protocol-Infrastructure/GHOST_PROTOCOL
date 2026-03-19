@@ -20,6 +20,22 @@ Ghost Protocol currently supports three production paths:
    - Endpoint family: `/api/wire/*`
    - Use this when job-level escrow matters more than low-latency API access and the buyer should fund escrow directly.
 
+## 1A. Pricing policy
+
+Use the rails intentionally:
+
+1. `x402`
+   - `0%` Ghost protocol fee
+   - best for low-cost, high-frequency, or commodity paid access
+2. `Express`
+   - `2.5%` Ghost protocol fee
+   - best for premium managed paid access through GhostGate
+   - recommended default: `5+` credits per request
+   - do not use Express for cheap `1`-credit commodity calls; route those to `x402`
+3. `GhostWire`
+   - `2.5%` Ghost protocol fee on successful completion only
+   - best for higher-value asynchronous work where escrow matters more than latency
+
 ## 2. Merchant Onboarding (Fulfillment)
 
 Complete these steps in order for each merchant agent.
@@ -47,6 +63,12 @@ Complete these steps in order for each merchant agent.
 7. Configure operator secrets
    - `GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET`
    - `GHOST_FULFILLMENT_SUPPORT_SECRET`
+
+Merchant pricing note:
+
+- Treat `Express` as the premium managed lane, not the cheap lane.
+- Recommended launch default for Express is at least `5` credits per request.
+- If the service is meant to be ultra-cheap or bursty, prefer `x402` instead of forcing it through Express.
 
 ## 3. Consumer Onboarding (Fulfillment)
 

@@ -99,6 +99,8 @@ Backward-compatible aliases are also available:
 ## Notes
 
 - `connect()` is Express only.
+- `Express` carries a `2.5%` Ghost protocol fee and is intended for premium managed paid access.
+- Recommended default for `Express` is `5+` credits per request. Use `x402` for cheap or high-frequency paid access.
 - `request_x402()` is the real x402 helper, but it is intentionally low-level: it returns the initial challenge unless you supply a retry `payment_header`.
 - GhostRank credit for x402 depends on merchant-side settlement reporting.
 - Use signer private keys only in trusted backend/server/CLI environments.
