@@ -54,6 +54,8 @@ jobs:
           BASE_URL: ${{ env.BASE_URL_INPUT }}
           MCP_TEST_SERVICE_SLUG: ${{ env.SERVICE_SLUG_INPUT }}
           MCP_VERIFY_TIMEOUT_MS: "20000"
+          MCP_VERIFY_RETRY_COUNT: "3"
+          MCP_VERIFY_RETRY_DELAY_MS: "1250"
         run: |
           set -euo pipefail
 
@@ -64,7 +66,19 @@ jobs:
           fi
 
           export BASE_URL="${base_url}"
-          npm run verify:mcp:readonly
+
+          attempts=1
+          max_attempts=2
+
+          until npm run verify:mcp:readonly; do
+            exit_code=$?
+            if [ "${attempts}" -ge "${max_attempts}" ]; then
+              exit "${exit_code}"
+            fi
+            attempts=$((attempts + 1))
+            echo "MCP monitor attempt failed, retrying full verification (${attempts}/${max_attempts})..."
+            sleep 5
+          done
 
       - name: Send MCP monitor alert email
         if: ${{ failure() && env.ALERT_SMTP_SERVER != '' && env.ALERT_SMTP_USERNAME != '' && env.ALERT_SMTP_PASSWORD != '' && env.ALERT_FROM_EMAIL != '' }}

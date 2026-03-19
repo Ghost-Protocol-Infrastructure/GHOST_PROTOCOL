@@ -11,10 +11,20 @@ type RpcResponse = {
 
 const DEFAULT_BASE_URL = "https://www.ghostprotocol.cc";
 const DEFAULT_SERVICE_SLUG = "agent-18755";
+const DEFAULT_TIMEOUT_MS = 15_000;
+const DEFAULT_RETRY_COUNT = 3;
+const DEFAULT_RETRY_DELAY_MS = 1_000;
 
 const baseUrl = (process.env.BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
 const serviceSlug = (process.env.MCP_TEST_SERVICE_SLUG || DEFAULT_SERVICE_SLUG).trim();
-const timeoutMs = Number.parseInt(process.env.MCP_VERIFY_TIMEOUT_MS || "15000", 10);
+const parsePositiveInteger = (raw: string | undefined, fallback: number): number => {
+  const parsed = Number.parseInt(raw || "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const timeoutMs = parsePositiveInteger(process.env.MCP_VERIFY_TIMEOUT_MS, DEFAULT_TIMEOUT_MS);
+const retryCount = parsePositiveInteger(process.env.MCP_VERIFY_RETRY_COUNT, DEFAULT_RETRY_COUNT);
+const retryDelayMs = parsePositiveInteger(process.env.MCP_VERIFY_RETRY_DELAY_MS, DEFAULT_RETRY_DELAY_MS);
 
 const assert = (condition: boolean, message: string): void => {
   if (!condition) {
@@ -24,22 +34,74 @@ const assert = (condition: boolean, message: string): void => {
 
 const normalizeString = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
 
-const timedFetch = async (input: string, init?: RequestInit): Promise<{ response: Response; elapsedMs: number }> => {
-  const controller = new AbortController();
-  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
-  const startedAt = Date.now();
-  try {
-    const response = await fetch(input, {
-      ...init,
-      signal: controller.signal,
-    });
-    return {
-      response,
-      elapsedMs: Date.now() - startedAt,
-    };
-  } finally {
-    clearTimeout(timeoutHandle);
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isTransientFetchError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error);
+  return [
+    "fetch failed",
+    "socket close",
+    "unexpected socket close",
+    "ecconnreset",
+    "econnreset",
+    "und_err_socket",
+    "aborterror",
+    "etimedout",
+    "timed out",
+    "socket hang up",
+  ].some((fragment) => message.toLowerCase().includes(fragment));
+};
+
+const isRetryableStatus = (status: number): boolean =>
+  [408, 425, 429, 500, 502, 503, 504, 520, 522, 524].includes(status);
+
+const timedFetch = async (
+  input: string,
+  init?: RequestInit,
+): Promise<{ response: Response; elapsedMs: number; attempts: number }> => {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= retryCount; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+    const startedAt = Date.now();
+
+    try {
+      const response = await fetch(input, {
+        ...init,
+        signal: controller.signal,
+      });
+      const elapsedMs = Date.now() - startedAt;
+
+      if (attempt < retryCount && isRetryableStatus(response.status)) {
+        console.warn(
+          `[warn] fetch ${init?.method || "GET"} ${input} returned HTTP ${response.status} on attempt ${attempt}/${retryCount}; retrying`,
+        );
+        await sleep(retryDelayMs * attempt);
+        continue;
+      }
+
+      return {
+        response,
+        elapsedMs,
+        attempts: attempt,
+      };
+    } catch (error) {
+      lastError = error;
+      if (attempt < retryCount && isTransientFetchError(error)) {
+        console.warn(
+          `[warn] fetch ${init?.method || "GET"} ${input} failed on attempt ${attempt}/${retryCount}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        await sleep(retryDelayMs * attempt);
+        continue;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
   }
+
+  throw lastError instanceof Error ? lastError : new Error(`Fetch failed for ${input}`);
 };
 
 const expectJson = async <T>(response: Response, context: string): Promise<T> => {
@@ -62,7 +124,7 @@ const equivalentGhostHosts = (url: string): string[] => {
 };
 
 const rpcCall = async (id: number, method: string, params?: Record<string, unknown>): Promise<RpcResponse> => {
-  const { response, elapsedMs } = await timedFetch(`${baseUrl}/api/mcp/read-only`, {
+  const { response, elapsedMs, attempts } = await timedFetch(`${baseUrl}/api/mcp/read-only`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -80,7 +142,7 @@ const rpcCall = async (id: number, method: string, params?: Record<string, unkno
   assert(response.status === 200, `MCP RPC ${method} failed with HTTP ${response.status}`);
   const payload = await expectJson<RpcResponse>(response, `MCP RPC ${method}`);
   assert(!payload.error, `MCP RPC ${method} returned error: ${JSON.stringify(payload.error)}`);
-  console.log(`[ok] rpc ${method} (${elapsedMs}ms)`);
+  console.log(`[ok] rpc ${method} (${elapsedMs}ms, attempt ${attempts}/${retryCount})`);
   return payload;
 };
 
@@ -110,7 +172,7 @@ const run = async (): Promise<void> => {
   assert(metadataToolNames.has("get_payment_requirements"), "MCP metadata missing get_payment_requirements tool");
   assert(metadataToolNames.has("get_wire_quote"), "MCP metadata missing get_wire_quote tool");
   assert(metadataToolNames.has("get_wire_job_status"), "MCP metadata missing get_wire_job_status tool");
-  console.log(`[ok] metadata (${metadataResult.elapsedMs}ms)`);
+  console.log(`[ok] metadata (${metadataResult.elapsedMs}ms, attempt ${metadataResult.attempts}/${retryCount})`);
 
   const manifestResult = await timedFetch(`${baseUrl}/.well-known/mcp.json`, {
     method: "GET",
@@ -137,7 +199,7 @@ const run = async (): Promise<void> => {
   assert(manifestToolNames.has("get_payment_requirements"), "MCP manifest missing get_payment_requirements tool");
   assert(manifestToolNames.has("get_wire_quote"), "MCP manifest missing get_wire_quote tool");
   assert(manifestToolNames.has("get_wire_job_status"), "MCP manifest missing get_wire_job_status tool");
-  console.log(`[ok] manifest (${manifestResult.elapsedMs}ms)`);
+  console.log(`[ok] manifest (${manifestResult.elapsedMs}ms, attempt ${manifestResult.attempts}/${retryCount})`);
 
   const initializeResponse = await rpcCall(1, "initialize", { protocolVersion: "2024-11-05" });
   const initializeResult = (initializeResponse.result || {}) as {

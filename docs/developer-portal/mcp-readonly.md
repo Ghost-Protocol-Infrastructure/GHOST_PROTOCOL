@@ -4,8 +4,15 @@ Ghost Protocol includes an MCP server for machine discovery, pricing lookups, an
 
 ## Purpose
 
-This MCP server does **not** execute settlement, ticket issuance, or wallet operations.
-It can create GhostWire quote records and read GhostWire job status.
+This MCP server is `read-only` in the operational sense:
+
+- it does **not** execute settlement
+- it does **not** issue tickets
+- it does **not** move funds
+- it does **not** submit or finalize GhostWire jobs
+- it does **not** perform wallet operations
+
+It can prepare GhostWire quote records and read GhostWire job status, but those helpers do not commit funds or mutate on-chain state.
 
 Supported tools:
 
