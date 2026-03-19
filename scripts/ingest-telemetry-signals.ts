@@ -1,10 +1,12 @@
-import { config as loadEnv } from "dotenv";
 import { Prisma, PrismaClient } from "@prisma/client";
+import { bootstrapPostgresEnv, getPrismaClientDatasourceOptions } from "../lib/postgres-env";
 
-loadEnv({ path: ".env", quiet: true });
-loadEnv({ path: ".env.local", override: true, quiet: true });
+const postgresEnv = bootstrapPostgresEnv();
 
-const prisma = new PrismaClient({ log: ["error"] });
+const prisma = new PrismaClient({
+  ...getPrismaClientDatasourceOptions(postgresEnv),
+  log: ["error"],
+});
 
 const DEFAULT_WINDOW_MINUTES = 24 * 60;
 const DEFAULT_CREDIT_PRICE_WEI = 10_000_000_000_000n; // 0.00001 ETH

@@ -1,11 +1,10 @@
-import { config as loadEnv } from "dotenv";
 import { randomBytes } from "node:crypto";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import type { PrismaClient } from "@prisma/client";
 import { buildFulfillmentCaptureSettlementId, calculateSettlementAmounts } from "../lib/merchant-settlement";
+import { bootstrapPostgresEnv } from "../lib/postgres-env";
 
-loadEnv({ path: ".env", quiet: true });
-loadEnv({ path: ".env.local", override: true, quiet: true });
+bootstrapPostgresEnv();
 
 process.env.GHOST_CREDIT_LEDGER_ENABLED = "true";
 process.env.GHOST_GATE_NONCE_STORE_ENABLED = "true";

@@ -1,4 +1,3 @@
-import { config as loadEnv } from "dotenv";
 import { PrismaClient, type GateAccessOutcome, Prisma } from "@prisma/client";
 import { getAddress, type Address } from "viem";
 import {
@@ -6,11 +5,9 @@ import {
   buildGateSettlementId,
   calculateSettlementAmounts,
 } from "./merchant-settlement";
+import { bootstrapPostgresEnv, getPrismaClientDatasourceOptions } from "./postgres-env";
 
-if (!process.env.POSTGRES_PRISMA_URL) {
-  loadEnv({ path: ".env", quiet: true });
-  loadEnv({ path: ".env.local", override: true, quiet: true });
-}
+const postgresEnv = bootstrapPostgresEnv();
 
 const MAX_PRISMA_INT = 2_147_483_647n;
 const MIN_PRISMA_INT = -2_147_483_648n;
@@ -84,6 +81,7 @@ const toJsDate = (value: Date | string, field: string): Date => {
 export const prisma =
   globalThis.prismaGlobal ??
   new PrismaClient({
+    ...getPrismaClientDatasourceOptions(postgresEnv),
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   });
 

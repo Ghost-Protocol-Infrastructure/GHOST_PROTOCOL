@@ -1,33 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { config as loadEnv } from "dotenv";
 import { PrismaClient, Prisma } from "@prisma/client";
-
-loadEnv({ path: ".env", quiet: true });
-loadEnv({ path: ".env.local", override: true, quiet: true });
-
-const ensurePostgresEnv = (): void => {
-  process.env.POSTGRES_PRISMA_URL =
-    process.env.POSTGRES_PRISMA_URL ??
-    process.env.POSTGRES_URL ??
-    process.env.POSTGRES_DATABASE_URL ??
-    process.env.POSTGRES_URL_NON_POOLING ??
-    process.env.POSTGRES_DATABASE_URL_UNPOOLED;
-
-  process.env.POSTGRES_URL_NON_POOLING =
-    process.env.POSTGRES_URL_NON_POOLING ??
-    process.env.POSTGRES_DATABASE_URL_UNPOOLED ??
-    process.env.POSTGRES_PRISMA_URL ??
-    process.env.POSTGRES_URL ??
-    process.env.POSTGRES_DATABASE_URL;
-
-  if (!process.env.POSTGRES_PRISMA_URL || !process.env.POSTGRES_URL_NON_POOLING) {
-    throw new Error(
-      "Missing Postgres env. Set POSTGRES_PRISMA_URL and POSTGRES_URL_NON_POOLING (or POSTGRES_DATABASE_URL_UNPOOLED).",
-    );
-  }
-};
-
-ensurePostgresEnv();
+import { bootstrapPostgresEnv, getPrismaClientDatasourceOptions } from "../lib/postgres-env";
 
 const DEFAULT_DB_PUSH_RETRY_ATTEMPTS = 4;
 const DEFAULT_DB_PUSH_RETRY_DELAY_MS = 5_000;
@@ -66,32 +39,7 @@ const sleep = (ms: number): Promise<void> =>
     setTimeout(resolve, ms);
   });
 
-const normalizePostgresUrl = (value: string, connectTimeoutSeconds: number): string => {
-  const trimmed = value.trim();
-  if (!trimmed) return trimmed;
-
-  let parsed: URL;
-  try {
-    parsed = new URL(trimmed);
-  } catch {
-    return trimmed;
-  }
-
-  if (!parsed.searchParams.has("connect_timeout")) {
-    parsed.searchParams.set("connect_timeout", String(connectTimeoutSeconds));
-  }
-  if (!parsed.searchParams.has("sslmode")) {
-    parsed.searchParams.set("sslmode", "require");
-  }
-
-  return parsed.toString();
-};
-
-process.env.POSTGRES_PRISMA_URL = normalizePostgresUrl(process.env.POSTGRES_PRISMA_URL ?? "", CONNECT_TIMEOUT_SECONDS);
-process.env.POSTGRES_URL_NON_POOLING = normalizePostgresUrl(
-  process.env.POSTGRES_URL_NON_POOLING ?? "",
-  CONNECT_TIMEOUT_SECONDS,
-);
+const postgresEnv = bootstrapPostgresEnv({ connectTimeoutSeconds: CONNECT_TIMEOUT_SECONDS });
 
 const isRetryableDbPushError = (output: string): boolean => {
   const normalized = output.toLowerCase();
@@ -175,6 +123,7 @@ const runPrismaDbPush = async (): Promise<void> => {
 };
 
 const prisma = new PrismaClient({
+  ...getPrismaClientDatasourceOptions(postgresEnv),
   log: ["error"],
 });
 

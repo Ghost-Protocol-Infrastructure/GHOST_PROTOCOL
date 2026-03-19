@@ -1,8 +1,7 @@
-import { config } from "dotenv";
 import { defineConfig } from "prisma/config";
+import { bootstrapPostgresEnv } from "./lib/postgres-env";
 
-config({ path: ".env" });
-config({ path: ".env.local", override: true });
+bootstrapPostgresEnv({ normalizeDirectUrl: false });
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
