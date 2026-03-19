@@ -86,17 +86,9 @@ jobs:
 
       - name: Send settlement operator alert email
         if: ${{ failure() && env.ALERT_SMTP_SERVER != '' && env.ALERT_SMTP_USERNAME != '' && env.ALERT_SMTP_PASSWORD != '' && env.ALERT_FROM_EMAIL != '' }}
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: ${{ env.ALERT_SMTP_SERVER }}
-          server_port: ${{ env.ALERT_SMTP_PORT }}
-          secure: ${{ env.ALERT_SMTP_SECURE }}
-          username: ${{ env.ALERT_SMTP_USERNAME }}
-          password: ${{ env.ALERT_SMTP_PASSWORD }}
-          from: ${{ env.ALERT_FROM_EMAIL }}
-          to: ghostprotocol.infra@gmail.com
-          subject: "[Ghost Protocol][Settlement] Operator Health Alert"
-          body: |
+        env:
+          ALERT_SUBJECT: "[Ghost Protocol][Settlement] Operator Health Alert"
+          ALERT_BODY: |
             Settlement operator monitoring failure detected.
 
             Repository: ${{ github.repository }}
@@ -111,6 +103,7 @@ jobs:
             - Settlement operator not registered on-chain
             - Settlement operator gas balance below threshold
             - Unexpected settlement operator health endpoint failure
+        run: python3 scripts/send-workflow-alert.py
 
       - name: Warn when settlement alert email secrets are missing
         if: ${{ failure() && (env.ALERT_SMTP_SERVER == '' || env.ALERT_SMTP_USERNAME == '' || env.ALERT_SMTP_PASSWORD == '' || env.ALERT_FROM_EMAIL == '') }}

@@ -82,17 +82,9 @@ jobs:
 
       - name: Send MCP monitor alert email
         if: ${{ failure() && env.ALERT_SMTP_SERVER != '' && env.ALERT_SMTP_USERNAME != '' && env.ALERT_SMTP_PASSWORD != '' && env.ALERT_FROM_EMAIL != '' }}
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: ${{ env.ALERT_SMTP_SERVER }}
-          server_port: ${{ env.ALERT_SMTP_PORT }}
-          secure: ${{ env.ALERT_SMTP_SECURE }}
-          username: ${{ env.ALERT_SMTP_USERNAME }}
-          password: ${{ env.ALERT_SMTP_PASSWORD }}
-          from: ${{ env.ALERT_FROM_EMAIL }}
-          to: ghostprotocol.infra@gmail.com
-          subject: "[Ghost Protocol][MCP] Read-only endpoint monitor failure"
-          body: |
+        env:
+          ALERT_SUBJECT: "[Ghost Protocol][MCP] Read-only endpoint monitor failure"
+          ALERT_BODY: |
             Read-only MCP endpoint verification failed.
 
             Repository: ${{ github.repository }}
@@ -101,6 +93,7 @@ jobs:
             Branch/Ref: ${{ github.ref }}
             Actor: ${{ github.actor }}
             Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 scripts/send-workflow-alert.py
 
       - name: Warn when MCP alert email secrets are missing
         if: ${{ failure() && (env.ALERT_SMTP_SERVER == '' || env.ALERT_SMTP_USERNAME == '' || env.ALERT_SMTP_PASSWORD == '' || env.ALERT_FROM_EMAIL == '') }}

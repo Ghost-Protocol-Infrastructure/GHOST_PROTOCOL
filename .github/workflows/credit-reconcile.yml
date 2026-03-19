@@ -45,11 +45,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 22.10.0
+          node-version: 20.20.0
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Generate Prisma Client
         run: npx prisma generate
@@ -62,17 +62,9 @@ jobs:
 
       - name: Send credit alert email
         if: ${{ failure() && env.ALERT_SMTP_SERVER != '' && env.ALERT_SMTP_USERNAME != '' && env.ALERT_SMTP_PASSWORD != '' && env.ALERT_FROM_EMAIL != '' }}
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: ${{ env.ALERT_SMTP_SERVER }}
-          server_port: ${{ env.ALERT_SMTP_PORT }}
-          secure: ${{ env.ALERT_SMTP_SECURE }}
-          username: ${{ env.ALERT_SMTP_USERNAME }}
-          password: ${{ env.ALERT_SMTP_PASSWORD }}
-          from: ${{ env.ALERT_FROM_EMAIL }}
-          to: ghostprotocol.infra@gmail.com
-          subject: "[Ghost Rank][Credit] Workflow Alert: ${{ github.workflow }}"
-          body: |
+        env:
+          ALERT_SUBJECT: "[Ghost Rank][Credit] Workflow Alert: ${{ github.workflow }}"
+          ALERT_BODY: |
             Credit monitoring workflow failure detected.
 
             Repository: ${{ github.repository }}
@@ -86,6 +78,7 @@ jobs:
             - Credit reconcile drift/mismatch failure
             - Credit monitor replay spike threshold breach
             - Any unexpected failure in credit-reconcile workflow
+        run: python3 scripts/send-workflow-alert.py
 
       - name: Warn when alert email secrets are missing
         if: ${{ failure() && (env.ALERT_SMTP_SERVER == '' || env.ALERT_SMTP_USERNAME == '' || env.ALERT_SMTP_PASSWORD == '' || env.ALERT_FROM_EMAIL == '') }}
