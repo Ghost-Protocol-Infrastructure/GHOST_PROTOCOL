@@ -70,6 +70,12 @@ Merchant pricing note:
 - Recommended launch default for Express is at least `5` credits per request.
 - If the service is meant to be ultra-cheap or bursty, prefer `x402` instead of forcing it through Express.
 
+Settlement timing note:
+
+- GhostGate Express now aggregates raw merchant earnings into per-merchant settlement rollups before allocation.
+- Active merchants that clear the fee threshold quickly should see roughly the same settlement timing as before.
+- Low-volume merchants may wait longer because Ghost can hold small earnings until either the fee threshold is met or the max-age release window is reached.
+
 ## 3. Consumer Onboarding (Fulfillment)
 
 1. Fund credits (consumer wallet must have spendable credits).
@@ -181,13 +187,21 @@ GhostWire is customer-native:
 | `GHOST_SETTLEMENT_OPERATOR_SECRET` | `/api/admin/settlement/allocate`, `/api/admin/settlement/reconcile`, `/api/admin/settlement/operator-health` | Yes (hosted settlement automation) | Dedicated secret required. No fallback secret path. |
 | `GHOST_SETTLEMENT_SUPPORT_SECRET` | `/api/admin/settlement/metrics` | Recommended for ops/support | Supports bearer auth or `x-ghost-settlement-support-secret`. |
 
-### 4.4 GhostWire operator secret
+### 4.4 Optional settlement batching controls
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `GHOST_SETTLEMENT_ROLLUP_MIN_FEE_WEI` | derived from allocator gas estimate and gas-price cap | Minimum accumulated fee before a pending merchant rollup is released immediately. |
+| `GHOST_SETTLEMENT_ROLLUP_MAX_AGE_MS` | `900000` | Max age for the oldest pending earning before Ghost releases a small rollup anyway. |
+| `GHOST_SETTLEMENT_ROLLUP_MAX_EARNINGS_PER_ROLLUP` | `100` | Safety cap on the number of raw earnings grouped into one rollup. |
+
+### 4.5 GhostWire operator secret
 
 | Variable | Used by | Required | Notes |
 |---|---|---|---|
 | `GHOSTWIRE_OPERATOR_SECRET` | `/api/admin/wire/operator` | Internal only | Direct GhostWire reconciliation and webhook operator auth. |
 
-### 4.5 Dashboard wallet connectivity
+### 4.6 Dashboard wallet connectivity
 
 | Variable | Used by | Required | Notes |
 |---|---|---|---|

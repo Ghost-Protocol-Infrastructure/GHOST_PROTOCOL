@@ -116,6 +116,11 @@ enum MerchantSettlementBatchStatus {
   FAILED
 }
 
+enum MerchantSettlementRollupReleaseReason {
+  FEE_THRESHOLD
+  MAX_AGE
+}
+
 enum WireSettlementAsset {
   USDC
 }
@@ -451,10 +456,39 @@ model MerchantSettlementBatch {
   updatedAt      DateTime                      @updatedAt
 
   earnings MerchantEarning[]
+  rollups  MerchantSettlementRollup[]
 
   @@index([status, createdAt])
   @@index([submittedAt])
   @@index([confirmedAt])
+  @@index([txHash])
+}
+
+model MerchantSettlementRollup {
+  id                     String                               @id @default(cuid())
+  settlementId           String                               @unique
+  merchantOwnerAddress   String
+  status                 MerchantEarningStatus                @default(PENDING)
+  grossWei               BigInt
+  feeWei                 BigInt
+  netWei                 BigInt
+  earningCount           Int
+  oldestEarningCreatedAt DateTime
+  newestEarningCreatedAt DateTime
+  releaseReason          MerchantSettlementRollupReleaseReason
+  allocatorBatchId       String?
+  txHash                 String?
+  failureCode            String?
+  failureMessage         String?
+  createdAt              DateTime                             @default(now())
+  updatedAt              DateTime                             @updatedAt
+
+  allocatorBatch MerchantSettlementBatch? @relation(fields: [allocatorBatchId], references: [id], onDelete: SetNull)
+  earnings       MerchantEarning[]
+
+  @@index([status, createdAt])
+  @@index([merchantOwnerAddress, status, createdAt])
+  @@index([allocatorBatchId, status])
   @@index([txHash])
 }
 
@@ -472,6 +506,7 @@ model MerchantEarning {
   feeWei               BigInt
   netWei               BigInt
   status               MerchantEarningStatus     @default(PENDING)
+  settlementRollupId   String?
   allocatorBatchId     String?
   txHash               String?
   failureCode          String?
@@ -479,14 +514,16 @@ model MerchantEarning {
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
 
-  wallet         CreditBalance            @relation(fields: [walletAddress], references: [walletAddress], onDelete: Cascade)
-  allocatorBatch MerchantSettlementBatch? @relation(fields: [allocatorBatchId], references: [id], onDelete: SetNull)
+  wallet           CreditBalance              @relation(fields: [walletAddress], references: [walletAddress], onDelete: Cascade)
+  settlementRollup MerchantSettlementRollup? @relation(fields: [settlementRollupId], references: [id], onDelete: SetNull)
+  allocatorBatch   MerchantSettlementBatch?  @relation(fields: [allocatorBatchId], references: [id], onDelete: SetNull)
 
   @@unique([sourceType, sourceId])
   @@index([status, createdAt])
   @@index([merchantOwnerAddress, status, createdAt])
   @@index([serviceSlug, createdAt])
   @@index([agentId, createdAt])
+  @@index([settlementRollupId, status])
   @@index([allocatorBatchId, status])
   @@index([txHash])
 }

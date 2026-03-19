@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { parsePositiveIntBounded } from "@/lib/fulfillment-route";
 import { GHOST_CREDIT_PRICE_WEI, GHOST_VAULT_ABI, GHOST_VAULT_ADDRESS } from "@/lib/constants";
 import { getMerchantSettlementSummary, prisma } from "@/lib/db";
+import { resolveMerchantSettlementRollupConfig } from "@/lib/merchant-settlement-config";
 import { createSettlementPublicClient } from "@/lib/merchant-settlement-chain";
 import { settlementJson, isSettlementSupportAuthorized } from "@/lib/merchant-settlement-route";
 
@@ -40,7 +41,8 @@ export async function GET(request: NextRequest) {
   const since = new Date(Date.now() - windowMinutes * 60_000);
 
   try {
-    const [summary, batchCounts, oldestOpenBatch, oldestSubmittedBatch, failedByCode, vaultSnapshot] = await Promise.all([
+    const rollupConfig = resolveMerchantSettlementRollupConfig();
+    const [summary, batchCounts, oldestOpenBatch, oldestSubmittedBatch, failedByCode, rollupCounts, oldestPendingRollup, oldestSubmittedRollup, vaultSnapshot] = await Promise.all([
       getMerchantSettlementSummary({
         serviceSlug,
         createdAtGte: since,
@@ -67,6 +69,26 @@ export async function GET(request: NextRequest) {
           createdAt: { gte: since },
         },
         _count: { _all: true },
+      }),
+      prisma.merchantSettlementRollup.groupBy({
+        by: ["status"],
+        _count: { _all: true },
+        _sum: {
+          grossWei: true,
+          feeWei: true,
+          netWei: true,
+          earningCount: true,
+        },
+      }),
+      prisma.merchantSettlementRollup.findFirst({
+        where: { status: "PENDING" },
+        orderBy: { oldestEarningCreatedAt: "asc" },
+        select: { oldestEarningCreatedAt: true },
+      }),
+      prisma.merchantSettlementRollup.findFirst({
+        where: { status: "SUBMITTED" },
+        orderBy: { oldestEarningCreatedAt: "asc" },
+        select: { oldestEarningCreatedAt: true },
       }),
       (async () => {
         const client = createSettlementPublicClient();
@@ -110,6 +132,7 @@ export async function GET(request: NextRequest) {
 
     const batchesByStatus = countByKey(batchCounts.map((row) => ({ key: row.status, count: row._count._all })));
     const failuresByCode = countByKey(failedByCode.map((row) => ({ key: row.failureCode, count: row._count._all })));
+    const rollupsByStatus = countByKey(rollupCounts.map((row) => ({ key: row.status, count: row._count._all })));
     const pendingAgeMinutes = summary.pending.oldestCreatedAt
       ? Math.max(0, Math.round((Date.now() - summary.pending.oldestCreatedAt.getTime()) / 60_000))
       : null;
@@ -118,7 +141,17 @@ export async function GET(request: NextRequest) {
       : oldestSubmittedBatch?.createdAt
         ? Math.max(0, Math.round((Date.now() - oldestSubmittedBatch.createdAt.getTime()) / 60_000))
         : null;
+    const pendingRollupAgeMinutes = oldestPendingRollup?.oldestEarningCreatedAt
+      ? Math.max(0, Math.round((Date.now() - oldestPendingRollup.oldestEarningCreatedAt.getTime()) / 60_000))
+      : null;
+    const submittedRollupAgeMinutes = oldestSubmittedRollup?.oldestEarningCreatedAt
+      ? Math.max(0, Math.round((Date.now() - oldestSubmittedRollup.oldestEarningCreatedAt.getTime()) / 60_000))
+      : null;
     const unsettledNetWei = summary.pending.netWei + summary.submitted.netWei;
+    const pendingRollupSummary = rollupCounts.find((row) => row.status === "PENDING");
+    const submittedRollupSummary = rollupCounts.find((row) => row.status === "SUBMITTED");
+    const confirmedRollupSummary = rollupCounts.find((row) => row.status === "CONFIRMED");
+    const failedRollupSummary = rollupCounts.find((row) => row.status === "FAILED");
 
     return settlementJson(
       {
@@ -170,6 +203,52 @@ export async function GET(request: NextRequest) {
             oldestSubmittedBatch?.submittedAt?.toISOString() ??
             oldestSubmittedBatch?.createdAt?.toISOString() ??
             null,
+        },
+        aggregation: {
+          serviceScoped: false,
+          note: serviceSlug
+            ? "Rollup metrics remain global because settlement rollups can span multiple services for the same merchant."
+            : null,
+          config: {
+            minFeeWei: rollupConfig.minFeeWei.toString(),
+            maxAgeMs: rollupConfig.maxAgeMs,
+            maxEarningsPerRollup: rollupConfig.maxEarningsPerRollup,
+          },
+          rollups: {
+            byStatus: rollupsByStatus,
+            pending: {
+              count: pendingRollupSummary?._count._all ?? 0,
+              grossWei: (pendingRollupSummary?._sum.grossWei ?? 0n).toString(),
+              feeWei: (pendingRollupSummary?._sum.feeWei ?? 0n).toString(),
+              netWei: (pendingRollupSummary?._sum.netWei ?? 0n).toString(),
+              earningCount: pendingRollupSummary?._sum.earningCount ?? 0,
+              oldestCreatedAt: oldestPendingRollup?.oldestEarningCreatedAt?.toISOString() ?? null,
+              backlogAgeMinutes: pendingRollupAgeMinutes,
+            },
+            submitted: {
+              count: submittedRollupSummary?._count._all ?? 0,
+              grossWei: (submittedRollupSummary?._sum.grossWei ?? 0n).toString(),
+              feeWei: (submittedRollupSummary?._sum.feeWei ?? 0n).toString(),
+              netWei: (submittedRollupSummary?._sum.netWei ?? 0n).toString(),
+              earningCount: submittedRollupSummary?._sum.earningCount ?? 0,
+              oldestCreatedAt: oldestSubmittedRollup?.oldestEarningCreatedAt?.toISOString() ?? null,
+              backlogAgeMinutes: submittedRollupAgeMinutes,
+            },
+            confirmed: {
+              count: confirmedRollupSummary?._count._all ?? 0,
+              grossWei: (confirmedRollupSummary?._sum.grossWei ?? 0n).toString(),
+              feeWei: (confirmedRollupSummary?._sum.feeWei ?? 0n).toString(),
+              netWei: (confirmedRollupSummary?._sum.netWei ?? 0n).toString(),
+              earningCount: confirmedRollupSummary?._sum.earningCount ?? 0,
+            },
+            failed: {
+              count: failedRollupSummary?._count._all ?? 0,
+              grossWei: (failedRollupSummary?._sum.grossWei ?? 0n).toString(),
+              feeWei: (failedRollupSummary?._sum.feeWei ?? 0n).toString(),
+              netWei: (failedRollupSummary?._sum.netWei ?? 0n).toString(),
+              earningCount: failedRollupSummary?._sum.earningCount ?? 0,
+            },
+          },
         },
         drift: {
           creditPriceWei: GHOST_CREDIT_PRICE_WEI.toString(),

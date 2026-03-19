@@ -62,7 +62,7 @@ GhostVault uses pull over push:
 1. `depositCredit()` increases pooled credit backing and does not credit any merchant directly.
 2. Merchant earnings are allocated later from successful spend events and create withdrawable owner balances.
 3. Owner later claims fees with `claimFees(recipient)`.
-4. Settlement operators batch merchant earnings on-chain through `allocateMerchantEarningsBatch(...)`.
+4. Settlement operators aggregate eligible merchant earnings into per-merchant settlement rollups, then batch those rollups on-chain through `allocateMerchantEarningsBatch(...)`.
 
 This reduces external-call risk on deposit and isolates treasury failure from user crediting.
 
@@ -98,9 +98,17 @@ This means usage tracking and payout attribution are reconciled by post-spend se
 The hosted Ghost deployment runs the settlement operator, not the merchant:
 
 1. spend creates `MerchantEarning` rows
-2. `/api/admin/settlement/allocate` batches and submits pending earnings
-3. `/api/admin/settlement/reconcile` confirms submitted rows against on-chain state
-4. merchants withdraw only settled balances
+2. pending earnings are grouped into `MerchantSettlementRollup` rows per merchant owner once they clear the release threshold
+3. `/api/admin/settlement/allocate` batches and submits pending rollups
+4. `/api/admin/settlement/reconcile` confirms submitted rollups against on-chain state and mirrors lifecycle back to the underlying earnings
+5. merchants withdraw only settled balances
+
+Rollup release is controlled by two conditions:
+
+- fee threshold: release immediately once accumulated protocol fee justifies an on-chain settlement
+- max age: release after the oldest pending earning has waited long enough even if the batch is still small
+
+Operationally this means high-activity merchants should see little or no change in settlement timing, while low-volume merchants may wait longer for settlement because Ghost is intentionally batching more small Express purchases into one on-chain allocation.
 
 ## Fulfillment
 

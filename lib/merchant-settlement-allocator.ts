@@ -1,7 +1,16 @@
 import { Prisma, type MerchantSettlementBatch, type MerchantSettlementBatchStatus } from "@prisma/client";
 import { getAddress, type Address } from "viem";
 import { GHOST_VAULT_ABI, GHOST_VAULT_ADDRESS } from "./constants";
-import { prisma } from "./db";
+import { createMerchantSettlementRollups, prisma } from "./db";
+import {
+  parsePositiveBigIntEnv,
+  parsePositiveIntegerEnv,
+  resolveMerchantSettlementRollupConfig,
+} from "./merchant-settlement-config";
+import {
+  buildMerchantSettlementRollupCandidates,
+  type MerchantSettlementRollupSourceRow,
+} from "./merchant-settlement-rollup";
 import { createSettlementPublicClient, createSettlementWalletClient } from "./merchant-settlement-chain";
 export { determineSettlementReconciliationOutcome } from "./merchant-settlement-reconcile";
 
@@ -16,20 +25,6 @@ const DEFAULT_ALLOCATOR_MAX_GAS_PRICE_GWEI = 3n;
 const DEFAULT_ALLOCATOR_MIN_CONFIRMATIONS = 2;
 const GWEI = 1_000_000_000n;
 
-const parsePositiveIntegerEnv = (value: string | undefined, fallback: number): number => {
-  const trimmed = value?.trim();
-  if (!trimmed || !/^\d+$/.test(trimmed)) return fallback;
-  const parsed = Number.parseInt(trimmed, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-};
-
-const parsePositiveBigIntEnv = (value: string | undefined, fallback: bigint): bigint => {
-  const trimmed = value?.trim();
-  if (!trimmed || !/^\d+$/.test(trimmed)) return fallback;
-  const parsed = BigInt(trimmed);
-  return parsed > 0n ? parsed : fallback;
-};
-
 const normalizeBatchStatus = (status: MerchantSettlementBatchStatus): MerchantSettlementBatchStatus => status;
 
 export type MerchantEarningAllocationCandidate = {
@@ -40,6 +35,7 @@ export type MerchantEarningAllocationCandidate = {
   feeWei: bigint;
   netWei: bigint;
   createdAt: Date;
+  earningCount?: number;
 };
 
 export type MerchantSettlementAllocatorConfig = {
@@ -59,6 +55,15 @@ export type MerchantSettlementBatchPayload = {
   totalGrossWei: bigint;
   totalFeeWei: bigint;
   totalNetWei: bigint;
+};
+
+export type MerchantSettlementBatchPreview = {
+  selectionLimit: number;
+  selectedCount: number;
+  rawEarningCount: number;
+  pendingRollupCount: number;
+  projectedNewRollupCount: number;
+  legacySubmittedCount: number;
 };
 
 export type MerchantSettlementBatchClaimResult =
@@ -180,9 +185,10 @@ const loadPendingMerchantEarningIds = async (
 
   const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
     SELECT "id"
-    FROM "MerchantEarning"
+    FROM "MerchantSettlementRollup"
     WHERE "status" = 'PENDING'
-    ORDER BY "createdAt" ASC, "id" ASC
+      AND "allocatorBatchId" IS NULL
+    ORDER BY "oldestEarningCreatedAt" ASC, "id" ASC
     LIMIT ${limit}
     FOR UPDATE SKIP LOCKED
   `);
@@ -190,11 +196,44 @@ const loadPendingMerchantEarningIds = async (
   return rows.map((row) => row.id);
 };
 
+const loadPendingMerchantEarningsForRollupPreview = async (
+  selectionLimit: number,
+  maxEarningsPerRollup: number,
+): Promise<MerchantSettlementRollupSourceRow[]> => {
+  if (selectionLimit <= 0 || maxEarningsPerRollup <= 0) {
+    return [];
+  }
+
+  const rowLimit = Math.max(selectionLimit * maxEarningsPerRollup, maxEarningsPerRollup);
+  return prisma.$queryRaw<MerchantSettlementRollupSourceRow[]>(Prisma.sql`
+    SELECT "id", "settlementId", "merchantOwnerAddress", "grossWei", "feeWei", "netWei", "createdAt"
+    FROM "MerchantEarning"
+    WHERE "status" = 'PENDING'
+      AND "settlementRollupId" IS NULL
+    ORDER BY "createdAt" ASC, "id" ASC
+    LIMIT ${rowLimit}
+  `);
+};
+
 const revertBatchToPending = async (input: {
   batchId: string;
   reason: string;
 }): Promise<void> => {
   await prisma.$transaction(async (tx) => {
+    await tx.merchantSettlementRollup.updateMany({
+      where: {
+        allocatorBatchId: input.batchId,
+        status: "SUBMITTED",
+      },
+      data: {
+        status: "FAILED",
+        allocatorBatchId: null,
+        txHash: null,
+        failureCode: "ALLOCATOR_SUBMIT_FAILED",
+        failureMessage: input.reason,
+      },
+    });
+
     await tx.merchantEarning.updateMany({
       where: {
         allocatorBatchId: input.batchId,
@@ -202,6 +241,7 @@ const revertBatchToPending = async (input: {
       },
       data: {
         status: "PENDING",
+        settlementRollupId: null,
         allocatorBatchId: null,
         txHash: null,
         failureCode: "ALLOCATOR_SUBMIT_FAILED",
@@ -223,6 +263,18 @@ const markBatchConfirmed = async (input: {
   batchId: string;
 }): Promise<void> => {
   await prisma.$transaction(async (tx) => {
+    await tx.merchantSettlementRollup.updateMany({
+      where: {
+        allocatorBatchId: input.batchId,
+        status: "SUBMITTED",
+      },
+      data: {
+        status: "CONFIRMED",
+        failureCode: null,
+        failureMessage: null,
+      },
+    });
+
     await tx.merchantEarning.updateMany({
       where: {
         allocatorBatchId: input.batchId,
@@ -264,18 +316,70 @@ const readProcessedSettlementIds = async (
 
 export const previewNextMerchantSettlementBatch = async (
   config: MerchantSettlementAllocatorConfig,
-): Promise<{ selectionLimit: number; selectedCount: number }> => {
+): Promise<MerchantSettlementBatchPreview> => {
   const selectionLimit = resolveAllocatorSelectionLimit(config);
   if (selectionLimit <= 0) {
-    return { selectionLimit, selectedCount: 0 };
+    return {
+      selectionLimit,
+      selectedCount: 0,
+      rawEarningCount: 0,
+      pendingRollupCount: 0,
+      projectedNewRollupCount: 0,
+      legacySubmittedCount: 0,
+    };
   }
 
-  const selectedCount = await prisma.merchantEarning.count({
-    where: { status: "PENDING" },
-    take: selectionLimit,
-  });
+  const rollupConfig = resolveMerchantSettlementRollupConfig();
+  const [legacySubmittedCount, pendingRollups] = await Promise.all([
+    prisma.merchantEarning.count({
+      where: {
+        status: "SUBMITTED",
+        settlementRollupId: null,
+      },
+    }),
+    prisma.merchantSettlementRollup.findMany({
+      where: {
+        status: "PENDING",
+        allocatorBatchId: null,
+      },
+      orderBy: [{ oldestEarningCreatedAt: "asc" }, { id: "asc" }],
+      take: selectionLimit,
+      select: {
+        id: true,
+        earningCount: true,
+      },
+    }),
+  ]);
 
-  return { selectionLimit, selectedCount };
+  const pendingRollupCount = pendingRollups.length;
+  const pendingRawEarningCount = pendingRollups.reduce((sum, row) => sum + row.earningCount, 0);
+
+  if (legacySubmittedCount > 0 || pendingRollupCount >= selectionLimit) {
+    return {
+      selectionLimit,
+      selectedCount: pendingRollupCount,
+      rawEarningCount: pendingRawEarningCount,
+      pendingRollupCount,
+      projectedNewRollupCount: 0,
+      legacySubmittedCount,
+    };
+  }
+
+  const previewRows = await loadPendingMerchantEarningsForRollupPreview(selectionLimit, rollupConfig.maxEarningsPerRollup);
+  const projectedCandidates = buildMerchantSettlementRollupCandidates(previewRows, rollupConfig, new Date()).slice(
+    0,
+    selectionLimit - pendingRollupCount,
+  );
+  const projectedRawEarningCount = projectedCandidates.reduce((sum, row) => sum + row.earningCount, 0);
+
+  return {
+    selectionLimit,
+    selectedCount: pendingRollupCount + projectedCandidates.length,
+    rawEarningCount: pendingRawEarningCount + projectedRawEarningCount,
+    pendingRollupCount,
+    projectedNewRollupCount: projectedCandidates.length,
+    legacySubmittedCount,
+  };
 };
 
 export const claimNextMerchantSettlementBatch = async (
@@ -286,6 +390,20 @@ export const claimNextMerchantSettlementBatch = async (
     return {
       status: "noop",
       reason: "Allocator selection limit resolved to zero.",
+      config,
+    };
+  }
+
+  const legacySubmittedCount = await prisma.merchantEarning.count({
+    where: {
+      status: "SUBMITTED",
+      settlementRollupId: null,
+    },
+  });
+  if (legacySubmittedCount > 0) {
+    return {
+      status: "noop",
+      reason: `Legacy raw submitted settlement rows are still present (${legacySubmittedCount}). Reconcile them before rollup allocation continues.`,
       config,
     };
   }
@@ -312,12 +430,17 @@ export const claimNextMerchantSettlementBatch = async (
     };
   }
 
+  await createMerchantSettlementRollups({
+    config: resolveMerchantSettlementRollupConfig(),
+    maxRollups: selectionLimit,
+  });
+
   return prisma.$transaction(async (tx) => {
     const selectedIds = await loadPendingMerchantEarningIds(tx, selectionLimit);
     if (selectedIds.length === 0) {
       return {
         status: "noop",
-        reason: "No pending merchant earnings are ready for allocation.",
+        reason: "No pending settlement rollups are ready for allocation.",
         config,
       } satisfies MerchantSettlementBatchClaimResult;
     }
@@ -328,7 +451,7 @@ export const claimNextMerchantSettlementBatch = async (
       },
     });
 
-    const updated = await tx.merchantEarning.updateMany({
+    const updatedRollups = await tx.merchantSettlementRollup.updateMany({
       where: {
         id: { in: selectedIds },
         status: "PENDING",
@@ -342,11 +465,11 @@ export const claimNextMerchantSettlementBatch = async (
       },
     });
 
-    if (updated.count !== selectedIds.length) {
-      throw new Error("Allocator failed to claim all selected merchant earnings.");
+    if (updatedRollups.count !== selectedIds.length) {
+      throw new Error("Allocator failed to claim all selected settlement rollups.");
     }
 
-    const rows = await tx.merchantEarning.findMany({
+    const rows = await tx.merchantSettlementRollup.findMany({
       where: { id: { in: selectedIds } },
       select: {
         id: true,
@@ -355,9 +478,29 @@ export const claimNextMerchantSettlementBatch = async (
         grossWei: true,
         feeWei: true,
         netWei: true,
-        createdAt: true,
+        earningCount: true,
+        oldestEarningCreatedAt: true,
       },
     });
+
+    const totalEarningCount = rows.reduce((sum, row) => sum + row.earningCount, 0);
+    const updatedEarnings = await tx.merchantEarning.updateMany({
+      where: {
+        settlementRollupId: { in: selectedIds },
+        status: "PENDING",
+      },
+      data: {
+        status: "SUBMITTED",
+        allocatorBatchId: batch.id,
+        txHash: null,
+        failureCode: null,
+        failureMessage: null,
+      },
+    });
+
+    if (updatedEarnings.count !== totalEarningCount) {
+      throw new Error("Allocator failed to claim all member merchant earnings for the selected rollups.");
+    }
 
     const orderedRows = selectedIds
       .map((id) => rows.find((row) => row.id === id))
@@ -366,7 +509,16 @@ export const claimNextMerchantSettlementBatch = async (
     return {
       status: "claimed",
       batch,
-      earnings: orderedRows,
+      earnings: orderedRows.map((row) => ({
+        id: row.id,
+        settlementId: row.settlementId,
+        merchantOwnerAddress: row.merchantOwnerAddress,
+        grossWei: row.grossWei,
+        feeWei: row.feeWei,
+        netWei: row.netWei,
+        createdAt: row.oldestEarningCreatedAt,
+        earningCount: row.earningCount,
+      })),
       config,
     } satisfies MerchantSettlementBatchClaimResult;
   });
@@ -430,6 +582,18 @@ export const submitMerchantSettlementBatch = async (input: {
           status: normalizeBatchStatus("SUBMITTED"),
           txHash,
           submittedAt: new Date(),
+          failureMessage: null,
+        },
+      });
+
+      await tx.merchantSettlementRollup.updateMany({
+        where: {
+          allocatorBatchId: input.batchId,
+          status: "SUBMITTED",
+        },
+        data: {
+          txHash,
+          failureCode: null,
           failureMessage: null,
         },
       });

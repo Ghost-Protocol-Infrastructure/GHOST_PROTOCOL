@@ -23,6 +23,14 @@ const normalizeTicketId = (ticketId: string): string => {
   return normalized;
 };
 
+const normalizeRollupId = (rollupId: string): string => {
+  const normalized = rollupId.trim();
+  if (!normalized) {
+    throw new Error("rollupId is required to derive a rollup settlement id.");
+  }
+  return normalized;
+};
+
 const buildSettlementId = (sourceType: string, sourceKey: string): `0x${string}` => {
   return keccak256(stringToHex(`${SETTLEMENT_ID_NAMESPACE}:${sourceType}:${sourceKey}`));
 };
@@ -43,6 +51,13 @@ export const buildFulfillmentCaptureSettlementId = (input: { ticketId: string })
   const sourceKey = `fulfillment_capture:${ticketId}`;
 
   return buildSettlementId("fulfillment_capture", sourceKey);
+};
+
+export const buildSettlementRollupId = (input: { rollupId: string }): `0x${string}` => {
+  const rollupId = normalizeRollupId(input.rollupId);
+  const sourceKey = `ghost-rollup-v1:${rollupId}`;
+
+  return buildSettlementId("merchant_rollup", sourceKey);
 };
 
 export type SettlementAmountBreakdown = {

@@ -55,6 +55,21 @@ export type MerchantSettlementReconcileResult = {
 
 type DerivedBatchRowState = { status: "CONFIRMED" | "PENDING" | "SUBMITTED" | "FAILED" };
 
+type SubmittedLegacyRow = {
+  id: string;
+  settlementId: string;
+  txHash: string | null;
+  allocatorBatchId: string | null;
+};
+
+type SubmittedRollupRow = {
+  id: string;
+  settlementId: string;
+  txHash: string | null;
+  allocatorBatchId: string | null;
+  earningCount: number;
+};
+
 const readProcessedSettlementId = async (
   client: SettlementPublicClient,
   settlementId: string,
@@ -97,9 +112,7 @@ const buildReceiptCache = async (
   return cache;
 };
 
-const deriveBatchStatusUpdate = (
-  rows: DerivedBatchRowState[],
-): BatchStatusUpdate | null => {
+const deriveBatchStatusUpdate = (rows: DerivedBatchRowState[]): BatchStatusUpdate | null => {
   if (rows.length === 0) return null;
 
   const hasSubmitted = rows.some((row) => row.status === "SUBMITTED");
@@ -123,7 +136,7 @@ const deriveBatchStatusUpdate = (
   return {
     status: "FAILED",
     confirmedAt: null,
-    failureMessage: "One or more submitted earnings were re-queued or failed during reconciliation.",
+    failureMessage: "One or more submitted settlements were re-queued or failed during reconciliation.",
   };
 };
 
@@ -139,25 +152,47 @@ export const reconcileMerchantSettlementRows = async (input: {
   const settlementId = input.settlementId?.trim().toLowerCase() || null;
   const limit = Math.max(1, input.limit ?? 100);
 
-  const submittedRows = await prisma.merchantEarning.findMany({
+  const submittedRollups = await prisma.merchantSettlementRollup.findMany({
     where: {
       status: "SUBMITTED",
       ...(batchId ? { allocatorBatchId: batchId } : {}),
       ...(settlementId ? { settlementId } : {}),
     },
-    orderBy: [{ updatedAt: "asc" }, { createdAt: "asc" }],
+    orderBy: [{ updatedAt: "asc" }, { oldestEarningCreatedAt: "asc" }, { id: "asc" }],
     take: limit,
     select: {
       id: true,
       settlementId: true,
       txHash: true,
       allocatorBatchId: true,
+      earningCount: true,
     },
   });
 
+  const remainingLimit = Math.max(0, limit - submittedRollups.length);
+  const submittedLegacyRows =
+    remainingLimit > 0
+      ? await prisma.merchantEarning.findMany({
+          where: {
+            status: "SUBMITTED",
+            settlementRollupId: null,
+            ...(batchId ? { allocatorBatchId: batchId } : {}),
+            ...(settlementId ? { settlementId } : {}),
+          },
+          orderBy: [{ updatedAt: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+          take: remainingLimit,
+          select: {
+            id: true,
+            settlementId: true,
+            txHash: true,
+            allocatorBatchId: true,
+          },
+        })
+      : [];
+
   const uniqueTxHashes = Array.from(
     new Set(
-      submittedRows
+      [...submittedRollups, ...submittedLegacyRows]
         .map((row) => row.txHash?.trim().toLowerCase() || null)
         .filter((row): row is string => row != null),
     ),
@@ -169,10 +204,64 @@ export const reconcileMerchantSettlementRows = async (input: {
   let stillSubmittedCount = 0;
   const touchedBatchIds = new Set<string>();
   const requeuedBatchStateCounts = new Map<string, number>();
-  const confirmedRowIds: string[] = [];
-  const requeuedRowIds: string[] = [];
+  const confirmedRollupIds: string[] = [];
+  const requeuedRollupIds: string[] = [];
+  const confirmedLegacyRowIds: string[] = [];
+  const requeuedLegacyRowIds: string[] = [];
 
-  for (const row of submittedRows) {
+  const handleOutcome = (
+    row: SubmittedLegacyRow | SubmittedRollupRow,
+    outcome: SettlementReconciliationOutcome,
+    targetIds: {
+      confirmed: string[];
+      requeued: string[];
+    },
+  ): void => {
+    if (outcome === "confirmed") {
+      confirmedCount += 1;
+      targetIds.confirmed.push(row.id);
+      if (row.allocatorBatchId) {
+        touchedBatchIds.add(row.allocatorBatchId);
+      }
+      return;
+    }
+
+    if (outcome === "requeue") {
+      requeuedCount += 1;
+      targetIds.requeued.push(row.id);
+      if (row.allocatorBatchId) {
+        touchedBatchIds.add(row.allocatorBatchId);
+        requeuedBatchStateCounts.set(
+          row.allocatorBatchId,
+          (requeuedBatchStateCounts.get(row.allocatorBatchId) ?? 0) + 1,
+        );
+      }
+      return;
+    }
+
+    stillSubmittedCount += 1;
+    if (row.allocatorBatchId) {
+      touchedBatchIds.add(row.allocatorBatchId);
+    }
+  };
+
+  for (const rollup of submittedRollups) {
+    const processedOnChain = await readProcessedSettlementId(client, rollup.settlementId);
+    const receipt = rollup.txHash ? receiptCache.get(rollup.txHash.toLowerCase()) : undefined;
+    const outcome = determineSettlementReconciliationOutcome({
+      processedOnChain,
+      receiptStatus: receipt?.status ?? "missing",
+      confirmations: receipt?.confirmations ?? 0,
+      minConfirmations: input.config.minConfirmations,
+    });
+
+    handleOutcome(rollup, outcome, {
+      confirmed: confirmedRollupIds,
+      requeued: requeuedRollupIds,
+    });
+  }
+
+  for (const row of submittedLegacyRows) {
     const processedOnChain = await readProcessedSettlementId(client, row.settlementId);
     const receipt = row.txHash ? receiptCache.get(row.txHash.toLowerCase()) : undefined;
     const outcome = determineSettlementReconciliationOutcome({
@@ -182,40 +271,25 @@ export const reconcileMerchantSettlementRows = async (input: {
       minConfirmations: input.config.minConfirmations,
     });
 
-    if (outcome === "confirmed") {
-      confirmedCount += 1;
-      confirmedRowIds.push(row.id);
-      if (row.allocatorBatchId) {
-        touchedBatchIds.add(row.allocatorBatchId);
-      }
-      continue;
-    }
-
-    if (outcome === "requeue") {
-      requeuedCount += 1;
-      requeuedRowIds.push(row.id);
-      if (row.allocatorBatchId) {
-        touchedBatchIds.add(row.allocatorBatchId);
-        requeuedBatchStateCounts.set(
-          row.allocatorBatchId,
-          (requeuedBatchStateCounts.get(row.allocatorBatchId) ?? 0) + 1,
-        );
-      }
-      continue;
-    }
-
-    stillSubmittedCount += 1;
-    if (row.allocatorBatchId) {
-      touchedBatchIds.add(row.allocatorBatchId);
-    }
+    handleOutcome(row, outcome, {
+      confirmed: confirmedLegacyRowIds,
+      requeued: requeuedLegacyRowIds,
+    });
   }
 
   let updatedBatchCount = 0;
+  const confirmedRollupEarningCount = submittedRollups
+    .filter((rollup) => confirmedRollupIds.includes(rollup.id))
+    .reduce((sum, rollup) => sum + rollup.earningCount, 0);
+  const requeuedRollupEarningCount = submittedRollups
+    .filter((rollup) => requeuedRollupIds.includes(rollup.id))
+    .reduce((sum, rollup) => sum + rollup.earningCount, 0);
+
   await prisma.$transaction(async (tx) => {
-    if (confirmedRowIds.length > 0) {
-      const updated = await tx.merchantEarning.updateMany({
+    if (confirmedRollupIds.length > 0) {
+      const updatedRollups = await tx.merchantSettlementRollup.updateMany({
         where: {
-          id: { in: confirmedRowIds },
+          id: { in: confirmedRollupIds },
           status: "SUBMITTED",
         },
         data: {
@@ -224,15 +298,84 @@ export const reconcileMerchantSettlementRows = async (input: {
           failureMessage: null,
         },
       });
-      if (updated.count !== confirmedRowIds.length) {
-        throw new Error("Reconcile failed to update all confirmed earnings.");
+      if (updatedRollups.count !== confirmedRollupIds.length) {
+        throw new Error("Reconcile failed to update all confirmed settlement rollups.");
+      }
+
+      const updatedEarnings = await tx.merchantEarning.updateMany({
+        where: {
+          settlementRollupId: { in: confirmedRollupIds },
+          status: "SUBMITTED",
+        },
+        data: {
+          status: "CONFIRMED",
+          failureCode: null,
+          failureMessage: null,
+        },
+      });
+      if (updatedEarnings.count !== confirmedRollupEarningCount) {
+        throw new Error("Reconcile failed to update all confirmed member earnings.");
       }
     }
 
-    if (requeuedRowIds.length > 0) {
+    if (requeuedRollupIds.length > 0) {
+      const updatedRollups = await tx.merchantSettlementRollup.updateMany({
+        where: {
+          id: { in: requeuedRollupIds },
+          status: "SUBMITTED",
+        },
+        data: {
+          status: "FAILED",
+          allocatorBatchId: null,
+          txHash: null,
+          failureCode: "RECONCILE_REQUEUED",
+          failureMessage: "Reconciliation did not find a confirmed on-chain settlement for this rollup.",
+        },
+      });
+      if (updatedRollups.count !== requeuedRollupIds.length) {
+        throw new Error("Reconcile failed to requeue all expected settlement rollups.");
+      }
+
+      const updatedEarnings = await tx.merchantEarning.updateMany({
+        where: {
+          settlementRollupId: { in: requeuedRollupIds },
+          status: "SUBMITTED",
+        },
+        data: {
+          status: "PENDING",
+          settlementRollupId: null,
+          allocatorBatchId: null,
+          txHash: null,
+          failureCode: "RECONCILE_REQUEUED",
+          failureMessage: "Reconciliation did not find a confirmed on-chain settlement for this earning.",
+        },
+      });
+      if (updatedEarnings.count !== requeuedRollupEarningCount) {
+        throw new Error("Reconcile failed to requeue all expected member earnings.");
+      }
+    }
+
+    if (confirmedLegacyRowIds.length > 0) {
       const updated = await tx.merchantEarning.updateMany({
         where: {
-          id: { in: requeuedRowIds },
+          id: { in: confirmedLegacyRowIds },
+          status: "SUBMITTED",
+        },
+        data: {
+          status: "CONFIRMED",
+          failureCode: null,
+          failureMessage: null,
+        },
+      });
+      if (updated.count !== confirmedLegacyRowIds.length) {
+        throw new Error("Reconcile failed to update all confirmed legacy earnings.");
+      }
+    }
+
+    if (requeuedLegacyRowIds.length > 0) {
+      const updated = await tx.merchantEarning.updateMany({
+        where: {
+          id: { in: requeuedLegacyRowIds },
           status: "SUBMITTED",
         },
         data: {
@@ -243,22 +386,34 @@ export const reconcileMerchantSettlementRows = async (input: {
           failureMessage: "Reconciliation did not find a confirmed on-chain settlement for this earning.",
         },
       });
-      if (updated.count !== requeuedRowIds.length) {
-        throw new Error("Reconcile failed to requeue all expected earnings.");
+      if (updated.count !== requeuedLegacyRowIds.length) {
+        throw new Error("Reconcile failed to requeue all expected legacy earnings.");
       }
     }
 
     for (const allocatorBatchId of touchedBatchIds) {
-      const persistedRows = await tx.merchantEarning.findMany({
-        where: { allocatorBatchId },
-        select: { status: true },
-      });
-      const rows: DerivedBatchRowState[] = persistedRows.map((currentRow) => ({
-        status: currentRow.status,
-      }));
+      const [persistedLegacyRows, persistedRollups] = await Promise.all([
+        tx.merchantEarning.findMany({
+          where: {
+            allocatorBatchId,
+            settlementRollupId: null,
+          },
+          select: { status: true },
+        }),
+        tx.merchantSettlementRollup.findMany({
+          where: { allocatorBatchId },
+          select: { status: true },
+        }),
+      ]);
+
+      const rows: DerivedBatchRowState[] = [
+        ...persistedLegacyRows.map((currentRow) => ({ status: currentRow.status })),
+        ...persistedRollups.map((currentRow) => ({ status: currentRow.status })),
+      ];
+
       const requeuedCountForBatch = requeuedBatchStateCounts.get(allocatorBatchId) ?? 0;
       for (let index = 0; index < requeuedCountForBatch; index += 1) {
-        rows.push({ status: "PENDING" });
+        rows.push({ status: "FAILED" });
       }
 
       const nextBatchState = deriveBatchStatusUpdate(rows);
@@ -274,7 +429,7 @@ export const reconcileMerchantSettlementRows = async (input: {
 
   return {
     ok: true,
-    selectedCount: submittedRows.length,
+    selectedCount: submittedRollups.length + submittedLegacyRows.length,
     confirmedCount,
     requeuedCount,
     stillSubmittedCount,

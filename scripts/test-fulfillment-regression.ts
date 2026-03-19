@@ -1,13 +1,19 @@
 import { randomBytes } from "node:crypto";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import type { PrismaClient } from "@prisma/client";
-import { buildFulfillmentCaptureSettlementId, calculateSettlementAmounts } from "../lib/merchant-settlement";
+import {
+  buildFulfillmentCaptureSettlementId,
+  buildGateSettlementId,
+  calculateSettlementAmounts,
+} from "../lib/merchant-settlement";
+import { resolveMerchantSettlementRollupConfig } from "../lib/merchant-settlement-config";
 import { bootstrapPostgresEnv } from "../lib/postgres-env";
 
 bootstrapPostgresEnv();
 
 process.env.GHOST_CREDIT_LEDGER_ENABLED = "true";
 process.env.GHOST_GATE_NONCE_STORE_ENABLED = "true";
+process.env.GHOST_SETTLEMENT_ROLLUP_MIN_FEE_WEI = "1";
 
 const assert = (condition: boolean, message: string): void => {
   if (!condition) throw new Error(message);
@@ -66,11 +72,13 @@ const createGatewayFixture = async (
 };
 
 const run = async (): Promise<void> => {
-  const { prisma, createFulfillmentHold, captureFulfillmentHold, updateUserCredits } = await import("../lib/db");
+  const { prisma, createFulfillmentHold, captureFulfillmentHold, updateUserCredits, createMerchantSettlementRollups } = await import("../lib/db");
   const { GhostFulfillmentMerchant } = await import("../packages/sdk/src/fulfillment");
 
   const cleanupWallets = new Set<string>();
   const cleanupAgentIds = new Set<string>();
+  const cleanupMerchantOwners = new Set<string>();
+  const cleanupBatchIds = new Set<string>();
 
   try {
     {
@@ -535,6 +543,212 @@ const run = async (): Promise<void> => {
       assert(attempts === 0, `Expected no capture attempt row after rollback, got ${attempts}`);
     }
 
+    {
+      const walletAddress = privateKeyToAccount(generatePrivateKey()).address.toLowerCase();
+      cleanupWallets.add(walletAddress);
+      await updateUserCredits(walletAddress as `0x${string}`, 1n);
+      const agentId = `${Date.now()}16`;
+      const serviceSlug = `agent-${agentId}`;
+      cleanupAgentIds.add(agentId);
+
+      const { merchantOwnerAddress } = await createGatewayFixture(prisma, {
+        agentId,
+        serviceSlug,
+      });
+      cleanupMerchantOwners.add(merchantOwnerAddress);
+
+      const amounts = calculateSettlementAmounts({ grossCredits: 1n });
+      const gateRequestId = `cross-source-gate-${Date.now()}`;
+      await prisma.merchantEarning.createMany({
+        data: [
+          {
+            settlementId: buildGateSettlementId({ walletAddress: walletAddress as `0x${string}`, requestId: gateRequestId }),
+            walletAddress,
+            merchantOwnerAddress,
+            agentId,
+            serviceSlug,
+            sourceType: "GATE_DEBIT",
+            sourceId: `${walletAddress}:${gateRequestId}`,
+            grossCredits: 1,
+            grossWei: amounts.grossWei,
+            feeWei: amounts.feeWei,
+            netWei: amounts.netWei,
+          },
+          {
+            settlementId: buildFulfillmentCaptureSettlementId({
+              ticketId: `0x${randomBytes(32).toString("hex")}`,
+            }),
+            walletAddress,
+            merchantOwnerAddress,
+            agentId,
+            serviceSlug,
+            sourceType: "FULFILLMENT_CAPTURE",
+            sourceId: `0x${randomBytes(32).toString("hex")}`,
+            grossCredits: 1,
+            grossWei: amounts.grossWei,
+            feeWei: amounts.feeWei,
+            netWei: amounts.netWei,
+          },
+        ],
+      });
+
+      const rollupResult = await createMerchantSettlementRollups({
+        config: resolveMerchantSettlementRollupConfig(),
+        maxRollups: 50,
+      });
+
+      const rollup = await prisma.merchantSettlementRollup.findFirst({
+        where: { merchantOwnerAddress, status: "PENDING" },
+        select: { id: true, earningCount: true },
+      });
+      const attachedSourceTypes = await prisma.merchantEarning.findMany({
+        where: { settlementRollupId: rollup?.id ?? "" },
+        select: { sourceType: true },
+      });
+
+      assert(rollupResult.createdCount >= 1, `Expected at least one rollup creation pass, got ${rollupResult.createdCount}`);
+      assert(rollup != null, "Expected a pending rollup for the cross-source merchant.");
+      assert(rollup?.earningCount === 2, `Expected cross-source rollup earningCount 2, got ${String(rollup?.earningCount)}`);
+      assert(
+        JSON.stringify(attachedSourceTypes.map((row) => row.sourceType).sort()) ===
+          JSON.stringify(["FULFILLMENT_CAPTURE", "GATE_DEBIT"]),
+        `Expected cross-source rollup to include both source types, got ${attachedSourceTypes.map((row) => row.sourceType).join(",")}`,
+      );
+    }
+
+    {
+      const walletAddress = privateKeyToAccount(generatePrivateKey()).address.toLowerCase();
+      cleanupWallets.add(walletAddress);
+      await updateUserCredits(walletAddress as `0x${string}`, 1n);
+      const agentId = `${Date.now()}17`;
+      const serviceSlug = `agent-${agentId}`;
+      cleanupAgentIds.add(agentId);
+
+      const { merchantOwnerAddress } = await createGatewayFixture(prisma, {
+        agentId,
+        serviceSlug,
+      });
+      cleanupMerchantOwners.add(merchantOwnerAddress);
+
+      const amounts = calculateSettlementAmounts({ grossCredits: 1n });
+      const firstRequestId = `late-arrival-a-${Date.now()}`;
+      const secondRequestId = `late-arrival-b-${Date.now()}`;
+      await prisma.merchantEarning.createMany({
+        data: [
+          {
+            settlementId: buildGateSettlementId({ walletAddress: walletAddress as `0x${string}`, requestId: firstRequestId }),
+            walletAddress,
+            merchantOwnerAddress,
+            agentId,
+            serviceSlug,
+            sourceType: "GATE_DEBIT",
+            sourceId: `${walletAddress}:${firstRequestId}`,
+            grossCredits: 1,
+            grossWei: amounts.grossWei,
+            feeWei: amounts.feeWei,
+            netWei: amounts.netWei,
+          },
+          {
+            settlementId: buildGateSettlementId({ walletAddress: walletAddress as `0x${string}`, requestId: secondRequestId }),
+            walletAddress,
+            merchantOwnerAddress,
+            agentId,
+            serviceSlug,
+            sourceType: "GATE_DEBIT",
+            sourceId: `${walletAddress}:${secondRequestId}`,
+            grossCredits: 1,
+            grossWei: amounts.grossWei,
+            feeWei: amounts.feeWei,
+            netWei: amounts.netWei,
+          },
+        ],
+      });
+
+      await createMerchantSettlementRollups({
+        config: resolveMerchantSettlementRollupConfig(),
+        maxRollups: 50,
+      });
+
+      const submittedRollup = await prisma.merchantSettlementRollup.findFirst({
+        where: { merchantOwnerAddress, status: "PENDING" },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, settlementId: true },
+      });
+      assert(submittedRollup != null, "Expected an initial pending rollup for late-arrival regression.");
+      if (!submittedRollup) {
+        throw new Error("Expected an initial pending rollup for late-arrival regression.");
+      }
+
+      const batch = await prisma.merchantSettlementBatch.create({
+        data: { status: "SUBMITTED", submittedAt: new Date(), txHash: `0x${"cd".repeat(32)}` },
+        select: { id: true },
+      });
+      cleanupBatchIds.add(batch.id);
+
+      await prisma.merchantSettlementRollup.update({
+        where: { id: submittedRollup.id },
+        data: {
+          status: "SUBMITTED",
+          allocatorBatchId: batch.id,
+          txHash: `0x${"cd".repeat(32)}`,
+        },
+      });
+      await prisma.merchantEarning.updateMany({
+        where: { settlementRollupId: submittedRollup.id },
+        data: {
+          status: "SUBMITTED",
+          allocatorBatchId: batch.id,
+          txHash: `0x${"cd".repeat(32)}`,
+        },
+      });
+
+      const lateTicketId = `0x${randomBytes(32).toString("hex")}` as `0x${string}`;
+      await prisma.merchantEarning.create({
+        data: {
+          settlementId: buildFulfillmentCaptureSettlementId({ ticketId: lateTicketId }),
+          walletAddress,
+          merchantOwnerAddress,
+          agentId,
+          serviceSlug,
+          sourceType: "FULFILLMENT_CAPTURE",
+          sourceId: lateTicketId,
+          grossCredits: 1,
+          grossWei: amounts.grossWei,
+          feeWei: amounts.feeWei,
+          netWei: amounts.netWei,
+        },
+      });
+
+      await createMerchantSettlementRollups({
+        config: resolveMerchantSettlementRollupConfig(),
+        maxRollups: 50,
+      });
+
+      const allRollups = await prisma.merchantSettlementRollup.findMany({
+        where: { merchantOwnerAddress },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, status: true, settlementId: true },
+      });
+      const lateEarning = await prisma.merchantEarning.findFirst({
+        where: { sourceId: lateTicketId },
+        select: { settlementRollupId: true },
+      });
+      const freshPendingRollup = allRollups.find((row) => row.status === "PENDING");
+
+      assert(
+        freshPendingRollup != null && freshPendingRollup.id !== submittedRollup.id,
+        "Expected late-arriving earning to be grouped into a new pending rollup.",
+      );
+      assert(
+        lateEarning?.settlementRollupId === freshPendingRollup?.id,
+        "Expected the late-arriving earning to attach to the new pending rollup only.",
+      );
+      assert(
+        allRollups.some((row) => row.id === submittedRollup.id && row.status === "SUBMITTED"),
+        "Expected the original submitted rollup to remain unchanged.",
+      );
+    }
+
     const merchant = new GhostFulfillmentMerchant({
       baseUrl: "https://ghostprotocol.cc",
     });
@@ -557,8 +771,31 @@ const run = async (): Promise<void> => {
       await prisma.creditBalance.deleteMany({ where: { walletAddress } });
     }
 
-    for (const agentId of cleanupAgentIds) {
-      await prisma.agent.deleteMany({ where: { agentId } });
+    // Deep fixture cleanup is opt-in because local Prisma teardown on Agent rows can hang in this environment.
+    if (process.env.GHOST_FULFILLMENT_REGRESSION_DEEP_CLEANUP === "true") {
+      const agentIds = [...cleanupAgentIds];
+      if (agentIds.length > 0) {
+        const agentAddresses = await prisma.agent.findMany({
+          where: { agentId: { in: agentIds } },
+          select: { address: true },
+        });
+        const addresses = agentAddresses.map((row) => row.address);
+
+        await prisma.agentGatewayConfig.deleteMany({ where: { agentId: { in: agentIds } } });
+        await prisma.leaderboardSnapshotRow.deleteMany({ where: { agentId: { in: agentIds } } });
+        if (addresses.length > 0) {
+          await prisma.agentScoreInput.deleteMany({ where: { agentAddress: { in: addresses } } });
+          await prisma.agent.deleteMany({ where: { address: { in: addresses } } });
+        }
+      }
+    }
+
+    for (const merchantOwnerAddress of cleanupMerchantOwners) {
+      await prisma.merchantSettlementRollup.deleteMany({ where: { merchantOwnerAddress } });
+    }
+
+    for (const batchId of cleanupBatchIds) {
+      await prisma.merchantSettlementBatch.deleteMany({ where: { id: batchId } });
     }
 
     await prisma.$disconnect();

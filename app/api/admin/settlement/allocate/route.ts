@@ -6,6 +6,7 @@ import {
   resolveMerchantSettlementAllocatorConfig,
   submitMerchantSettlementBatch,
 } from "@/lib/merchant-settlement-allocator";
+import { resolveMerchantSettlementRollupConfig } from "@/lib/merchant-settlement-config";
 import { settlementJson, isSettlementOperatorAuthorized } from "@/lib/merchant-settlement-route";
 
 export const runtime = "nodejs";
@@ -50,6 +51,7 @@ export async function POST(request: NextRequest) {
     });
 
   const config = resolveMerchantSettlementAllocatorConfig();
+  const rollupConfig = resolveMerchantSettlementRollupConfig();
   if (maxBatchSizeOverride > 0) {
     config.maxBatchSize = maxBatchSizeOverride;
   }
@@ -63,6 +65,10 @@ export async function POST(request: NextRequest) {
         authMode: "bearer-secret",
         selectionLimit: preview.selectionLimit,
         selectedCount: preview.selectedCount,
+        rawEarningCount: preview.rawEarningCount,
+        pendingRollupCount: preview.pendingRollupCount,
+        projectedNewRollupCount: preview.projectedNewRollupCount,
+        legacySubmittedCount: preview.legacySubmittedCount,
         config: {
           maxBatchSize: config.maxBatchSize,
           gasBudgetPerRun: config.gasBudgetPerRun.toString(),
@@ -70,6 +76,11 @@ export async function POST(request: NextRequest) {
           cooldownMs: config.cooldownMs,
           maxGasPriceWei: config.maxGasPriceWei.toString(),
           minConfirmations: config.minConfirmations,
+          aggregation: {
+            minFeeWei: rollupConfig.minFeeWei.toString(),
+            maxAgeMs: rollupConfig.maxAgeMs,
+            maxEarningsPerRollup: rollupConfig.maxEarningsPerRollup,
+          },
         },
       },
       200,
@@ -118,6 +129,7 @@ export async function POST(request: NextRequest) {
         gasPriceWei: submitted.status === "submitted" ? submitted.gasPriceWei.toString() : null,
         reason: "reason" in submitted ? submitted.reason : null,
         selectedCount: claimed.earnings.length,
+        rawEarningCount: claimed.earnings.reduce((sum, row) => sum + (row.earningCount ?? 1), 0),
         submittedCount: submitted.status === "submitted" ? claimed.earnings.length : 0,
         authMode: "bearer-secret",
       },

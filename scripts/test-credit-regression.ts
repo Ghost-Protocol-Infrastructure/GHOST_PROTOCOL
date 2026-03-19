@@ -2,6 +2,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { NextRequest } from "next/server";
 import type { PrismaClient } from "@prisma/client";
 import { buildGateSettlementId, calculateSettlementAmounts } from "../lib/merchant-settlement";
+import { resolveMerchantSettlementRollupConfig } from "../lib/merchant-settlement-config";
 import { bootstrapPostgresEnv } from "../lib/postgres-env";
 
 bootstrapPostgresEnv();
@@ -12,6 +13,7 @@ process.env.GHOST_GATE_ENFORCE_NONCE_UNIQUENESS = "true";
 process.env.GHOST_GATE_ALLOW_CLIENT_COST_OVERRIDE = "false";
 process.env.GHOST_REQUEST_CREDIT_COST = "1";
 process.env.GHOST_GATE_ENFORCE_LIVE_GATEWAY_READINESS = "true";
+process.env.GHOST_SETTLEMENT_ROLLUP_MIN_FEE_WEI = "1";
 const DOMAIN = {
   name: "GhostGate",
   version: "1",
@@ -90,10 +92,13 @@ const callGate = async (
 
 const run = async (): Promise<void> => {
   const { GET: gateGet } = await import("../app/api/gate/[...slug]/route");
-  const { prisma, updateUserCredits, getUserCredits, consumeUserCreditsForGate } = await import("../lib/db");
+  const { prisma, updateUserCredits, getUserCredits, consumeUserCreditsForGate, createMerchantSettlementRollups } = await import("../lib/db");
+  const { reconcileMerchantSettlementRows } = await import("../lib/merchant-settlement-reconcile");
 
   const cleanupWallets = new Set<string>();
   const cleanupAgentIds = new Set<string>();
+  const cleanupMerchantOwners = new Set<string>();
+  const cleanupBatchIds = new Set<string>();
 
   try {
     {
@@ -357,6 +362,203 @@ const run = async (): Promise<void> => {
       assert(gateDebitCount === 0, `Expected no gate ledger debit on earning conflict, got ${gateDebitCount}`);
     }
 
+    {
+      const account = privateKeyToAccount(generatePrivateKey());
+      const signer = account.address;
+      const signerKey = signer.toLowerCase();
+      cleanupWallets.add(signerKey);
+
+      await updateUserCredits(signer, 5n);
+
+      const agentId = `${Date.now()}05`;
+      const service = `agent-${agentId}`;
+      const ownerAddress = privateKeyToAccount(generatePrivateKey()).address.toLowerCase();
+      cleanupMerchantOwners.add(ownerAddress);
+      cleanupAgentIds.add(agentId);
+      await createLiveGatewayConfig(prisma, { agentId, serviceSlug: service, ownerAddress });
+
+      for (let index = 0; index < 3; index += 1) {
+        const nonce = `rollup-nonce-${index}-${Date.now()}`;
+        const timestamp = BigInt(Math.floor(Date.now() / 1000));
+        const signature = await account.signTypedData({
+          domain: DOMAIN,
+          types: TYPES,
+          primaryType: "Access",
+          message: { service, timestamp, nonce },
+        });
+
+        const payloadJson = JSON.stringify({
+          service,
+          timestamp: timestamp.toString(),
+          nonce,
+        });
+
+        const response = await callGate(gateGet, {
+          service,
+          signature,
+          payloadJson,
+          requestId: `rollup-request-${index}-${Date.now()}`,
+          requestScopedCost: "1",
+        });
+        assert(response.status === 200, `Expected rollup setup gate call ${index} to return 200, got ${response.status}`);
+      }
+
+      const rollupResult = await createMerchantSettlementRollups({
+        config: resolveMerchantSettlementRollupConfig(),
+        maxRollups: 5,
+      });
+
+      const rollups = await prisma.merchantSettlementRollup.findMany({
+        where: { merchantOwnerAddress: ownerAddress },
+        select: {
+          id: true,
+          status: true,
+          earningCount: true,
+          grossWei: true,
+          feeWei: true,
+          netWei: true,
+        },
+      });
+      const attachedEarnings = await prisma.merchantEarning.findMany({
+        where: { walletAddress: signerKey, serviceSlug: service, settlementRollupId: { not: null } },
+        select: { settlementRollupId: true },
+      });
+
+      assert(rollupResult.createdCount >= 1, `Expected at least one created rollup, got ${rollupResult.createdCount}`);
+      assert(rollups.length === 1, `Expected one persisted rollup, got ${rollups.length}`);
+      assert(rollups[0]?.status === "PENDING", `Expected rollup to remain PENDING, got ${rollups[0]?.status ?? "missing"}`);
+      assert(rollups[0]?.earningCount === 3, `Expected rollup earningCount 3, got ${String(rollups[0]?.earningCount)}`);
+      assert(rollups[0]?.grossWei === 30_000_000_000_000n, `Expected rollup grossWei 30000000000000, got ${String(rollups[0]?.grossWei)}`);
+      assert(rollups[0]?.feeWei === 750_000_000_000n, `Expected rollup feeWei 750000000000, got ${String(rollups[0]?.feeWei)}`);
+      assert(rollups[0]?.netWei === 29_250_000_000_000n, `Expected rollup netWei 29250000000000, got ${String(rollups[0]?.netWei)}`);
+      assert(attachedEarnings.length === 3, `Expected three earnings attached to the rollup, got ${attachedEarnings.length}`);
+      assert(
+        new Set(attachedEarnings.map((row) => row.settlementRollupId)).size === 1,
+        "Expected all attached earnings to point at the same settlement rollup.",
+      );
+    }
+
+    {
+      const walletAddress = privateKeyToAccount(generatePrivateKey()).address.toLowerCase();
+      cleanupWallets.add(walletAddress);
+      const merchantOwnerAddress = privateKeyToAccount(generatePrivateKey()).address.toLowerCase();
+      cleanupMerchantOwners.add(merchantOwnerAddress);
+      const agentId = `${Date.now()}06`;
+      const serviceSlug = `agent-${agentId}`;
+      cleanupAgentIds.add(agentId);
+      await createLiveGatewayConfig(prisma, { agentId, serviceSlug, ownerAddress: merchantOwnerAddress });
+      await updateUserCredits(walletAddress as `0x${string}`, 1n);
+
+      const amounts = calculateSettlementAmounts({ grossCredits: 1n });
+      const earningIds: string[] = [];
+      for (let index = 0; index < 2; index += 1) {
+        const requestId = `requeue-request-${index}-${Date.now()}`;
+        const settlementId = buildGateSettlementId({ walletAddress: walletAddress as `0x${string}`, requestId });
+        const earning = await prisma.merchantEarning.create({
+          data: {
+            settlementId,
+            walletAddress,
+            merchantOwnerAddress,
+            agentId,
+            serviceSlug,
+            sourceType: "GATE_DEBIT",
+            sourceId: `${walletAddress}:${requestId}`,
+            grossCredits: 1,
+            grossWei: amounts.grossWei,
+            feeWei: amounts.feeWei,
+            netWei: amounts.netWei,
+          },
+          select: { id: true },
+        });
+        earningIds.push(earning.id);
+      }
+
+      await createMerchantSettlementRollups({
+        config: resolveMerchantSettlementRollupConfig(),
+        maxRollups: 5,
+      });
+
+      const initialRollup = await prisma.merchantSettlementRollup.findFirst({
+        where: { merchantOwnerAddress, status: "PENDING" },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, settlementId: true },
+      });
+      assert(initialRollup != null, "Expected an initial pending rollup for requeue regression.");
+      if (!initialRollup) {
+        throw new Error("Expected an initial pending rollup for requeue regression.");
+      }
+
+      const batch = await prisma.merchantSettlementBatch.create({
+        data: { status: "SUBMITTED", submittedAt: new Date(), txHash: `0x${"ab".repeat(32)}` },
+        select: { id: true },
+      });
+      cleanupBatchIds.add(batch.id);
+
+      await prisma.merchantSettlementRollup.update({
+        where: { id: initialRollup.id },
+        data: {
+          status: "SUBMITTED",
+          allocatorBatchId: batch.id,
+          txHash: `0x${"ab".repeat(32)}`,
+        },
+      });
+      await prisma.merchantEarning.updateMany({
+        where: { id: { in: earningIds } },
+        data: {
+          status: "SUBMITTED",
+          allocatorBatchId: batch.id,
+          settlementRollupId: initialRollup.id,
+          txHash: `0x${"ab".repeat(32)}`,
+        },
+      });
+
+      const fakePublicClient = {
+        readContract: async () => false,
+        getBlockNumber: async () => 10n,
+        getTransactionReceipt: async () => ({
+          status: "reverted",
+          blockNumber: 9n,
+        }),
+      };
+
+      const reconcileResult = await reconcileMerchantSettlementRows({
+        config: { minConfirmations: 2 },
+        batchId: batch.id,
+        publicClient: fakePublicClient as never,
+      });
+
+      const requeuedEarnings = await prisma.merchantEarning.findMany({
+        where: { id: { in: earningIds } },
+        select: { status: true, settlementRollupId: true, allocatorBatchId: true },
+      });
+      const failedRollup = await prisma.merchantSettlementRollup.findUnique({
+        where: { id: initialRollup.id },
+        select: { status: true, allocatorBatchId: true },
+      });
+
+      await createMerchantSettlementRollups({
+        config: resolveMerchantSettlementRollupConfig(),
+        maxRollups: 5,
+      });
+
+      const pendingRollups = await prisma.merchantSettlementRollup.findMany({
+        where: { merchantOwnerAddress, status: "PENDING" },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, settlementId: true },
+      });
+
+      assert(reconcileResult.requeuedCount === 1, `Expected one requeued rollup, got ${reconcileResult.requeuedCount}`);
+      assert(
+        requeuedEarnings.every((row) => row.status === "PENDING" && row.settlementRollupId == null && row.allocatorBatchId == null),
+        "Expected all member earnings to return to PENDING with no active rollup or batch after requeue.",
+      );
+      assert(failedRollup?.status === "FAILED", `Expected original rollup to be FAILED, got ${failedRollup?.status ?? "missing"}`);
+      assert(
+        pendingRollups.some((row) => row.id !== initialRollup.id && row.settlementId !== initialRollup.settlementId),
+        "Expected a fresh pending rollup with a new settlement id after requeue.",
+      );
+    }
+
     console.log("Credit regression tests passed.");
   } finally {
     for (const walletAddress of cleanupWallets) {
@@ -371,8 +573,19 @@ const run = async (): Promise<void> => {
       await prisma.creditBalance.deleteMany({ where: { walletAddress } });
     }
 
-    for (const agentId of cleanupAgentIds) {
-      await prisma.agent.deleteMany({ where: { agentId } });
+    // Deep fixture cleanup is opt-in because local Prisma teardown on Agent rows can hang in this environment.
+    if (process.env.GHOST_CREDIT_REGRESSION_DEEP_CLEANUP === "true") {
+      for (const agentId of cleanupAgentIds) {
+        await prisma.agent.deleteMany({ where: { agentId } });
+      }
+    }
+
+    for (const merchantOwnerAddress of cleanupMerchantOwners) {
+      await prisma.merchantSettlementRollup.deleteMany({ where: { merchantOwnerAddress } });
+    }
+
+    for (const batchId of cleanupBatchIds) {
+      await prisma.merchantSettlementBatch.deleteMany({ where: { id: batchId } });
     }
 
     await prisma.$disconnect();

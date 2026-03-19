@@ -1,10 +1,17 @@
+import { randomUUID } from "node:crypto";
 import { PrismaClient, type GateAccessOutcome, Prisma } from "@prisma/client";
 import { getAddress, type Address } from "viem";
 import {
   buildFulfillmentCaptureSettlementId,
   buildGateSettlementId,
+  buildSettlementRollupId,
   calculateSettlementAmounts,
 } from "./merchant-settlement";
+import type { MerchantSettlementRollupConfig } from "./merchant-settlement-config";
+import {
+  buildMerchantSettlementRollupCandidates,
+  type MerchantSettlementRollupSourceRow,
+} from "./merchant-settlement-rollup";
 import { bootstrapPostgresEnv, getPrismaClientDatasourceOptions } from "./postgres-env";
 
 const postgresEnv = bootstrapPostgresEnv();
@@ -184,6 +191,15 @@ export type MerchantSettlementSummary = {
   submitted: MerchantSettlementStatusSummary;
   confirmed: MerchantSettlementStatusSummary;
   failed: MerchantSettlementStatusSummary;
+};
+
+export type MerchantSettlementRollupSourceRecord = MerchantSettlementRollupSourceRow;
+
+export type MerchantSettlementRollupCreationResult = {
+  scannedRowCount: number;
+  candidateCount: number;
+  createdCount: number;
+  createdRollupIds: string[];
 };
 
 class AccessNonceReplayError extends Error {
@@ -449,6 +465,93 @@ export const getMerchantSettlementSummary = async (input: {
   summary.failed.oldestCreatedAt = failedOldest?.createdAt ?? null;
 
   return summary;
+};
+
+const loadPendingMerchantEarningsForRollup = async (
+  tx: Prisma.TransactionClient,
+  input: {
+    maxRollups: number;
+    config: MerchantSettlementRollupConfig;
+  },
+): Promise<MerchantSettlementRollupSourceRecord[]> => {
+  const maxRollups = Math.max(1, input.maxRollups);
+  const rowLimit = Math.max(maxRollups * Math.max(1, input.config.maxEarningsPerRollup), input.config.maxEarningsPerRollup);
+
+  return tx.$queryRaw<MerchantSettlementRollupSourceRecord[]>(Prisma.sql`
+    SELECT "id", "settlementId", "merchantOwnerAddress", "grossWei", "feeWei", "netWei", "createdAt"
+    FROM "MerchantEarning"
+    WHERE "status" = 'PENDING'
+      AND "settlementRollupId" IS NULL
+    ORDER BY "createdAt" ASC, "id" ASC
+    LIMIT ${rowLimit}
+    FOR UPDATE SKIP LOCKED
+  `);
+};
+
+export const createMerchantSettlementRollups = async (input: {
+  config: MerchantSettlementRollupConfig;
+  maxRollups: number;
+  tx?: Prisma.TransactionClient;
+}): Promise<MerchantSettlementRollupCreationResult> => {
+  const run = async (tx: Prisma.TransactionClient): Promise<MerchantSettlementRollupCreationResult> => {
+    const rows = await loadPendingMerchantEarningsForRollup(tx, input);
+    const candidates = buildMerchantSettlementRollupCandidates(rows, input.config, new Date());
+    const selectedCandidates = candidates.slice(0, Math.max(0, input.maxRollups));
+
+    const createdRollupIds: string[] = [];
+    for (const candidate of selectedCandidates) {
+      const rollupId = randomUUID();
+      const settlementId = buildSettlementRollupId({ rollupId });
+
+      await tx.merchantSettlementRollup.create({
+        data: {
+          id: rollupId,
+          settlementId,
+          merchantOwnerAddress: candidate.merchantOwnerAddress,
+          status: "PENDING",
+          grossWei: candidate.grossWei,
+          feeWei: candidate.feeWei,
+          netWei: candidate.netWei,
+          earningCount: candidate.earningCount,
+          oldestEarningCreatedAt: candidate.oldestCreatedAt,
+          newestEarningCreatedAt: candidate.newestCreatedAt,
+          releaseReason: candidate.releaseReason,
+        },
+      });
+
+      const updated = await tx.merchantEarning.updateMany({
+        where: {
+          id: { in: candidate.earningIds },
+          status: "PENDING",
+          settlementRollupId: null,
+        },
+        data: {
+          settlementRollupId: rollupId,
+          failureCode: null,
+          failureMessage: null,
+        },
+      });
+
+      if (updated.count !== candidate.earningIds.length) {
+        throw new Error("Rollup creation failed to attach all selected merchant earnings.");
+      }
+
+      createdRollupIds.push(rollupId);
+    }
+
+    return {
+      scannedRowCount: rows.length,
+      candidateCount: candidates.length,
+      createdCount: createdRollupIds.length,
+      createdRollupIds,
+    };
+  };
+
+  if (input.tx) {
+    return run(input.tx);
+  }
+
+  return prisma.$transaction((tx) => run(tx), getInteractiveTransactionOptions());
 };
 
 const resolveGateAccessEventTableAvailability = async (): Promise<boolean> => {
