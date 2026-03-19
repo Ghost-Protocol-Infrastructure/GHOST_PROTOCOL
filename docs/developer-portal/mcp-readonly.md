@@ -143,7 +143,7 @@ Input:
 
 Data source: `GET /api/pricing?service=<service_slug>`
 
-Returns chain id, credit unit pricing, request credit cost, and x402 transport compatibility metadata.
+Returns chain id, credit unit pricing, request credit cost, and Ghost's canonical `x402` metadata block.
 
 ### `get_wire_quote`
 

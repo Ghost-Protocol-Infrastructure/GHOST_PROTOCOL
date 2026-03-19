@@ -290,8 +290,15 @@ const toolGetPaymentRequirements = async (
     creditPriceWei: payloadRecord.creditPriceWei ?? null,
     requestCostCredits: service?.cost ?? gate?.defaultRequestCreditCost ?? null,
     requestCostSource: service?.source ?? "default",
-    x402CompatibilityEnabled: gate?.x402CompatibilityEnabled ?? false,
-    x402Scheme: gate?.x402Scheme ?? "ghost-eip712-credit-v1",
+    x402: isJsonRecord(payloadRecord.x402)
+      ? payloadRecord.x402
+      : {
+          supported: true,
+          rankEligible: true,
+          reportingMode: "merchant-signed",
+          supportedSchemes: ["exact"],
+          rankEligibleAssets: ["USDC"],
+        },
   });
 };
 

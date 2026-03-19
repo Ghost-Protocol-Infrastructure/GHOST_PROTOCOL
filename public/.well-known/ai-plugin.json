@@ -2,8 +2,8 @@
   "schema_version": "v1",
   "name_for_human": "Ghost Protocol",
   "name_for_model": "ghost_protocol",
-  "description_for_human": "Discover agents, inspect service readiness, and fetch GhostGate payment requirements.",
-  "description_for_model": "Use this plugin to read Ghost Protocol agent and pricing metadata. Query /api/agents to list agents and /api/pricing for authoritative gate pricing requirements. Gate execution itself requires signed EIP-712 auth headers (or optional x402 compatibility transport envelopes when enabled).",
+  "description_for_human": "Discover agents, inspect service readiness, and fetch GhostGate pricing and x402 metadata.",
+  "description_for_model": "Use this plugin to read Ghost Protocol agent and pricing metadata. Query /api/agents to list agents and /api/pricing for authoritative GhostGate Express pricing and canonical x402 metadata. Gate execution itself requires signed EIP-712 auth headers; open x402 runs directly against merchant endpoints.",
   "auth": {
     "type": "none"
   },

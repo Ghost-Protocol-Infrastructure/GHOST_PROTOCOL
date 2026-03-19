@@ -1,6 +1,11 @@
 # GhostGate Python SDK
 
-Python SDK for Ghost Protocol gate access, telemetry, and direct GhostWire helpers.
+Python SDK for Ghost Protocol:
+
+- `Express` access via `connect()`
+- standards-native `x402` requests via `request_x402()`
+- merchant x402 settlement reporting via `report_x402_settlement()`
+- `GhostWire` direct escrow helpers
 
 ## Install
 
@@ -8,7 +13,7 @@ Python SDK for Ghost Protocol gate access, telemetry, and direct GhostWire helpe
 pip install ghostgate-sdk
 ```
 
-## Quickstart
+## Express example
 
 ```python
 import os
@@ -21,50 +26,61 @@ sdk = GhostGate(
     chain_id=8453,
     service_slug="agent-18755",
     credit_cost=1,
-    # Optional x402 compatibility mode:
-    # auth_mode="x402",
-    # x402_scheme="ghost-eip712-credit-v1",
 )
 
 result = sdk.connect()
 print(result)
+```
 
-quote = sdk.create_wire_quote(
-    client="0xclient...",
-    provider="0xprovider...",
-    evaluator="0xevaluator...",
-    principal_amount="1000000",
+## x402 example
+
+`request_x402()` is the low-level Python helper. Without `payment_header`, it returns the initial merchant response, which may be a `402` challenge. Pass a valid `payment_header` on the retry if you want to complete the flow yourself.
+
+```python
+import os
+from ghostgate import GhostGate
+
+sdk = GhostGate(
+    private_key=os.environ["GHOST_SIGNER_PRIVATE_KEY"],
     chain_id=8453,
 )
 
-prepared = sdk.prepare_wire_job(
-    quote_id=quote["quoteId"],
-    client="0xclient...",
-    provider="0xprovider...",
-    evaluator="0xevaluator...",
-    spec_hash="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    metadata_uri="https://merchant.example.com/ghostwire/deliverable?jobId=wj_123",
+result = sdk.request_x402(
+    url="https://merchant.example.com/ask",
+    method="POST",
+    body={"prompt": "hello"},
 )
 
-# Client wallet sends prepared["direct"]["createTxRequest"] here, then reports the hash:
-after_create = sdk.record_wire_artifacts(
-    job_id=prepared["jobId"],
-    client_address="0xclient...",
-    create_tx_hash="0xcreate...",
+print(result)
+```
+
+## Merchant x402 settlement reporting
+
+```python
+report = sdk.report_x402_settlement(
+    agent_id="18755",
+    service_slug="agent-18755",
+    request_id="req_123",
+    payment_reference="0xabc123",
+    payer_identity="0xpayer",
+    amount_atomic="1000000",
+    scheme="exact",
+    network="base",
+    chain_id=8453,
+    asset="USDC",
+    decimals=6,
+    success=True,
+    status_code=200,
 )
 
-# Client wallet sends after_create["direct"]["setBudgetTxRequest"] and
-# after_create["direct"]["fundTxRequest"] here, then reports the funding hash.
-sdk.record_wire_artifacts(
-    job_id=prepared["jobId"],
-    client_address="0xclient...",
-    fund_tx_hash="0xfund...",
-)
+print(report)
 ```
 
 ## Canonical methods
 
 - `connect(...)`
+- `request_x402(...)`
+- `report_x402_settlement(...)`
 - `pulse(...)`
 - `outcome(...)`
 - `start_heartbeat(...)`
@@ -80,6 +96,9 @@ Backward-compatible aliases are also available:
 - `send_pulse(...)`
 - `report_consumer_outcome(...)`
 
-## Security note
+## Notes
 
-Use signer private keys only in trusted backend/server/CLI environments. Never expose private keys in frontend code.
+- `connect()` is Express only.
+- `request_x402()` is the real x402 helper, but it is intentionally low-level: it returns the initial challenge unless you supply a retry `payment_header`.
+- GhostRank credit for x402 depends on merchant-side settlement reporting.
+- Use signer private keys only in trusted backend/server/CLI environments.

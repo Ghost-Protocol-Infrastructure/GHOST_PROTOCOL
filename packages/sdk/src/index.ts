@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { decodeXPaymentResponse, type PaymentRequirementsSelector, wrapFetchWithPayment } from "x402-fetch";
+import { createSigner } from "x402/types";
 import { privateKeyToAccount } from "viem/accounts";
 import type { GhostFulfillmentMerchantConfig } from "./fulfillment.js";
 import { GhostFulfillmentMerchant } from "./fulfillment.js";
@@ -13,8 +15,6 @@ export type GhostAgentConfig = {
   chainId?: number;
   serviceSlug?: string;
   creditCost?: number;
-  authMode?: "ghost-eip712" | "x402";
-  x402Scheme?: string;
 };
 
 export type ConnectResult = {
@@ -23,10 +23,6 @@ export type ConnectResult = {
   endpoint: string;
   status: number;
   payload: unknown;
-  x402?: {
-    paymentRequired: unknown | null;
-    paymentResponse: unknown | null;
-  };
 };
 
 export type TelemetryResult = {
@@ -69,7 +65,62 @@ export type GhostMerchantConfig = GhostFulfillmentMerchantConfig & {
   ownerPrivateKey?: `0x${string}`;
 };
 
-type MerchantGatewayAuthAction = "config" | "verify" | "delegated_signer_register";
+export type X402Network = "base" | "base-sepolia";
+
+export type X402RequestInput = {
+  url: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: unknown;
+  maxAmountAtomic?: bigint | number | string | null;
+  network?: X402Network;
+  paymentRequirementsSelector?: PaymentRequirementsSelector;
+};
+
+export type X402RequestResult = {
+  ok: boolean;
+  endpoint: string;
+  status: number;
+  payload: unknown;
+  paymentResponseHeader: string | null;
+  paymentResponse: ReturnType<typeof decodeXPaymentResponse> | null;
+};
+
+export type X402SettlementReportInput = {
+  agentId: string;
+  serviceSlug: string;
+  requestId: string;
+  paymentReference: string;
+  payerIdentity: string;
+  payerAddress?: `0x${string}` | string | null;
+  scheme?: string;
+  network?: string | null;
+  chainId?: number | null;
+  asset?: string;
+  amountAtomic: bigint | number | string;
+  decimals?: number;
+  success: boolean;
+  statusCode?: number | null;
+  latencyMs?: number | null;
+  occurredAt?: string | Date;
+  metadata?: Record<string, unknown>;
+};
+
+export type X402SettlementReportResult = {
+  ok: boolean;
+  endpoint: string;
+  status: number;
+  payload: unknown;
+  countedForRank: boolean;
+  relatedParty: boolean;
+  duplicate: boolean;
+};
+
+type MerchantGatewayAuthAction =
+  | "config"
+  | "verify"
+  | "delegated_signer_register"
+  | "x402_settlement_report";
 
 type MerchantGatewayAuthPayload = {
   scope: "agent_gateway";
@@ -322,8 +373,10 @@ const DEFAULT_CHAIN_ID = 8453;
 const DEFAULT_SERVICE_SLUG = "connect";
 const DEFAULT_CREDIT_COST = 1;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 60_000;
-const DEFAULT_AUTH_MODE: "ghost-eip712" | "x402" = "ghost-eip712";
-const DEFAULT_X402_SCHEME = "ghost-eip712-credit-v1";
+const DEFAULT_X402_SCHEME = "exact";
+const DEFAULT_X402_ASSET = "USDC";
+const DEFAULT_X402_DECIMALS = 6;
+const DEFAULT_X402_MAX_AMOUNT_ATOMIC = 100_000n;
 const DEFAULT_ACTIVATE_CANARY_PATH = "/health";
 const DEFAULT_ACTIVATE_CANARY_METHOD = "GET";
 const DEFAULT_ACTIVATE_SIGNER_LABEL = "sdk-auto";
@@ -361,18 +414,6 @@ const parsePayload = async (response: Response): Promise<unknown> => {
 const parseTextPayload = async (response: Response): Promise<string | null> => {
   try {
     return await response.text();
-  } catch {
-    return null;
-  }
-};
-
-const encodeBase64Json = (value: unknown): string => Buffer.from(JSON.stringify(value), "utf8").toString("base64");
-
-const decodeBase64Json = (value: string | null): unknown | null => {
-  if (!value) return null;
-  try {
-    const decoded = Buffer.from(value, "base64").toString("utf8");
-    return JSON.parse(decoded) as unknown;
   } catch {
     return null;
   }
@@ -424,6 +465,11 @@ const buildCanaryHeaders = (): Record<string, string> => ({
   "content-type": "application/json; charset=utf-8",
 });
 
+const CHAIN_ID_TO_X402_NETWORK: Partial<Record<number, X402Network>> = {
+  8453: "base",
+  84532: "base-sepolia",
+};
+
 const assertPrivateKey = (value: `0x${string}` | null | undefined, name: string): `0x${string}` => {
   if (!value || !/^0x[a-fA-F0-9]{64}$/.test(value)) {
     throw new Error(`${name} must be a 0x-prefixed 32-byte hex private key.`);
@@ -432,6 +478,80 @@ const assertPrivateKey = (value: `0x${string}` | null | undefined, name: string)
 };
 
 const normalizeAddressLower = (value: string): string => value.trim().toLowerCase();
+
+const normalizePositiveBigInt = (
+  value: bigint | number | string | null | undefined,
+  fallback: bigint,
+  fieldName: string,
+): bigint => {
+  if (value == null) return fallback;
+  if (typeof value === "bigint") {
+    if (value < 0n) throw new Error(`${fieldName} must be non-negative.`);
+    return value;
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value < 0 || !Number.isInteger(value)) {
+      throw new Error(`${fieldName} must be a non-negative integer.`);
+    }
+    return BigInt(value);
+  }
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error(`${fieldName} must be a non-negative integer string.`);
+  }
+  return BigInt(trimmed);
+};
+
+const resolveX402Network = (network: X402Network | null | undefined, chainId: number): X402Network => {
+  if (network) return network;
+  const inferred = CHAIN_ID_TO_X402_NETWORK[chainId];
+  if (inferred) return inferred;
+  throw new Error(`Unsupported chainId ${chainId} for requestX402(). Pass network explicitly.`);
+};
+
+const normalizeX402Timestamp = (value: string | Date | null | undefined): string =>
+  value instanceof Date ? value.toISOString() : normalizeOptionalString(value) ?? new Date().toISOString();
+
+const normalizeOptionalInteger = (value: number | null | undefined, fieldName: string): number | null => {
+  if (value == null) return null;
+  if (!Number.isFinite(value) || !Number.isInteger(value)) {
+    throw new Error(`${fieldName} must be an integer when provided.`);
+  }
+  return value;
+};
+
+const normalizeX402RequestBody = (input: {
+  body: unknown;
+  headers: Record<string, string>;
+}): { body: BodyInit | undefined; headers: Record<string, string> } => {
+  if (input.body == null) {
+    return { body: undefined, headers: input.headers };
+  }
+
+  if (
+    typeof input.body === "string" ||
+    input.body instanceof ArrayBuffer ||
+    ArrayBuffer.isView(input.body) ||
+    input.body instanceof Blob ||
+    input.body instanceof FormData ||
+    input.body instanceof URLSearchParams ||
+    input.body instanceof ReadableStream
+  ) {
+    return {
+      body: input.body as BodyInit,
+      headers: input.headers,
+    };
+  }
+
+  const nextHeaders = { ...input.headers };
+  if (!Object.keys(nextHeaders).some((key) => key.toLowerCase() === "content-type")) {
+    nextHeaders["content-type"] = "application/json";
+  }
+  return {
+    body: JSON.stringify(input.body),
+    headers: nextHeaders,
+  };
+};
 
 const createMerchantGatewayAuthPayload = (input: {
   action: MerchantGatewayAuthAction;
@@ -554,8 +674,6 @@ export class GhostAgent {
   private readonly telemetryServiceSlug: string | null;
   private readonly serviceSlug: string;
   private readonly creditCost: number;
-  private readonly authMode: "ghost-eip712" | "x402";
-  private readonly x402Scheme: string;
 
   constructor(config: GhostAgentConfig = {}) {
     const normalizedServiceSlug = normalizeOptionalString(config.serviceSlug);
@@ -569,8 +687,6 @@ export class GhostAgent {
     this.creditCost = Number.isFinite(config.creditCost) && (config.creditCost ?? 0) > 0
       ? Math.trunc(config.creditCost as number)
       : DEFAULT_CREDIT_COST;
-    this.authMode = config.authMode ?? DEFAULT_AUTH_MODE;
-    this.x402Scheme = normalizeOptionalString(config.x402Scheme) ?? DEFAULT_X402_SCHEME;
   }
 
   async connect(apiKey?: string): Promise<ConnectResult> {
@@ -611,20 +727,10 @@ export class GhostAgent {
     const endpoint = `${this.baseUrl}/api/gate/${encodeURIComponent(this.serviceSlug)}`;
     const gateHeaders: Record<string, string> = {
       accept: "application/json, text/plain;q=0.9, */*;q=0.8",
+      "x-ghost-sig": signature,
+      "x-ghost-payload": JSON.stringify(headerPayload),
+      "x-ghost-credit-cost": String(this.creditCost),
     };
-    if (this.authMode === "x402") {
-      gateHeaders["payment-signature"] = encodeBase64Json({
-        x402Version: 2,
-        scheme: this.x402Scheme,
-        network: `eip155:${this.chainId}`,
-        payload: headerPayload,
-        signature,
-      });
-    } else {
-      gateHeaders["x-ghost-sig"] = signature;
-      gateHeaders["x-ghost-payload"] = JSON.stringify(headerPayload);
-      gateHeaders["x-ghost-credit-cost"] = String(this.creditCost);
-    }
 
     const response = await fetch(endpoint, {
       method: "POST",
@@ -633,8 +739,6 @@ export class GhostAgent {
     });
 
     const responsePayload = await parsePayload(response);
-    const paymentRequired = decodeBase64Json(response.headers.get("payment-required"));
-    const paymentResponse = decodeBase64Json(response.headers.get("payment-response"));
     if (response.ok) {
       this.apiKey = normalizedApiKey;
     }
@@ -645,14 +749,51 @@ export class GhostAgent {
       endpoint,
       status: response.status,
       payload: responsePayload,
-      ...(this.authMode === "x402" || paymentRequired || paymentResponse
-        ? {
-            x402: {
-              paymentRequired,
-              paymentResponse,
-            },
-          }
-        : {}),
+    };
+  }
+
+  async requestX402(input: X402RequestInput): Promise<X402RequestResult> {
+    const privateKey = assertPrivateKey(this.privateKey, "privateKey");
+    const network = resolveX402Network(input.network, this.chainId);
+    const signer = await createSigner(network, privateKey);
+    const maxAmountAtomic = normalizePositiveBigInt(
+      input.maxAmountAtomic,
+      DEFAULT_X402_MAX_AMOUNT_ATOMIC,
+      "maxAmountAtomic",
+    );
+    const fetchWithPayment = wrapFetchWithPayment(
+      globalThis.fetch,
+      signer,
+      maxAmountAtomic,
+      input.paymentRequirementsSelector,
+    );
+    const method = normalizeOptionalString(input.method)?.toUpperCase() ?? "GET";
+    const normalizedHeaders = {
+      accept: "application/json, text/plain;q=0.9, */*;q=0.8",
+      ...(input.headers ?? {}),
+    };
+    const preparedBody = normalizeX402RequestBody({
+      body: input.body,
+      headers: normalizedHeaders,
+    });
+    const response = await fetchWithPayment(input.url, {
+      method,
+      headers: preparedBody.headers,
+      ...(preparedBody.body !== undefined ? { body: preparedBody.body } : {}),
+      cache: "no-store",
+    });
+    const paymentResponseHeader =
+      normalizeOptionalString(response.headers.get("x-payment-response")) ??
+      normalizeOptionalString(response.headers.get("X-PAYMENT-RESPONSE"));
+    const payload = await parsePayload(response.clone());
+
+    return {
+      ok: response.ok,
+      endpoint: response.url || input.url,
+      status: response.status,
+      payload,
+      paymentResponseHeader,
+      paymentResponse: paymentResponseHeader ? decodeXPaymentResponse(paymentResponseHeader) : null,
     };
   }
 
@@ -1085,6 +1226,7 @@ export class GhostMerchant extends GhostFulfillmentMerchant {
   private readonly merchantServiceSlug: string;
   private readonly merchantBaseUrl: string;
   private readonly ownerPrivateKey: `0x${string}` | null;
+  private readonly settlementDelegatedPrivateKey: `0x${string}` | null;
   private readonly ownerAddress: string | null;
   private readonly delegatedSignerAddress: string | null;
   private heartbeatController: HeartbeatController | null = null;
@@ -1098,9 +1240,12 @@ export class GhostMerchant extends GhostFulfillmentMerchant {
     this.merchantServiceSlug = normalizedServiceSlug;
     this.merchantBaseUrl = normalizeBaseUrl(config.baseUrl ?? DEFAULT_BASE_URL);
     this.ownerPrivateKey = config.ownerPrivateKey ? assertPrivateKey(config.ownerPrivateKey, "ownerPrivateKey") : null;
+    this.settlementDelegatedPrivateKey = config.delegatedPrivateKey
+      ? assertPrivateKey(config.delegatedPrivateKey, "delegatedPrivateKey")
+      : null;
     this.ownerAddress = this.ownerPrivateKey ? privateKeyToAccount(this.ownerPrivateKey).address.toLowerCase() : null;
-    this.delegatedSignerAddress = config.delegatedPrivateKey
-      ? privateKeyToAccount(assertPrivateKey(config.delegatedPrivateKey, "delegatedPrivateKey")).address.toLowerCase()
+    this.delegatedSignerAddress = this.settlementDelegatedPrivateKey
+      ? privateKeyToAccount(this.settlementDelegatedPrivateKey).address.toLowerCase()
       : null;
   }
 
@@ -1208,6 +1353,114 @@ export class GhostMerchant extends GhostFulfillmentMerchant {
       signerRegistration,
       heartbeat: this.heartbeatController,
     };
+  }
+
+  async reportX402Settlement(input: X402SettlementReportInput): Promise<X402SettlementReportResult> {
+    const agentId = normalizeOptionalString(input.agentId);
+    const serviceSlug = normalizeOptionalString(input.serviceSlug);
+    const requestId = normalizeOptionalString(input.requestId);
+    const paymentReference = normalizeOptionalString(input.paymentReference);
+    const payerIdentity = normalizeOptionalString(input.payerIdentity);
+    const payerAddress = normalizeOptionalString(input.payerAddress ?? null);
+    const scheme = normalizeOptionalString(input.scheme) ?? DEFAULT_X402_SCHEME;
+    const asset = normalizeOptionalString(input.asset) ?? DEFAULT_X402_ASSET;
+    const occurredAt = normalizeX402Timestamp(input.occurredAt);
+    const statusCode = normalizeOptionalInteger(input.statusCode ?? null, "statusCode");
+    const latencyMs = normalizeOptionalInteger(input.latencyMs ?? null, "latencyMs");
+    const amountAtomic = normalizePositiveBigInt(input.amountAtomic, 0n, "amountAtomic");
+
+    if (!agentId) throw new Error("reportX402Settlement(agentId) requires a non-empty agentId.");
+    if (!serviceSlug) throw new Error("reportX402Settlement(serviceSlug) requires a non-empty serviceSlug.");
+    if (!requestId) throw new Error("reportX402Settlement(requestId) requires a non-empty requestId.");
+    if (!paymentReference) {
+      throw new Error("reportX402Settlement(paymentReference) requires a non-empty paymentReference.");
+    }
+    if (!payerIdentity) throw new Error("reportX402Settlement(payerIdentity) requires a non-empty payerIdentity.");
+
+    const ownerConfig = await this.fetchGatewayOwnerConfig(agentId);
+    const ownerAddress = normalizeAddressLower(ownerConfig.config.ownerAddress);
+    const actorKey = this.settlementDelegatedPrivateKey ?? this.ownerPrivateKey;
+    if (!actorKey) {
+      throw new Error(
+        "reportX402Settlement requires delegatedPrivateKey or ownerPrivateKey on GhostMerchant config.",
+      );
+    }
+    const actorAddress = privateKeyToAccount(actorKey).address.toLowerCase();
+    const authPayload = createMerchantGatewayAuthPayload({
+      action: "x402_settlement_report",
+      agentId,
+      ownerAddress,
+      actorAddress,
+      serviceSlug,
+    });
+    const authSignature = await privateKeyToAccount(actorKey).signMessage({
+      message: buildMerchantGatewayAuthMessage(authPayload),
+    });
+    const endpoint = `${this.merchantBaseUrl}/api/telemetry/x402/settlements`;
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/plain;q=0.9, */*;q=0.8",
+      },
+      body: JSON.stringify({
+        agentId,
+        ownerAddress,
+        actorAddress,
+        serviceSlug,
+        requestId,
+        paymentReference,
+        payerIdentity,
+        ...(payerAddress ? { payerAddress: normalizeAddressLower(payerAddress) } : {}),
+        scheme,
+        ...(normalizeOptionalString(input.network ?? null) ? { network: input.network } : {}),
+        ...(typeof input.chainId === "number" ? { chainId: input.chainId } : {}),
+        asset,
+        amountAtomic: amountAtomic.toString(),
+        decimals: input.decimals ?? DEFAULT_X402_DECIMALS,
+        success: Boolean(input.success),
+        ...(statusCode != null ? { statusCode } : {}),
+        ...(latencyMs != null ? { latencyMs } : {}),
+        occurredAt,
+        ...(toOptionalMetadata(input.metadata) ? { metadata: input.metadata } : {}),
+        authPayload,
+        authSignature,
+      }),
+      cache: "no-store",
+    });
+    const payload = await parsePayload(response);
+
+    return {
+      ok: response.ok,
+      endpoint,
+      status: response.status,
+      payload,
+      countedForRank:
+        typeof payload === "object" &&
+        payload !== null &&
+        "countedForRank" in payload &&
+        typeof (payload as { countedForRank?: unknown }).countedForRank === "boolean"
+          ? Boolean((payload as { countedForRank: boolean }).countedForRank)
+          : false,
+      relatedParty:
+        typeof payload === "object" &&
+        payload !== null &&
+        "relatedParty" in payload &&
+        typeof (payload as { relatedParty?: unknown }).relatedParty === "boolean"
+          ? Boolean((payload as { relatedParty: boolean }).relatedParty)
+          : false,
+      duplicate:
+        typeof payload === "object" &&
+        payload !== null &&
+        "duplicate" in payload &&
+        typeof (payload as { duplicate?: unknown }).duplicate === "boolean"
+          ? Boolean((payload as { duplicate: boolean }).duplicate)
+          : false,
+    };
+  }
+
+  async reportX402Settlements(inputs: X402SettlementReportInput[]): Promise<X402SettlementReportResult[]> {
+    return Promise.all(inputs.map((input) => this.reportX402Settlement(input)));
   }
 
   private async fetchGatewayOwnerConfig(agentId: string): Promise<MerchantGatewayConfigResponse> {

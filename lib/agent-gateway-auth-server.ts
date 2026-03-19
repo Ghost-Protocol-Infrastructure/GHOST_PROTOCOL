@@ -17,6 +17,8 @@ type VerifyMerchantGatewaySignedWriteInput = {
   serviceSlug: string;
   authPayload: unknown;
   authSignature: string;
+  allowDelegatedSigner?: boolean;
+  gatewayConfigId?: string | null;
   nowMs?: number;
 };
 
@@ -112,13 +114,43 @@ export const verifyMerchantGatewaySignedWrite = async (
   }
 
   const signer = recovered.toLowerCase();
-  if (signer !== input.actorAddress || signer !== input.ownerAddress) {
+  if (signer !== input.actorAddress) {
     return {
       ok: false,
       status: 403,
       code: "AUTH_SIGNER_MISMATCH",
-      error: "authSignature signer must match the merchant owner wallet.",
+      error: "authSignature signer must match authPayload.actorAddress.",
     };
+  }
+
+  if (signer !== input.ownerAddress) {
+    if (!input.allowDelegatedSigner || !input.gatewayConfigId) {
+      return {
+        ok: false,
+        status: 403,
+        code: "AUTH_SIGNER_MISMATCH",
+        error: "authSignature signer must match the merchant owner wallet.",
+      };
+    }
+
+    const activeSigner = await prisma.agentGatewayDelegatedSigner.findFirst({
+      where: {
+        gatewayConfigId: input.gatewayConfigId,
+        ownerAddress: input.ownerAddress,
+        signerAddress: signer,
+        status: "ACTIVE",
+      },
+      select: { id: true },
+    });
+
+    if (!activeSigner) {
+      return {
+        ok: false,
+        status: 403,
+        code: "AUTH_SIGNER_NOT_ACTIVE",
+        error: "authSignature signer is not an active delegated signer for this gateway.",
+      };
+    }
   }
 
   const nonceResult = await consumeMerchantGatewayAuthNonce({

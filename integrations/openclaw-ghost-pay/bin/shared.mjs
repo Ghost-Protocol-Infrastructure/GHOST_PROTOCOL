@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 
 export const DEFAULT_BASE_URL = "https://ghostprotocol.cc";
 export const DEFAULT_CHAIN_ID = 8453;
-export const DEFAULT_X402_SCHEME = "ghost-eip712-credit-v1";
+export const DEFAULT_X402_SCHEME = "exact";
 export const DEFAULT_TIMEOUT_MS = 15000;
 
 export function parseCliArgs(argv = process.argv.slice(2)) {
@@ -37,11 +37,23 @@ export function normalizeBaseUrl(value) {
   return String(value || DEFAULT_BASE_URL).trim().replace(/\/+$/, "");
 }
 
+export function normalizeOptionalString(value) {
+  const normalized = String(value || "").trim();
+  return normalized || null;
+}
+
 export function parsePositiveInt(raw, fallback) {
   if (raw == null || raw === "") return fallback;
   const parsed = Number.parseInt(String(raw), 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
   return parsed;
+}
+
+export function parsePositiveBigIntString(raw, fallback) {
+  if (raw == null || raw === "") return fallback;
+  const normalized = String(raw).trim();
+  if (!/^\d+$/.test(normalized)) return fallback;
+  return normalized;
 }
 
 export function toBool(raw, fallback = false) {
@@ -50,20 +62,6 @@ export function toBool(raw, fallback = false) {
   if (value === "true" || value === "1" || value === "yes") return true;
   if (value === "false" || value === "0" || value === "no") return false;
   return fallback;
-}
-
-export function encodeBase64Json(value) {
-  return Buffer.from(JSON.stringify(value), "utf8").toString("base64");
-}
-
-export function decodeBase64Json(value) {
-  if (!value) return null;
-  try {
-    const decoded = Buffer.from(value, "base64").toString("utf8");
-    return JSON.parse(decoded);
-  } catch {
-    return null;
-  }
 }
 
 export function parseJson(raw, fallback = null) {

@@ -78,7 +78,6 @@ const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_E2E_PATH = "/ask";
 const DEFAULT_E2E_METHOD = "POST";
 const DEFAULT_E2E_BODY = { prompt: "Benchmark prompt." };
-const DEFAULT_X402_SCHEME = "ghost-eip712-credit-v1";
 
 const ACCESS_TYPES = {
   Access: [
@@ -187,8 +186,6 @@ const runWithTimeout = async (url: string, timeoutMs: number, options: RequestIn
   }
 };
 
-const encodeBase64Json = (value: unknown): string => Buffer.from(JSON.stringify(value), "utf8").toString("base64");
-
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 
 const resolveServerTimestampOffsetSeconds = async (baseUrl: string, timeoutMs: number): Promise<number> => {
@@ -273,7 +270,6 @@ const createGateAttempt =
     timeoutMs: number;
     method: string;
     body: unknown;
-    x402Scheme: string;
     timestampOffsetSeconds: number;
   }) =>
   async (): Promise<AttemptResult> => {
@@ -298,25 +294,19 @@ const createGateAttempt =
         message: payload,
       });
 
-      const envelope = {
-        x402Version: 2,
-        scheme: input.x402Scheme,
-        network: `eip155:${input.chainId}`,
-        payload: {
-          service: payload.service,
-          timestamp: payload.timestamp.toString(),
-          nonce: payload.nonce,
-        },
-        signature,
-      };
-
       const method = input.method.toUpperCase();
       const shouldSendBody = method !== "GET" && method !== "HEAD" && input.body !== undefined;
       const response = await runWithTimeout(`${input.baseUrl}/api/gate/${encodeURIComponent(input.serviceSlug)}`, input.timeoutMs, {
         method,
         headers: {
           accept: "application/json, text/plain;q=0.9, */*;q=0.8",
-          "payment-signature": encodeBase64Json(envelope),
+          "x-ghost-sig": signature,
+          "x-ghost-payload": JSON.stringify({
+            service: payload.service,
+            timestamp: payload.timestamp.toString(),
+            nonce: payload.nonce,
+          }),
+          "x-ghost-credit-cost": "1",
           ...(shouldSendBody ? { "content-type": "application/json" } : {}),
         },
         ...(shouldSendBody ? { body: JSON.stringify(input.body) } : {}),
@@ -481,7 +471,6 @@ const run = async (): Promise<void> => {
   const timeoutMs = parseIntStrict(args["timeout-ms"] || process.env.BENCH_TIMEOUT_MS, DEFAULT_TIMEOUT_MS);
   const scenarios = parseScenarioList(args.scenario || process.env.BENCH_SCENARIO);
   const privateKeyRaw = (args["private-key"] || process.env.BENCH_PRIVATE_KEY || process.env.GHOST_SIGNER_PRIVATE_KEY || "").trim();
-  const x402Scheme = (args["x402-scheme"] || process.env.BENCH_X402_SCHEME || DEFAULT_X402_SCHEME).trim();
   const gateMethod = (args["gate-method"] || process.env.BENCH_GATE_METHOD || "POST").trim().toUpperCase();
   const gateBody = parseJsonSafe(args["gate-body-json"] || process.env.BENCH_GATE_BODY_JSON, { ping: "benchmark" });
   const e2ePath = (args["e2e-path"] || process.env.BENCH_E2E_PATH || DEFAULT_E2E_PATH).trim();
@@ -538,7 +527,6 @@ const run = async (): Promise<void> => {
             timeoutMs,
             method: gateMethod,
             body: gateBody,
-            x402Scheme,
             timestampOffsetSeconds,
           }),
         ),

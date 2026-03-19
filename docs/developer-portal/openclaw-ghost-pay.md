@@ -1,44 +1,33 @@
 # OpenClaw Ghost Pay
 
-Ghost Protocol includes an OpenClaw skill bundle at:
+`openclaw-ghost-pay` is the Ghost/OpenClaw helper bundle for:
 
-- `integrations/openclaw-ghost-pay`
+- reading Ghost payment requirements
+- making live `x402` calls
+- reporting verified `x402` settlements for GhostRank
+- running GhostWire quote/create/status flows
 
-For ClawHub publication, publish the folder root so the helper scripts ship with the skill bundle, not just the `SKILL.md` file.
+## Included commands
 
-## What it does
-
-1. Uses Ghost read-only MCP to query `get_payment_requirements`:
-   - `node {baseDir}/bin/get-payment-requirements.mjs --service agent-18755`
-2. Signs Ghost EIP-712 access payloads and wraps them in x402-compatible `payment-signature` headers:
-   - `node {baseDir}/bin/pay-gate-x402.mjs --service agent-18755 --method POST --body-json "{\"prompt\":\"hello\"}"`
-3. Provides GhostWire quote/prepare/status tooling:
-   - `node {baseDir}/bin/get-wire-quote.mjs --client 0x... --provider 0x... --evaluator 0x... --principal-amount 1000000`
-   - `node {baseDir}/bin/create-wire-job-from-quote.mjs --quote-id wq_... --client 0x... --provider 0x... --evaluator 0x... --spec-hash 0x...`
-   - `node {baseDir}/bin/get-wire-job-status.mjs --job-id wj_...`
-
-Express mode is executable end-to-end in this package. GhostWire helpers prepare direct escrow jobs and inspect status; the client wallet still submits the on-chain transactions.
-
-## Why this is safe
-
-- No settlement path changes.
-- No vault changes.
-- No new protocol trust assumptions.
-- Uses the same GhostGate auth semantics already in production.
+- `node {baseDir}/bin/get-payment-requirements.mjs --service agent-18755`
+- `node {baseDir}/bin/call-x402.mjs --url https://merchant.example.com/ask --method POST --body-json "{\"prompt\":\"hello\"}"`
+- `node {baseDir}/bin/report-x402-settlement.mjs --agent-id 18755 --service agent-18755 --request-id req_123 --payment-reference 0xabc --payer-identity 0xpayer --amount-atomic 1000000 --success true --status-code 200`
+- `node {baseDir}/bin/get-wire-quote.mjs ...`
+- `node {baseDir}/bin/create-wire-job-from-quote.mjs ...`
+- `node {baseDir}/bin/get-wire-job-status.mjs ...`
 
 ## Environment
 
-- `GHOST_SIGNER_PRIVATE_KEY` (required for paid calls)
-- `GHOST_OPENCLAW_BASE_URL` (default `https://ghostprotocol.cc`)
-- `GHOST_OPENCLAW_CHAIN_ID` (default `8453`)
-- `GHOST_OPENCLAW_TIMEOUT_MS` (default `15000`)
-- `GHOSTWIRE_CLIENT_ADDRESS` (required for wire quote/create helpers)
-- `GHOSTWIRE_APPROVAL_MODE` (optional for wire prepare helper)
+- `GHOST_SIGNER_PRIVATE_KEY`
+- `GHOST_OPENCLAW_BASE_URL` (optional)
+- `GHOST_OPENCLAW_CHAIN_ID` (optional)
+- `GHOST_OPENCLAW_SERVICE_SLUG` (optional)
+- `GHOST_OPENCLAW_AGENT_ID` (optional)
+- `GHOST_OPENCLAW_X402_URL` (optional)
+- `GHOST_OPENCLAW_TIMEOUT_MS` (optional)
 
-Use trusted runtime secrets only.
+## Important boundary
 
-## Docs
-
-- Install guide: `integrations/openclaw-ghost-pay/INSTALL.md`
-- Copy/paste quickstart: `integrations/openclaw-ghost-pay/QUICKSTART.md`
-- Publish path: `integrations/openclaw-ghost-pay`
+- `call-x402.mjs` is for the real x402 rail
+- it does not use GhostGate Express headers
+- settlement reporting is the step that makes x402 usage visible to GhostRank

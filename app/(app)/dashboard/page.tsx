@@ -1147,9 +1147,6 @@ const sdk = new GhostAgent({
   chainId: ${PREFERRED_CHAIN_ID}, // ${PREFERRED_CHAIN_NAME}
   serviceSlug: "${consumerServiceSlug}",
   creditCost: 1,
-  // Optional x402 compatibility mode:
-  // authMode: "x402",
-  // x402Scheme: "ghost-eip712-credit-v1",
 });
 
 const result = await sdk.connect();
@@ -1169,9 +1166,6 @@ sdk = GhostGate(
     chain_id=${PREFERRED_CHAIN_ID},  # ${PREFERRED_CHAIN_NAME}
     service_slug="${consumerServiceSlug}",
     credit_cost=1,
-    # Optional x402 compatibility mode:
-    # auth_mode="x402",
-    # x402_scheme="ghost-eip712-credit-v1",
 )
 
 result = sdk.connect()
@@ -1994,9 +1988,6 @@ gate = GhostGate(
     base_url=os.getenv("GHOST_GATE_BASE_URL", "${APP_BASE_URL}"),
     service_slug="${merchantServiceSlug}",
     credit_cost=1,
-    # Optional x402 compatibility mode:
-    # auth_mode="x402",
-    # x402_scheme="ghost-eip712-credit-v1",
 )
 
 # Agent ID: ${selectedOwnedAgent?.agentId ?? "YOUR_AGENT_ID"}

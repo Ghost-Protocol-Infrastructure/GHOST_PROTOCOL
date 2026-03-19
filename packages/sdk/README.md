@@ -1,6 +1,11 @@
 # @ghostgate/sdk
 
-Node.js SDK for Ghost Protocol gate access, fulfillment, telemetry, direct GhostWire helpers, and canary helpers.
+Node.js SDK for Ghost Protocol:
+
+- `Express` access via `connect()`
+- `x402` request flow via `requestX402()`
+- `GhostWire` direct escrow helpers
+- merchant onboarding and x402 settlement reporting
 
 ## Install
 
@@ -8,17 +13,11 @@ Node.js SDK for Ghost Protocol gate access, fulfillment, telemetry, direct Ghost
 npm install @ghostgate/sdk
 ```
 
-If you need to test unreleased SDK changes from this repo locally:
-
-```bash
-npm run build:sdk
-npm install ../GHOST_PROTOCOL/packages/sdk
-```
-
-## Surface
+## Core surfaces
 
 - `GhostAgent`
   - `connect()`
+  - `requestX402()`
   - `pulse()`
   - `outcome()`
   - `startHeartbeat()`
@@ -28,31 +27,88 @@ npm install ../GHOST_PROTOCOL/packages/sdk
   - `getWireJob()`
   - `waitForWireTerminal()`
   - `getWireDeliverable()`
+- `GhostMerchant`
+  - `activate()`
+  - `reportX402Settlement()`
+  - `reportX402Settlements()`
 - `GhostFulfillmentConsumer`
 - `GhostFulfillmentMerchant`
-- `GhostMerchant`
 - `buildCanaryPayload()`
 - `createCanaryHandler()`
 
-## Example
+## Express example
 
 ```ts
 import { GhostAgent } from "@ghostgate/sdk";
 
-const sdk = new GhostAgent({
+const agent = new GhostAgent({
   apiKey: process.env.GHOST_API_KEY,
   privateKey: process.env.GHOST_SIGNER_PRIVATE_KEY as `0x${string}`,
   baseUrl: process.env.GHOST_BASE_URL,
   serviceSlug: "agent-18755",
-  // Optional x402 compatibility mode:
-  // authMode: "x402",
-  // x402Scheme: "ghost-eip712-credit-v1",
+  creditCost: 1,
 });
 
-await sdk.connect();
-await sdk.pulse();
+const result = await agent.connect();
+console.log(result.status, result.payload);
+```
 
-const quote = await sdk.createWireQuote({
+## x402 example
+
+`requestX402()` is the high-level Node helper. It handles the standard `402 -> payment -> retry` flow for you.
+
+```ts
+import { GhostAgent } from "@ghostgate/sdk";
+
+const agent = new GhostAgent({
+  privateKey: process.env.GHOST_SIGNER_PRIVATE_KEY as `0x${string}`,
+  chainId: 8453,
+});
+
+const result = await agent.requestX402({
+  url: "https://merchant.example.com/ask",
+  method: "POST",
+  body: { prompt: "hello" },
+  maxAmountAtomic: "100000",
+});
+
+console.log(result.status, result.payload, result.paymentResponse);
+```
+
+## Merchant x402 settlement reporting
+
+```ts
+import { GhostMerchant } from "@ghostgate/sdk";
+
+const merchant = new GhostMerchant({
+  serviceSlug: "agent-18755",
+  ownerPrivateKey: process.env.GHOST_OWNER_PRIVATE_KEY as `0x${string}`,
+  delegatedPrivateKey: process.env.GHOST_SIGNER_PRIVATE_KEY as `0x${string}`,
+});
+
+const report = await merchant.reportX402Settlement({
+  agentId: "18755",
+  serviceSlug: "agent-18755",
+  requestId: "req_123",
+  paymentReference: "0xabc123",
+  payerIdentity: "0xpayer",
+  scheme: "exact",
+  network: "base",
+  chainId: 8453,
+  asset: "USDC",
+  amountAtomic: "1000000",
+  decimals: 6,
+  success: true,
+  statusCode: 200,
+});
+
+console.log(report.countedForRank, report.duplicate);
+```
+
+## GhostWire direct escrow
+
+```ts
+const quote = await agent.createWireQuote({
   client: "0xclient...",
   provider: "0xprovider...",
   evaluator: "0xevaluator...",
@@ -60,35 +116,18 @@ const quote = await sdk.createWireQuote({
   chainId: 8453,
 });
 
-const prepared = await sdk.prepareWireJob({
+const prepared = await agent.prepareWireJob({
   quoteId: quote.quoteId!,
   client: "0xclient...",
   provider: "0xprovider...",
   evaluator: "0xevaluator...",
   specHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  metadataUri: "https://merchant.example.com/ghostwire/deliverable?jobId=wj_123",
-});
-
-// Client wallet sends prepared.direct.createTxRequest here.
-const afterCreate = await sdk.recordWireArtifacts({
-  jobId: prepared.jobId!,
-  clientAddress: "0xclient...",
-  createTxHash: "0xcreate...",
-});
-
-// Client wallet sends afterCreate.direct?.setBudgetTxRequest and afterCreate.direct?.fundTxRequest here.
-await sdk.recordWireArtifacts({
-  jobId: prepared.jobId!,
-  clientAddress: "0xclient...",
-  fundTxHash: "0xfund...",
 });
 ```
 
-## Fulfillment Merchant Default Signer
+## Notes
 
-`GhostFulfillmentMerchant` and `GhostMerchant` default `protocolSignerAddresses` to the current Ghost production fulfillment signer set:
-
-- `0xf879f5e26aa52663887f97a51d3444afef8df3fc`
-
-For normal Ghost-hosted production merchants, leave that allowlist unset.
-Only override it for self-hosted/custom ticket issuers or when Ghost explicitly instructs you during signer rotation.
+- `connect()` is Express only. The old Express x402-compat envelope has been removed.
+- `requestX402()` is the real standards-native x402 rail and automatically handles the payment retry path.
+- GhostRank credit for x402 depends on merchant-side `reportX402Settlement(...)`.
+- Use signer private keys only in trusted backend/server/CLI environments.

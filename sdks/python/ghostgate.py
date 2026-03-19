@@ -6,7 +6,6 @@ using credit checks.
 
 from __future__ import annotations
 
-import base64
 import json
 import os
 import threading
@@ -48,8 +47,9 @@ class GhostGate:
     DEFAULT_CREDIT_COST = 1
     DEFAULT_TIMEOUT_SECONDS = 10.0
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 60.0
-    DEFAULT_AUTH_MODE = "ghost-eip712"
-    DEFAULT_X402_SCHEME = "ghost-eip712-credit-v1"
+    DEFAULT_X402_SCHEME = "exact"
+    DEFAULT_X402_ASSET = "USDC"
+    DEFAULT_X402_DECIMALS = 6
     DEFAULT_ACTIVATE_CANARY_PATH = "/health"
     DEFAULT_ACTIVATE_CANARY_METHOD = "GET"
     DEFAULT_ACTIVATE_SIGNER_LABEL = "sdk-auto"
@@ -68,8 +68,6 @@ class GhostGate:
         service_slug: str = DEFAULT_SERVICE_SLUG,
         credit_cost: int = DEFAULT_CREDIT_COST,
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
-        auth_mode: str = DEFAULT_AUTH_MODE,
-        x402_scheme: str = DEFAULT_X402_SCHEME,
     ) -> None:
         self.api_key = self._normalize_optional_string(api_key) or self._normalize_optional_string(os.getenv("GHOST_API_KEY"))
         self.chain_id = chain_id
@@ -82,11 +80,6 @@ class GhostGate:
         self.service_slug = self._normalize_optional_string(service_slug) or self.DEFAULT_SERVICE_SLUG
         self.credit_cost = self._normalize_credit_cost(credit_cost)
         self.timeout_seconds = self._normalize_timeout(timeout_seconds)
-        normalized_auth_mode = (auth_mode or self.DEFAULT_AUTH_MODE).strip().lower()
-        if normalized_auth_mode not in ("ghost-eip712", "x402"):
-            raise ValueError("auth_mode must be 'ghost-eip712' or 'x402'.")
-        self.auth_mode = normalized_auth_mode
-        self.x402_scheme = (x402_scheme or self.DEFAULT_X402_SCHEME).strip() or self.DEFAULT_X402_SCHEME
         self.private_key = private_key or os.getenv("GHOST_SIGNER_PRIVATE_KEY") or os.getenv("PRIVATE_KEY")
         if not self.private_key:
             raise ValueError("A signing private key is required (private_key arg or GHOST_SIGNER_PRIVATE_KEY/PRIVATE_KEY).")
@@ -127,31 +120,72 @@ class GhostGate:
                 timeout_seconds=timeout_seconds,
             )
             payload = self._parse_response_payload(response)
-            payment_required = self._decode_base64_json(response.headers.get("payment-required"))
-            payment_response = self._decode_base64_json(response.headers.get("payment-response"))
             if response.ok:
                 self.api_key = resolved_api_key
-            result: ConnectResult = {
+            return {
                 "connected": response.ok,
                 "apiKeyPrefix": self._api_key_prefix(resolved_api_key),
                 "endpoint": endpoint,
                 "status": response.status_code,
                 "payload": payload,
             }
-            if self.auth_mode == "x402" or payment_required is not None or payment_response is not None:
-                result["x402"] = {
-                    "paymentRequired": payment_required,
-                    "paymentResponse": payment_response,
-                }
-            return result
         except requests.RequestException as error:
             return {
                 "connected": False,
                 "apiKeyPrefix": self._api_key_prefix(resolved_api_key),
                 "endpoint": endpoint,
                 "status": 0,
-                "payload": {"error": str(error)},
-            }
+            "payload": {"error": str(error)},
+        }
+
+    def request_x402(
+        self,
+        *,
+        url: str,
+        method: str = "GET",
+        headers: Optional[dict[str, str]] = None,
+        body: Optional[Any] = None,
+        payment_header: Optional[str] = None,
+        timeout_seconds: Optional[float] = None,
+    ) -> dict[str, Any]:
+        """Perform a standards-native x402 request.
+
+        If `payment_header` is omitted, the call returns the initial response, which may be a 402
+        challenge body from the merchant. If `payment_header` is provided, it is attached as
+        `X-PAYMENT` for the retry.
+        """
+
+        normalized_url = self._normalize_optional_string(url)
+        if not normalized_url:
+            raise ValueError("request_x402(url=...) requires a non-empty url.")
+
+        request_headers: dict[str, str] = {
+            "accept": "application/json, text/plain;q=0.9, */*;q=0.8",
+            **(headers or {}),
+        }
+        normalized_payment_header = self._normalize_optional_string(payment_header)
+        if normalized_payment_header:
+            request_headers["X-PAYMENT"] = normalized_payment_header
+
+        kwargs: dict[str, Any] = {
+            "method": (method or "GET").strip().upper() or "GET",
+            "url": normalized_url,
+            "headers": request_headers,
+            "timeout": self._resolve_timeout(timeout_seconds),
+        }
+        if body is not None:
+            request_headers.setdefault("content-type", "application/json")
+            kwargs["data"] = json.dumps(body)
+
+        response = requests.request(**kwargs)
+        x_payment_response_header = response.headers.get("x-payment-response") or response.headers.get("X-PAYMENT-RESPONSE")
+        return {
+            "ok": response.ok,
+            "endpoint": normalized_url,
+            "status": response.status_code,
+            "payload": self._parse_response_payload(response),
+            "paymentResponseHeader": x_payment_response_header,
+        }
 
     def pulse(
         self,
@@ -643,6 +677,115 @@ class GhostGate:
             "heartbeat": self._activate_heartbeat,
         }
 
+    def report_x402_settlement(
+        self,
+        *,
+        agent_id: str,
+        service_slug: str,
+        request_id: str,
+        payment_reference: str,
+        payer_identity: str,
+        amount_atomic: int | str,
+        payer_address: Optional[str] = None,
+        scheme: str = DEFAULT_X402_SCHEME,
+        network: Optional[str] = None,
+        chain_id: Optional[int] = None,
+        asset: str = DEFAULT_X402_ASSET,
+        decimals: int = DEFAULT_X402_DECIMALS,
+        success: bool,
+        status_code: Optional[int] = None,
+        latency_ms: Optional[int] = None,
+        occurred_at: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+        timeout_seconds: Optional[float] = None,
+    ) -> dict[str, Any]:
+        normalized_agent_id = self._normalize_optional_string(agent_id)
+        normalized_service_slug = self._normalize_optional_string(service_slug)
+        normalized_request_id = self._normalize_optional_string(request_id)
+        normalized_payment_reference = self._normalize_optional_string(payment_reference)
+        normalized_payer_identity = self._normalize_optional_string(payer_identity)
+        normalized_payer_address = self._normalize_optional_string(payer_address)
+        normalized_scheme = self._normalize_optional_string(scheme) or self.DEFAULT_X402_SCHEME
+        normalized_asset = self._normalize_optional_string(asset) or self.DEFAULT_X402_ASSET
+
+        if not normalized_agent_id:
+            raise ValueError("report_x402_settlement requires a non-empty agent_id.")
+        if not normalized_service_slug:
+            raise ValueError("report_x402_settlement requires a non-empty service_slug.")
+        if not normalized_request_id:
+            raise ValueError("report_x402_settlement requires a non-empty request_id.")
+        if not normalized_payment_reference:
+            raise ValueError("report_x402_settlement requires a non-empty payment_reference.")
+        if not normalized_payer_identity:
+            raise ValueError("report_x402_settlement requires a non-empty payer_identity.")
+
+        normalized_amount_atomic = self._normalize_positive_int_string(amount_atomic, "amount_atomic")
+        normalized_status_code = self._normalize_status_code(status_code)
+        normalized_latency_ms = self._normalize_optional_non_negative_int(latency_ms, "latency_ms")
+        normalized_occurred_at = self._normalize_optional_string(occurred_at) or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+        owner_address = self._fetch_gateway_owner_address(normalized_agent_id)
+        actor_address = Account.from_key(self.private_key).address.lower()
+        auth_payload = self._create_merchant_gateway_auth_payload(
+            action="x402_settlement_report",
+            agent_id=normalized_agent_id,
+            owner_address=owner_address,
+            actor_address=actor_address,
+            service_slug=normalized_service_slug,
+        )
+        auth_signature = Account.sign_message(
+            encode_defunct(text=self._build_merchant_gateway_auth_message(auth_payload)),
+            private_key=self.private_key,
+        ).signature.hex()
+
+        endpoint = f"{self.base_url}/api/telemetry/x402/settlements"
+        request_body: dict[str, Any] = {
+            "agentId": normalized_agent_id,
+            "ownerAddress": owner_address,
+            "actorAddress": actor_address,
+            "serviceSlug": normalized_service_slug,
+            "requestId": normalized_request_id,
+            "paymentReference": normalized_payment_reference,
+            "payerIdentity": normalized_payer_identity,
+            "scheme": normalized_scheme,
+            "asset": normalized_asset,
+            "amountAtomic": normalized_amount_atomic,
+            "decimals": int(decimals),
+            "success": bool(success),
+            "occurredAt": normalized_occurred_at,
+            "authPayload": auth_payload,
+            "authSignature": auth_signature,
+        }
+        if normalized_payer_address:
+            request_body["payerAddress"] = normalized_payer_address.lower()
+        if self._normalize_optional_string(network):
+            request_body["network"] = self._normalize_optional_string(network)
+        if isinstance(chain_id, int):
+            request_body["chainId"] = chain_id
+        if normalized_status_code is not None:
+            request_body["statusCode"] = normalized_status_code
+        if normalized_latency_ms is not None:
+            request_body["latencyMs"] = normalized_latency_ms
+        if metadata:
+            request_body["metadata"] = metadata
+
+        response = requests.post(
+            endpoint,
+            json=request_body,
+            headers={"accept": "application/json, text/plain;q=0.9, */*;q=0.8"},
+            timeout=self._resolve_timeout(timeout_seconds),
+        )
+        payload = self._parse_response_payload(response)
+        return {
+            "ok": response.ok,
+            "endpoint": endpoint,
+            "status": response.status_code,
+            "payload": payload,
+            "countedForRank": bool(payload.get("countedForRank")) if isinstance(payload, dict) else False,
+            "relatedParty": bool(payload.get("relatedParty")) if isinstance(payload, dict) else False,
+            "duplicate": bool(payload.get("duplicate")) if isinstance(payload, dict) else False,
+        }
+
     def guard(
         self,
         cost: int,
@@ -872,25 +1015,12 @@ class GhostGate:
     ) -> requests.Response:
         payload = self._build_access_payload(service)
         signature = self._sign_access_payload(payload)
-        if self.auth_mode == "x402":
-            envelope = {
-                "x402Version": 2,
-                "scheme": self.x402_scheme,
-                "network": f"eip155:{self.chain_id}",
-                "payload": payload,
-                "signature": signature,
-            }
-            headers = {
-                "payment-signature": self._encode_base64_json(envelope),
-                "accept": "application/json, text/plain;q=0.9, */*;q=0.8",
-            }
-        else:
-            headers = {
-                "x-ghost-sig": signature,
-                "x-ghost-payload": json.dumps(payload),
-                "x-ghost-credit-cost": str(cost),
-                "accept": "application/json, text/plain;q=0.9, */*;q=0.8",
-            }
+        headers = {
+            "x-ghost-sig": signature,
+            "x-ghost-payload": json.dumps(payload),
+            "x-ghost-credit-cost": str(cost),
+            "accept": "application/json, text/plain;q=0.9, */*;q=0.8",
+        }
         target = f"{self.gate_url}/{quote(service, safe='')}"
         return requests.request(
             method=method.upper(),
@@ -974,17 +1104,23 @@ class GhostGate:
         return fallback
 
     @staticmethod
-    def _encode_base64_json(value: Any) -> str:
-        return base64.b64encode(json.dumps(value).encode("utf-8")).decode("ascii")
+    def _normalize_positive_int_string(value: int | str, field_name: str) -> str:
+        if isinstance(value, int):
+            if value < 0:
+                raise ValueError(f"{field_name} must be non-negative.")
+            return str(value)
+        normalized = value.strip()
+        if not normalized.isdigit():
+            raise ValueError(f"{field_name} must be a non-negative integer string.")
+        return normalized
 
     @staticmethod
-    def _decode_base64_json(value: Optional[str]) -> Any:
-        if not value:
+    def _normalize_optional_non_negative_int(value: Optional[int], field_name: str) -> Optional[int]:
+        if value is None:
             return None
-        try:
-            return json.loads(base64.b64decode(value).decode("utf-8"))
-        except Exception:  # noqa: BLE001 - tolerant decode for interop responses
-            return None
+        if not isinstance(value, int) or value < 0:
+            raise ValueError(f"{field_name} must be a non-negative integer.")
+        return value
 
     @staticmethod
     def _assert_telemetry_identity(

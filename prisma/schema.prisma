@@ -45,6 +45,7 @@ enum AgentTxSourceKind {
 }
 
 enum AgentRailMode {
+  X402
   EXPRESS
   WIRE
   HYBRID
@@ -518,17 +519,29 @@ model AgentScoreInput {
   metricSource            TxMetricSource         @default(UNRESOLVED)
   yield                   Float                  @default(0)
   expressYield            Float                  @default(0)
+  x402Yield               Float                  @default(0)
   wireYield               Float                  @default(0)
   uptime                  Float                  @default(0)
   commerceQuality         Float                  @default(0)
   expressConfidence       Float                  @default(0)
+  x402Confidence          Float                  @default(0)
   wireConfidence          Float                  @default(0)
+  x402QualifiedCount30d   Int                    @default(0)
+  x402UniqueCounterparties30d Int                @default(0)
+  x402RepeatCounterparties30d Int                @default(0)
+  x402ActiveDays30d       Int                    @default(0)
+  x402GrossVolume30d      BigInt                 @default(0)
+  x402NetVolume30d        BigInt                 @default(0)
+  x402SuccessRate30d      Float                  @default(0)
+  x402ConcentrationPenalty Float                 @default(0)
+  x402RelatedPartyFilteredCount30d Int           @default(0)
   wireCompletedCount30d   Int                    @default(0)
   wireRejectedCount30d    Int                    @default(0)
   wireExpiredCount30d     Int                    @default(0)
   wireSettledPrincipal30d BigInt                 @default(0)
   wireSettledProviderEarnings30d BigInt          @default(0)
   expressReputation       Float?
+  x402Reputation          Float?
   wireReputation          Float?
   railMode                AgentRailMode          @default(UNPROVEN)
   isClaimed               Boolean                @default(false)
@@ -593,12 +606,24 @@ model LeaderboardSnapshotRow {
   rankScore               Float
   yield                   Float
   expressYield            Float                  @default(0)
+  x402Yield               Float                  @default(0)
   wireYield               Float                  @default(0)
   uptime                  Float
   commerceQuality         Float                  @default(0)
   expressConfidence       Float                  @default(0)
+  x402Confidence          Float                  @default(0)
   wireConfidence          Float                  @default(0)
+  x402QualifiedCount30d   Int                    @default(0)
+  x402UniqueCounterparties30d Int                @default(0)
+  x402RepeatCounterparties30d Int                @default(0)
+  x402ActiveDays30d       Int                    @default(0)
+  x402GrossVolume30d      BigInt                 @default(0)
+  x402NetVolume30d        BigInt                 @default(0)
+  x402SuccessRate30d      Float                  @default(0)
+  x402ConcentrationPenalty Float                 @default(0)
+  x402RelatedPartyFilteredCount30d Int           @default(0)
   expressReputation       Float?
+  x402Reputation          Float?
   wireReputation          Float?
   railMode                AgentRailMode          @default(UNPROVEN)
   volume                  BigInt
@@ -618,6 +643,39 @@ model LeaderboardSnapshotRow {
   @@index([snapshotId, owner])
   @@index([snapshotId, txCount])
   @@index([snapshotId, metricSource])
+}
+
+model X402SettlementEvent {
+  id                  String   @id @default(cuid())
+  serviceSlug         String
+  agentId             String?
+  ownerAddress        String
+  reporterAddress     String
+  requestId           String
+  paymentReference    String
+  payerIdentity       String
+  payerAddress        String?
+  scheme              String
+  network             String?
+  chainId             Int?
+  asset               String
+  amountAtomic        BigInt
+  decimals            Int
+  success             Boolean
+  statusCode          Int?
+  latencyMs           Int?
+  relatedParty        Boolean   @default(false)
+  countedForRank      Boolean   @default(true)
+  occurredAt          DateTime
+  metadata            Json?
+  createdAt           DateTime  @default(now())
+
+  @@unique([serviceSlug, paymentReference])
+  @@unique([serviceSlug, requestId, reporterAddress])
+  @@index([agentId, occurredAt])
+  @@index([serviceSlug, occurredAt])
+  @@index([payerIdentity, occurredAt])
+  @@index([success, occurredAt])
 }
 
 model ScorePipelineState {

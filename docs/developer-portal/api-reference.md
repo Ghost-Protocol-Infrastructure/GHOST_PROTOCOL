@@ -10,13 +10,13 @@ Ghost Gate uses signed headers:
 - `x-ghost-payload`: JSON payload string
 - `x-ghost-credit-cost`: optional request cost override
 
-Optional interoperability mode (`GHOST_GATE_X402_ENABLED=true`) also supports x402-style headers:
-
-- `payment-signature`: base64 JSON envelope containing `payload` + `signature`
-- `payment-required`: base64 JSON requirement envelope on `402`
-- `payment-response`: base64 JSON settlement receipt envelope on `200`
-
 No bearer token is required for gate authorization. Signature validity and credits are the source of truth.
+
+Open `x402` is a separate rail. It does **not** use `/api/gate/[service]`.
+
+- discover Ghost's canonical `x402` metadata through `GET /api/pricing`
+- execute the real `x402` flow against the merchant endpoint
+- report verified merchant settlements back to Ghost through `POST /api/telemetry/x402/settlements` if you want GhostRank credit
 
 ## Machine-readable protocol artifacts
 
@@ -30,15 +30,15 @@ The pricing endpoint is the authoritative source for:
 
 - `creditPriceWei` (credit unit price)
 - per-service request cost resolution (`service` query)
-- x402 transport compatibility metadata (`x402CompatibilityEnabled`, `x402Scheme`)
+- canonical `x402` metadata (`supported`, `reportingMode`, `supportedSchemes`, `rankEligibleAssets`)
 
-Before attempting x402 mode for a service, check:
+Before integrating Ghost's open `x402` rail for a service, check:
 
 ```text
 GET /api/pricing?service=<service_slug>
 ```
 
-If `x402CompatibilityEnabled` is not `true`, do not attempt x402 mode for that environment.
+If the `x402.supported` block is not present or not `true`, do not assume GhostRank-eligible `x402` reporting is available in that environment.
 
 ## Read-only MCP endpoint
 
@@ -510,20 +510,16 @@ Authorize access for a service slug and consume credits.
 
 | Header | Required | Description |
 |---|---|---|
-| `x-ghost-sig` | Yes* | Hex EIP-712 signature over payload. |
-| `x-ghost-payload` | Yes* | JSON string: `{"service","timestamp","nonce"}`. |
+| `x-ghost-sig` | Yes | Hex EIP-712 signature over payload. |
+| `x-ghost-payload` | Yes | JSON string: `{"service","timestamp","nonce"}`. |
 | `x-ghost-credit-cost` | Optional | Positive integer cost. May be ignored by server policy. |
-| `payment-signature` | Optional | x402 compatibility envelope (base64 JSON). Used only when `GHOST_GATE_X402_ENABLED=true`. |
 
 Notes:
 
 - `x-ghost-credit-cost` is ignored unless `GHOST_GATE_ALLOW_CLIENT_COST_OVERRIDE=true` in runtime env.
 - Server may resolve cost from DB service pricing, env pricing map, or default cost.
 - `requestId` is server-derived from `service:signer:nonce`; client `x-ghost-request-id` override is not used.
-- Check `GET /api/pricing?service=<service_slug>` first for `x402CompatibilityEnabled` and `x402Scheme` before attempting x402 mode.
-- `*` If x402 mode is active and `payment-signature` is provided, server accepts that envelope instead of `x-ghost-*` headers.
-- In x402 mode, missing/invalid payment envelope and insufficient credits return `402` with `payment-required` response header.
-- In x402 mode, successful authorization includes `payment-response` response header.
+- `/api/gate/[service]` is Express only. The real open `x402` rail runs directly against the merchant endpoint instead.
 
 ### Request example
 
@@ -606,6 +602,64 @@ curl -X POST "https://ghostprotocol.cc/api/gate/agent-2212" \
   "code": 429
 }
 ```
+
+## `POST /api/telemetry/x402/settlements`
+
+Persists merchant-signed `x402` settlement evidence for GhostRank.
+
+Auth model:
+
+- owner wallet signature or active delegated signer signature
+- action scope: `x402_settlement_report`
+- request body carries `authPayload` + `authSignature`
+
+Core request fields:
+
+- `agentId`
+- `serviceSlug`
+- `requestId`
+- `paymentReference`
+- `payerIdentity`
+- `payerAddress` (optional)
+- `scheme` (`exact` in v1)
+- `network`
+- `chainId`
+- `asset` (`USDC` is the only rank-eligible asset in v1)
+- `amountAtomic`
+- `decimals`
+- `success`
+- `statusCode` (optional)
+- `latencyMs` (optional)
+- `occurredAt`
+- `metadata` (optional JSON object)
+- `authPayload`
+- `authSignature`
+
+Success response (`200`):
+
+```json
+{
+  "ok": true,
+  "accepted": true,
+  "duplicate": false,
+  "countedForRank": true,
+  "relatedParty": false
+}
+```
+
+Behavior:
+
+- duplicate reports are idempotent and return `200` with `duplicate: true`
+- related-party traffic is stored, but may be excluded from rank credit
+- unsupported schemes/assets or unsuccessful settlements are accepted for auditability but not counted for GhostRank
+
+Common errors:
+
+- `400 INVALID_X402_SETTLEMENT_REPORT`
+- `404 GATEWAY_NOT_FOUND`
+- `409 GATEWAY_OWNER_MISMATCH`
+- `429 RATE_LIMITED`
+- `503 X402_SCHEMA_UNAVAILABLE`
 
 ## `GET /api/telemetry/pulse`
 

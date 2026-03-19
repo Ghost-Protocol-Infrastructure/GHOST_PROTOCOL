@@ -24,9 +24,7 @@
     "test:fulfillment:regression": "npx tsx scripts/test-fulfillment-regression.ts",
     "monitor:credits": "npx tsx scripts/monitor-credit-alerts.ts",
     "test:credits:regression": "npx tsx scripts/test-credit-regression.ts",
-    "verify:x402:demo": "npx tsx scripts/verify-x402-demo.ts",
     "verify:ghostwire:direct": "npx tsx scripts/verify-direct-ghostwire.ts",
-    "example:x402:demo": "node examples/ghostgate-x402-demo/client.mjs",
     "verify:mcp:readonly": "npx tsx scripts/verify-mcp-readonly.ts",
     "benchmark:latency": "npx tsx scripts/benchmark-latency.ts",
     "benchmark:latency:quick": "npx tsx scripts/benchmark-latency.ts --iterations 10 --concurrency 2 --scenario mcp",
@@ -62,7 +60,9 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "viem": "^2.21.0",
-    "wagmi": "^2.19.5"
+    "wagmi": "^2.19.5",
+    "x402": "^1.1.0",
+    "x402-fetch": "^1.1.0"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-node-test-runner": "^3.0.9",

@@ -250,8 +250,7 @@ async function toolGetPaymentRequirements(argumentsObject = {}) {
     creditPriceWei: payload.creditPriceWei ?? null,
     requestCostCredits: payload.service?.cost ?? payload.gate?.defaultRequestCreditCost ?? null,
     requestCostSource: payload.service?.source ?? "default",
-    x402CompatibilityEnabled: payload.gate?.x402CompatibilityEnabled ?? false,
-    x402Scheme: payload.gate?.x402Scheme ?? "ghost-eip712-credit-v1",
+    x402: payload.x402 ?? null,
   };
 
   return toToolResponse(requirements);

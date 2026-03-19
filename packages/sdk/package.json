@@ -1,7 +1,7 @@
 {
   "name": "@ghostgate/sdk",
-  "version": "0.1.4",
-  "description": "Ghost Protocol Node.js SDK for GhostGate, fulfillment, telemetry, and direct GhostWire escrow.",
+  "version": "0.2.0",
+  "description": "Ghost Protocol Node.js SDK for GhostGate Express, open x402, telemetry, fulfillment, and direct GhostWire escrow.",
   "author": "Ghost Protocol",
   "license": "MIT",
   "type": "module",
@@ -20,6 +20,7 @@
     "sdk",
     "fulfillment",
     "eip712",
+    "x402",
     "telemetry",
     "base",
     "ghostwire",
@@ -52,7 +53,9 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "viem": "^2.21.0"
+    "viem": "^2.21.0",
+    "x402": "^1.1.0",
+    "x402-fetch": "^1.1.0"
   },
   "scripts": {
     "clean": "node -e \"import('node:fs').then(fs => fs.rmSync('dist', { recursive: true, force: true }))\"",

@@ -1,247 +1,140 @@
-# GhostGate x402 Compatibility
+# GhostGate x402
 
-GhostGate supports an optional x402-compatible transport mode for Gate requests.
+GhostGate includes `x402` as a first-class open rail under the GhostGate product umbrella.
 
-This page documents the current production shape.
+This is not Express transport compatibility. It is the real standards-native `x402` flow.
 
-## Current status
+## What it is
 
-- GhostGate x402 compatibility is implemented behind `GHOST_GATE_X402_ENABLED`.
-- The default Gate path remains Ghost Protocol's EIP-712 credit flow.
-- `GET /api/pricing?service=<service_slug>` is the canonical source for x402 compatibility metadata.
-- GhostWire does **not** use x402. GhostWire remains a separate `/api/wire/*` direct escrow flow.
-- The canonical demo target is `x402-demo` on `/api/gate/x402-demo`.
-- Phase A is complete in code: docs, metadata contract, SDK guidance, and demo target implementation are all in place.
+- zero Ghost protocol fee
+- merchant runs a normal x402-protected endpoint
+- client pays with a standard x402 flow
+- merchant can report verified settlements back to Ghost so the activity feeds GhostRank
 
-Use x402 mode when you want GhostGate to speak a more standard HTTP `402 Payment Required` machine-to-machine shape.
+## What it is not
 
-Do **not** treat x402 mode as a separate settlement rail. Ghost EIP-712 credits remain the underlying fast authorization path.
+- not `/api/gate/[service]`
+- not a wrapped `payment-signature` envelope
+- not an Express mode
+- not a compatibility shim
 
-## What x402 compatibility means in GhostGate
+## Canonical Ghost metadata
 
-When x402 mode is enabled:
-
-- the client can send `payment-signature` instead of `x-ghost-sig` + `x-ghost-payload`
-- missing or invalid payment envelopes can return `402` with `payment-required`
-- successful authorization can return `payment-response`
-
-GhostGate is still doing:
-
-- EIP-712 signing
-- credit checks
-- off-chain credit accounting
-- Ghost-native request authorization
-
-So the practical model is:
-
-- x402 = HTTP transport compatibility
-- GhostGate = the actual authorization + credit rail
-
-## Check pricing first
-
-Before attempting x402 mode, check:
+Check:
 
 ```text
 GET /api/pricing?service=<service_slug>
 ```
 
-This is the canonical compatibility contract for clients.
-
-Relevant response fields:
-
-- `x402CompatibilityEnabled`
-- `x402Scheme`
-
-Example:
-
-```bash
-curl -sS "https://ghostprotocol.cc/api/pricing?service=x402-demo"
-```
-
-Expected shape:
+The response now exposes a canonical `x402` block:
 
 ```json
 {
-  "creditPriceWei": "1000000000000000",
-  "x402CompatibilityEnabled": true,
-  "x402Scheme": "ghost-eip712-credit-v1",
-  "service": {
-    "slug": "x402-demo",
-    "cost": "1",
-    "source": "demo"
+  "x402": {
+    "supported": true,
+    "reportingMode": "merchant-signed",
+    "supportedSchemes": ["exact"],
+    "rankEligibleAssets": ["USDC"]
   }
 }
 ```
 
-If `x402CompatibilityEnabled` is `false`, do not attempt x402 mode for that environment.
+In v1:
 
-## Canonical demo target
+- supported scheme: `exact`
+- rank-eligible asset: `USDC`
+- reporting mode: merchant-signed settlement evidence
 
-Ghost Protocol exposes a deterministic x402 demo service:
-
-```text
-service = x402-demo
-endpoint = /api/gate/x402-demo
-```
-
-Expected evaluator flow:
-
-1. `GET /api/pricing?service=x402-demo`
-2. `POST /api/gate/x402-demo` without auth -> `402`
-3. retry with `payment-signature`
-4. receive `200` + `payment-response`
-
-## Request flow
-
-The current GhostGate x402 flow is:
-
-1. Client checks pricing metadata.
-2. Client signs the normal GhostGate EIP-712 access payload.
-3. Client wraps that payload + signature in a base64 JSON `payment-signature` envelope.
-4. Server authorizes the request and returns:
-   - `402` + `payment-required` when credits/auth are missing
-   - `200` + `payment-response` when authorization succeeds
-
-This gives x402-aware clients a standard request/response shape without changing the underlying GhostGate rail.
-
-## Header contract
-
-When x402 mode is enabled:
-
-- request:
-  - `payment-signature`
-- response on challenge:
-  - `payment-required`
-- response on success:
-  - `payment-response`
-
-All three are base64 JSON envelopes.
-
-## Node.js SDK example
+## Node SDK
 
 ```ts
 import { GhostAgent } from "@ghostgate/sdk";
 
-const gate = new GhostAgent({
-  apiKey: process.env.GHOST_API_KEY,
+const sdk = new GhostAgent({
   privateKey: process.env.GHOST_SIGNER_PRIVATE_KEY as `0x${string}`,
-  baseUrl: process.env.GHOST_BASE_URL ?? "https://ghostprotocol.cc",
   chainId: 8453,
-  serviceSlug: "x402-demo",
-  creditCost: 1,
-  authMode: "x402",
-  x402Scheme: "ghost-eip712-credit-v1",
 });
 
-const result = await gate.connect();
-
-console.log(result.status);
-console.log(result.payload);
-console.log(result.x402?.paymentRequired);
-console.log(result.x402?.paymentResponse);
+const result = await sdk.requestX402({
+  url: "https://merchant.example.com/ask",
+  method: "POST",
+  body: { prompt: "hello" },
+  maxAmountAtomic: "100000",
+});
 ```
 
-## Python SDK example
+The Node helper performs the standard `402 -> payment -> retry` loop automatically.
+
+## Python SDK
 
 ```python
 from ghostgate import GhostGate
 
-gate = GhostGate(
-    api_key="sk_live_your_sdk_context_key",
-    private_key="0xyour_signer_private_key",
-    base_url="https://ghostprotocol.cc",
-    service_slug="x402-demo",
-    credit_cost=1,
-    auth_mode="x402",
-    x402_scheme="ghost-eip712-credit-v1",
+sdk = GhostGate(private_key="0x...")
+result = sdk.request_x402(
+    url="https://merchant.example.com/ask",
+    method="POST",
+    body={"prompt": "hello"},
 )
-
-result = gate.connect()
-
-print(result["status"])
-print(result["payload"])
-print(result.get("x402", {}).get("paymentRequired"))
-print(result.get("x402", {}).get("paymentResponse"))
 ```
 
-## Response handling
+The Python helper is intentionally lower-level. If you do not pass a retry `payment_header`, it returns the initial merchant response, which may be a `402` challenge.
 
-Treat the result like this:
+## Merchant reporting for GhostRank
 
-- `402`
-  - read `payment-required`
-  - inspect the challenge / required cost
-  - fund or sync credits if needed
-- `200`
-  - read `payment-response`
-  - proceed with the authorized request result
+Ghost cannot score x402 traffic it cannot observe. If you want GhostRank credit, report verified settlements:
 
-In GhostGate, a `402` does **not** mean "do an on-chain payment right now."
-It means the Gate could not authorize the request with the current Ghost credit state and envelope.
+### Node
 
-## CLI helper example
+```ts
+import { GhostMerchant } from "@ghostgate/sdk";
 
-This repo already includes a working helper for x402-compatible Gate calls:
+const merchant = new GhostMerchant({
+  serviceSlug: "agent-18755",
+  ownerPrivateKey: process.env.GHOST_OWNER_PRIVATE_KEY as `0x${string}`,
+  delegatedPrivateKey: process.env.GHOST_SIGNER_PRIVATE_KEY as `0x${string}`,
+});
 
-```bash
-node integrations/openclaw-ghost-pay/bin/pay-gate-x402.mjs \
-  --service x402-demo \
-  --method POST \
-  --body-json "{\"prompt\":\"hello\"}"
+await merchant.reportX402Settlement({
+  agentId: "18755",
+  serviceSlug: "agent-18755",
+  requestId: "req_123",
+  paymentReference: "0xabc123",
+  payerIdentity: "0xpayer",
+  scheme: "exact",
+  network: "base",
+  chainId: 8453,
+  asset: "USDC",
+  amountAtomic: "1000000",
+  decimals: 6,
+  success: true,
+  statusCode: 200,
+});
 ```
 
-That helper:
+### Python
 
-- signs the GhostGate access payload
-- wraps it in `payment-signature`
-- prints `payment-required` / `payment-response` when present
-
-You can also preview the exact envelope shape without sending the request:
-
-```bash
-node integrations/openclaw-ghost-pay/bin/pay-gate-x402.mjs \
-  --service x402-demo \
-  --method POST \
-  --body-json "{\"prompt\":\"hello\"}" \
-  --dry-run
+```python
+sdk.report_x402_settlement(
+    agent_id="18755",
+    service_slug="agent-18755",
+    request_id="req_123",
+    payment_reference="0xabc123",
+    payer_identity="0xpayer",
+    amount_atomic="1000000",
+    scheme="exact",
+    network="base",
+    chain_id=8453,
+    asset="USDC",
+    decimals=6,
+    success=True,
+    status_code=200,
+)
 ```
 
-Repo smoke verifier:
+## Scoring notes
 
-```bash
-npm run verify:x402:demo
-```
-
-Public example client:
-
-```bash
-npm run example:x402:demo
-```
-
-Use the public demo client if you want one runnable file that performs the full `pricing -> 402 -> signed retry -> success` flow against `x402-demo`.
-
-## Relationship to GhostWire
-
-GhostWire is separate.
-
-GhostWire uses:
-
-- `POST /api/wire/quote`
-- `POST /api/wire/jobs`
-- `GET /api/wire/jobs/[jobId]`
-
-GhostWire is a direct ERC-8183 escrow flow, not an x402 flow.
-
-If the same merchant wants both:
-
-- use GhostGate for fast paid API/tool access
-- use GhostWire for higher-value escrowed jobs
-
-## Related docs
-
-- [API Reference](./api-reference.md)
-- [SDK Reference](./sdk-reference.md)
-- [5-Minute Node.js Quickstart](./quickstart-node.md)
-- [GhostGate x402 Public Demo Client](./ghostgate-x402-public-demo-client.md)
-- [GhostWire](./ghostwire.md)
-- [GhostGate x402 Demo Spec](./ghostgate-x402-demo-spec.md)
+- x402 has its own GhostRank lane
+- it is scored separately from Express
+- confidence depends on qualified paid calls, unique counterparties, repeat counterparties, active days, success rate, and concentration
+- related-party traffic is stored but heavily downweighted or excluded from rank credit

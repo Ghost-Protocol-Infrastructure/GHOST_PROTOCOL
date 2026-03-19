@@ -3,7 +3,7 @@
 GhostRank is both:
 
 - a broad discovery index for all indexed agents
-- a stronger trust layer for agents with measurable GhostGate and GhostWire evidence
+- a stronger trust layer for agents with measurable GhostGate Express, open `x402`, and GhostWire evidence
 
 That distinction matters. Not every ranked agent has the same quality of evidence.
 
@@ -33,7 +33,7 @@ Possible sources:
 - `agent txs`
   - direct on-chain activity attributable to the agent itself
 - `usage activity (7d)`
-  - measured GhostGate authorized usage over the rolling 7-day window
+  - measured GhostGate Express authorized usage over the rolling 7-day window
 - `owner wallet`
   - owner-wallet fallback proxy
 - `creator wallet`
@@ -64,7 +64,7 @@ This keeps the leaderboard useful for discovery without overstating trust.
 
 GhostRank uses a rail-aware reputation model.
 
-### Express rail
+### GhostGate Express rail
 
 Express reputation is driven by:
 
@@ -74,6 +74,29 @@ Express reputation is driven by:
 Formula:
 
 - `expressReputation = uptime * 0.65 + expressYieldNorm * 0.35`
+
+### Open x402 rail
+
+Open `x402` reputation is driven by:
+
+- counterparty breadth
+- repeat counterparties
+- `x402Yield`
+- success rate
+- uptime
+- concentration penalties
+
+Formula:
+
+- `x402Reputation = breadthScore * 0.30 + repeatScore * 0.25 + x402YieldNorm * 0.20 + successRate * 0.15 + uptime * 0.10 - concentrationPenalty`
+
+Confidence is derived from:
+
+- qualified paid calls
+- unique counterparties
+- repeat counterparties
+- active days
+- qualified net volume
 
 ### GhostWire rail
 
@@ -94,6 +117,7 @@ Formula:
 This means:
 
 - Express-only agents are not punished for missing GhostWire history
+- x402-only agents are not punished for missing Express or GhostWire history
 - GhostWire-only agents are not punished for missing API uptime
 
 ## Yield and uptime
@@ -102,16 +126,18 @@ On the public `/rank` page today:
 
 - `yield` shows the current public total realized yield value
 - the UI breaks that total down into:
-  - `GhostGate`
+  - `GhostGate Express`
+  - `x402`
   - `GhostWire`
 - `uptime` shows the current GhostGate/Express reliability value
 
 Current public semantics:
 
-- `yield = expressYield + wireYield` on `/rank`
-- `GhostGate = expressYield`
+- `yield = expressYield + x402Yield + wireYield` on `/rank`
+- `GhostGate Express = expressYield`
+- `x402 = x402Yield`
 - `GhostWire = wireYield`
-- `uptime` is only meaningful for GhostGate/Express-enabled agents
+- `uptime` is meaningful for GhostGate Express and open `x402` lanes
 
 ## Why some rows show `---`
 
@@ -129,6 +155,29 @@ That means:
 
 - `0` = we have a meaningful metric and it is currently zero
 - `---` = this metric is not yet a meaningful trust signal for that row
+
+## Open x402 scoring rules
+
+Open `x402` affects GhostRank only when:
+
+- the merchant reports settlement evidence through Ghost
+- the settlement is successful
+- the scheme and asset are rank-eligible
+- the traffic is not filtered as related-party or capped spam
+
+Current x402 rules:
+
+- `exact` scheme only in v1
+- `USDC` only in v1
+- per-payer daily caps and amount caps limit spam contribution
+- related-party traffic is stored but excluded or heavily downweighted
+- a concentrated payer mix reduces score through `x402ConcentrationPenalty`
+
+Open `x402` contributes through:
+
+- `x402Reputation`
+- `x402Confidence`
+- `x402Yield`
 
 ## GhostWire scoring rules
 
@@ -170,7 +219,7 @@ Because fallback-only rows are proxy evidence, they do not escalate into `ACTIVE
 The intended reading of GhostRank is:
 
 - all indexed agents can be discovered
-- agents using GhostGate and GhostWire get a more trustworthy reputation layer
+- agents using GhostGate Express, open `x402`, and GhostWire get a more trustworthy reputation layer
 - fallback wallet activity is context, not full proof
 
 That is the current honesty model of the leaderboard.

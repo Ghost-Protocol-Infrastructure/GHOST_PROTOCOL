@@ -20,8 +20,8 @@ Core API endpoints:
 
 Important integration notes:
 - Gate authorization uses EIP-712 signed headers by default (`x-ghost-sig`, `x-ghost-payload`).
-- Optional x402 transport compatibility is available behind runtime flag (`GHOST_GATE_X402_ENABLED`) using `payment-signature` request envelopes and `payment-required` / `payment-response` response headers.
-- Current x402 implementation is transport-level compatibility, not native x402 settlement escrow.
+- `GET /api/pricing` is the canonical source for GhostGate Express pricing and Ghost's open `x402` metadata block.
+- Open `x402` is its own rail. It runs directly against merchant endpoints, and GhostRank credit depends on merchant-side reporting to `POST /api/telemetry/x402/settlements`.
 
 Developer docs:
 - https://ghostprotocol.cc/terms

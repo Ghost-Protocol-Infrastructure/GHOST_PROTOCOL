@@ -29,6 +29,8 @@ test("hybrid blend follows confidence weights", () => {
   const reputation = blendRailReputation({
     expressReputation: 82,
     expressConfidence: 0.9,
+    x402Reputation: null,
+    x402Confidence: 0,
     wireReputation: 60,
     wireConfidence: 0.3,
   });

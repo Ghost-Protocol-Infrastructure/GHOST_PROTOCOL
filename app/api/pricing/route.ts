@@ -1,16 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GHOST_CREDIT_PRICE_WEI, GHOST_PREFERRED_CHAIN_ID } from "@/lib/constants";
 import { getServiceCreditCost } from "@/lib/db";
-import {
-  GHOST_GATE_X402_DEFAULT_SCHEME,
-  X402_DEMO_COST,
-  isX402DemoService,
-  isX402EnabledForService,
-} from "@/lib/x402-interop";
+import { buildX402Metadata } from "@/lib/x402-interop";
 
 export const runtime = "nodejs";
 
-type CostSource = "db" | "env" | "default" | "demo";
+type CostSource = "db" | "env" | "default";
 
 const DEFAULT_REQUEST_COST = (() => {
   const raw = process.env.GHOST_REQUEST_CREDIT_COST?.trim();
@@ -23,8 +18,6 @@ const DEFAULT_REQUEST_COST = (() => {
 
 const ALLOW_CLIENT_COST_OVERRIDE = process.env.GHOST_GATE_ALLOW_CLIENT_COST_OVERRIDE?.trim() === "true";
 const ENABLE_DB_SERVICE_PRICING = process.env.GHOST_GATE_DB_SERVICE_PRICING_ENABLED?.trim() === "true";
-const GHOST_GATE_X402_ENABLED = process.env.GHOST_GATE_X402_ENABLED?.trim() === "true";
-const GHOST_GATE_X402_SCHEME = process.env.GHOST_GATE_X402_SCHEME?.trim() || GHOST_GATE_X402_DEFAULT_SCHEME;
 
 const ENV_SERVICE_PRICING = (() => {
   const raw = process.env.GHOST_GATE_SERVICE_PRICING_JSON?.trim();
@@ -70,10 +63,6 @@ const parseServiceSlug = (request: NextRequest): string | null => {
 };
 
 const resolveServiceCost = async (service: string): Promise<{ cost: bigint; source: CostSource }> => {
-  if (isX402DemoService(service)) {
-    return { cost: X402_DEMO_COST, source: "demo" };
-  }
-
   if (ENABLE_DB_SERVICE_PRICING) {
     try {
       const dbServiceCost = await getServiceCreditCost(service);
@@ -112,23 +101,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         source: "default" as CostSource,
       };
 
-  const x402CompatibilityEnabled = isX402EnabledForService(service, GHOST_GATE_X402_ENABLED);
-
   return json({
     ok: true,
     apiVersion: 1,
     currency: "GHOST_CREDIT",
     creditPriceWei: GHOST_CREDIT_PRICE_WEI.toString(),
     preferredChainId: GHOST_PREFERRED_CHAIN_ID,
-    x402CompatibilityEnabled,
-    x402Scheme: GHOST_GATE_X402_SCHEME,
+    x402: buildX402Metadata(),
     gate: {
       defaultRequestCreditCost: DEFAULT_REQUEST_COST.toString(),
       allowClientCostOverride: ALLOW_CLIENT_COST_OVERRIDE,
       dbServicePricingEnabled: ENABLE_DB_SERVICE_PRICING,
       envServicePricingCount: ENV_SERVICE_PRICING.size,
-      x402CompatibilityEnabled,
-      x402Scheme: GHOST_GATE_X402_SCHEME,
     },
     service: service
       ? {

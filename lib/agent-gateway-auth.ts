@@ -6,7 +6,8 @@ export type MerchantGatewayAuthAction =
   | "config"
   | "verify"
   | "delegated_signer_register"
-  | "delegated_signer_revoke";
+  | "delegated_signer_revoke"
+  | "x402_settlement_report";
 
 export type MerchantGatewayAuthPayload = {
   scope: typeof MERCHANT_GATEWAY_AUTH_SCOPE;
@@ -41,7 +42,8 @@ export const normalizeMerchantGatewayAuthPayload = (value: unknown): MerchantGat
     action !== "config" &&
     action !== "verify" &&
     action !== "delegated_signer_register" &&
-    action !== "delegated_signer_revoke"
+    action !== "delegated_signer_revoke" &&
+    action !== "x402_settlement_report"
   ) {
     return null;
   }

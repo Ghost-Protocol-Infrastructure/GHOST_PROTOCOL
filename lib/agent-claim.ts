@@ -43,11 +43,31 @@ export const hasAttributedWireEvidence = ({
   hasPositiveAtomicMetric(wireSettledPrincipalValue) ||
   hasPositiveAtomicMetric(wireSettledProviderEarningsValue);
 
+export const hasAttributedX402Evidence = ({
+  x402YieldValue,
+  x402QualifiedCount,
+  x402UniqueCounterpartiesCount,
+  x402NetVolumeValue,
+}: {
+  x402YieldValue?: number | null;
+  x402QualifiedCount?: number | null;
+  x402UniqueCounterpartiesCount?: number | null;
+  x402NetVolumeValue?: bigint | number | null;
+}): boolean =>
+  hasPositiveMetric(x402YieldValue) ||
+  hasPositiveCount(x402QualifiedCount) ||
+  hasPositiveCount(x402UniqueCounterpartiesCount) ||
+  hasPositiveAtomicMetric(x402NetVolumeValue);
+
 export const isClaimedAgent = ({
   status,
   tier,
   yieldValue,
   uptimeValue,
+  x402YieldValue,
+  x402QualifiedCount,
+  x402UniqueCounterpartiesCount,
+  x402NetVolumeValue,
   wireYieldValue,
   wireCompletedCount,
   wireRejectedCount,
@@ -59,6 +79,10 @@ export const isClaimedAgent = ({
   tier?: string | null;
   yieldValue?: number | null;
   uptimeValue?: number | null;
+  x402YieldValue?: number | null;
+  x402QualifiedCount?: number | null;
+  x402UniqueCounterpartiesCount?: number | null;
+  x402NetVolumeValue?: bigint | number | null;
   wireYieldValue?: number | null;
   wireCompletedCount?: number | null;
   wireRejectedCount?: number | null;
@@ -70,6 +94,12 @@ export const isClaimedAgent = ({
   tierIndicatesClaimed(tier) ||
   hasPositiveMetric(yieldValue) ||
   hasPositiveMetric(uptimeValue) ||
+  hasAttributedX402Evidence({
+    x402YieldValue,
+    x402QualifiedCount,
+    x402UniqueCounterpartiesCount,
+    x402NetVolumeValue,
+  }) ||
   hasAttributedWireEvidence({
     wireYieldValue,
     wireCompletedCount,

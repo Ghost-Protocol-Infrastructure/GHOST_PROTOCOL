@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghostgate-sdk"
-version = "0.1.2"
-description = "Ghost Protocol Python SDK for GhostGate, telemetry, and direct GhostWire escrow."
+version = "0.2.0"
+description = "Ghost Protocol Python SDK for GhostGate Express, open x402, telemetry, and direct GhostWire escrow."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -13,7 +13,7 @@ license-files = ["LICENSE"]
 authors = [
   { name = "Ghost Protocol" }
 ]
-keywords = ["ghostgate", "ghost protocol", "web3", "api", "sdk", "telemetry", "ghostwire", "escrow"]
+keywords = ["ghostgate", "ghost protocol", "web3", "api", "sdk", "telemetry", "ghostwire", "escrow", "x402"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",

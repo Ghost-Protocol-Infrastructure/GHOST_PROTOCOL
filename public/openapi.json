@@ -127,7 +127,7 @@
     },
     "/api/pricing": {
       "get": {
-        "summary": "Get authoritative GhostGate pricing metadata",
+        "summary": "Get authoritative GhostGate pricing and x402 metadata",
         "operationId": "getPricingRequirements",
         "parameters": [
           {
@@ -165,7 +165,7 @@
           {
             "name": "x-ghost-sig",
             "in": "header",
-            "required": false,
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -173,7 +173,7 @@
           {
             "name": "x-ghost-payload",
             "in": "header",
-            "required": false,
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -185,28 +185,11 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "payment-signature",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "x402 compatibility envelope (base64 JSON), active only when GHOST_GATE_X402_ENABLED=true."
           }
         ],
         "responses": {
           "200": {
-            "description": "Authorized",
-            "headers": {
-              "payment-response": {
-                "description": "x402 compatibility response envelope",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
+            "description": "Authorized"
           },
           "400": {
             "description": "Malformed auth"
@@ -215,15 +198,7 @@
             "description": "Invalid signature / service mismatch / expired"
           },
           "402": {
-            "description": "Payment required",
-            "headers": {
-              "payment-required": {
-                "description": "x402 compatibility requirement envelope",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
+            "description": "Insufficient credits"
           },
           "409": {
             "description": "Replay detected"
@@ -251,7 +226,7 @@
           {
             "name": "x-ghost-sig",
             "in": "header",
-            "required": false,
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -259,7 +234,7 @@
           {
             "name": "x-ghost-payload",
             "in": "header",
-            "required": false,
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -271,28 +246,11 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "payment-signature",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "x402 compatibility envelope (base64 JSON), active only when GHOST_GATE_X402_ENABLED=true."
           }
         ],
         "responses": {
           "200": {
-            "description": "Authorized",
-            "headers": {
-              "payment-response": {
-                "description": "x402 compatibility response envelope",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
+            "description": "Authorized"
           },
           "400": {
             "description": "Malformed auth"
@@ -301,15 +259,7 @@
             "description": "Invalid signature / service mismatch / expired"
           },
           "402": {
-            "description": "Payment required",
-            "headers": {
-              "payment-required": {
-                "description": "x402 compatibility requirement envelope",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
+            "description": "Insufficient credits"
           },
           "409": {
             "description": "Replay detected"
@@ -319,6 +269,42 @@
           },
           "429": {
             "description": "Rate limited"
+          }
+        }
+      }
+    },
+    "/api/telemetry/x402/settlements": {
+      "post": {
+        "summary": "Persist merchant-signed x402 settlement evidence",
+        "operationId": "reportX402Settlement",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid settlement report"
+          },
+          "404": {
+            "description": "Gateway config not found"
+          },
+          "409": {
+            "description": "Gateway/service mismatch"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "503": {
+            "description": "x402 schema unavailable"
           }
         }
       }

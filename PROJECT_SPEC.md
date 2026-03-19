@@ -1,7 +1,7 @@
 # GHOST PROTOCOL: PROJECT SPEC (AS-BUILT)
-**Version:** 2.9  
-**Last Updated:** 2026-03-17  
-**Status:** Live on Base Mainnet with Postgres-backed indexing, snapshot-only GhostRank runtime reads, a single canonical Score V2 refresh/snapshot workflow, GhostVault V2 pooled credit backing, spend-attributed merchant settlement, Gate authorization, fulfillment (ticket/capture/expiry/support), direct-only GhostWire APIs and reconciliation, rail-aware GhostRank scoring inputs, and hosted settlement/operator automation enabled for configured services.
+**Version:** 3.0  
+**Last Updated:** 2026-03-18  
+**Status:** Live on Base Mainnet with Postgres-backed indexing, snapshot-only GhostRank runtime reads, a single canonical Score V2 refresh/snapshot workflow, GhostVault V2 pooled credit backing, spend-attributed merchant settlement, GhostGate Express authorization, open x402 settlement reporting, fulfillment (ticket/capture/expiry/support), direct-only GhostWire APIs and reconciliation, rail-aware GhostRank scoring inputs, and hosted settlement/operator automation enabled for configured services.
 
 ---
 
@@ -10,7 +10,7 @@ Ghost Protocol is infrastructure for autonomous-agent discovery, monetization, a
 
 It ships as three integrated products:
 1. **GhostRank** (`/rank`): reputation leaderboard and discovery surface.
-2. **GhostGate** (`/dashboard` + SDKs): signature-gated API access and credit settlement rail.
+2. **GhostGate** (`/dashboard` + SDKs): Express access, open `x402` helpers, and credit settlement rail.
 3. **GhostWire** (`/api/wire/*` + operator surfaces): direct ERC-8183 escrow rail for higher-value agent commerce.
 
 Public app routes:
@@ -35,8 +35,7 @@ Primary operator/developer docs:
 
 ### 2.2 Core Layers
 1. **Gate layer** (`/api/gate/[...slug]` exposed as `/api/gate/<service>`):
-   - Verifies EIP-712 signed access payloads.
-   - Optionally accepts x402-style `payment-signature` envelopes when `GHOST_GATE_X402_ENABLED=true` (transport compatibility bridge only; not native x402 settlement).
+   - Verifies EIP-712 signed Express access payloads.
    - Applies replay window checks.
    - Debits credits server-side.
 2. **Machine-readable interoperability layer** (public artifacts + pricing contract):
@@ -44,9 +43,10 @@ Primary operator/developer docs:
    - Publishes `llms.txt` for LLM/agent indexing hints.
    - Publishes `/.well-known/ai-plugin.json` manifest for agent tooling compatibility.
    - Publishes `/.well-known/mcp.json` MCP metadata manifest.
-   - Exposes `/api/pricing` as authoritative machine-readable pricing + x402 transport metadata.
+   - Exposes `/api/pricing` as authoritative machine-readable pricing + canonical `x402` metadata.
    - Ships read-only MCP server (`scripts/mcp-server.js`) exposing `list_agents`, `get_agent_details`, `get_payment_requirements`, `get_wire_quote`, and `get_wire_job_status`.
    - Exposes hosted MCP HTTP endpoint at `/api/mcp/read-only` for agent runtimes that support JSON-RPC over HTTP.
+   - Exposes `POST /api/telemetry/x402/settlements` for merchant-signed `x402` settlement evidence that feeds GhostRank.
 3. **Vault layer** (`GhostVault.sol` + `/api/sync-credits`):
    - Accepts ETH deposits.
    - Tracks pooled credit backing, merchant liability, and accrued protocol fees.
@@ -89,6 +89,7 @@ Primary operator/developer docs:
 - `FulfillmentCaptureAttempt`
 - `MerchantEarning`
 - `MerchantSettlementBatch`
+- `X402SettlementEvent`
 - `WireQuote`
 - `WireJob`
 - `WireJobWorkflow`
@@ -128,24 +129,29 @@ Implemented in `scripts/score-v2.ts`:
 - Snapshot-backed runtime reads are the canonical GhostRank path.
 - Persists rail-aware fields for ranked agents and snapshots:
   - `expressYield`
+  - `x402Yield`
   - `wireYield`
   - `commerceQuality`
   - `expressReputation`
+  - `x402Reputation`
   - `wireReputation`
   - `railMode`
 
 Current rail-aware reputation model in the codebase:
 - Missing non-applicable rail signals are not treated as zeros; only rails with confidence contribute to final blended reputation.
 - `expressReputation = uptime*0.65 + expressYieldNorm*0.35`
+- `x402Reputation = breadthScore*0.30 + repeatScore*0.25 + x402YieldNorm*0.20 + successRate*0.15 + uptime*0.10 - concentrationPenalty`
 - `wireReputation = commerceQuality*0.7 + wireYieldNorm*0.3`
+- `x402Confidence` is derived from qualified paid calls, unique counterparties, repeat counterparties, active days, and qualified net volume over the rolling `30d` window
 - `commerceQuality` uses provider-only GhostWire outcomes over a rolling `30d` window:
   - `COMPLETED = 1.0`
   - `REJECTED = 0.1`
   - `EXPIRED = 0.0`
   - weighted by capped settled-volume confidence and sample-depth confidence
-- `reputation = confidenceWeighted(expressReputation, wireReputation)`
+- `reputation = confidenceWeighted(expressReputation, x402Reputation, wireReputation)`
 - `rankScore = reputation*0.7 + velocity*0.3 - antiWashPenalty`
 - `railMode` resolves to:
+  - `X402`
   - `EXPRESS`
   - `WIRE`
   - `HYBRID`
@@ -157,10 +163,11 @@ Current rail-aware reputation model in the codebase:
 - Public `/rank` display semantics:
   - `yield` now shows total displayed realized yield on `/rank`
   - the UI breaks it down explicitly as:
-    - `GhostGate = expressYield`
+    - `GhostGate Express = expressYield`
+    - `x402 = x402Yield`
     - `GhostWire = wireYield`
-  - `yield = expressYield + wireYield`
-  - `uptime` remains GhostGate/Express reliability only
+  - `yield = expressYield + x402Yield + wireYield`
+  - `uptime` remains the request-rail reliability metric and is meaningful for Express and open `x402`
   - claimed/measured agents can display `0.0000 ETH` / `0.0%`
   - unclaimed or fallback-only rows display `---` for yield/uptime because those metrics are not yet meaningful proof for those rows
 - `WHALE` now requires measured non-fallback activity above `500`; fallback-only rows do not qualify for `WHALE`
@@ -170,6 +177,14 @@ Score V2 operational behavior:
 - `/api/agents` returns `503` when no active ready snapshot is available
 - tx-count refresh failures preserve the previously persisted `txCount` instead of writing `0`
 - rail-sync refresh now skips no-op wire/rail metric rewrites and only persists `AgentScoreInput` rows whose derived rail fields changed
+
+Open x402 scoring rules:
+- x402 affects GhostRank only when merchant-reported settlement evidence reaches Ghost.
+- Supported v1 rank-eligible inputs:
+  - scheme: `exact`
+  - asset: `USDC`
+- Related-party traffic is stored for auditability but excluded or heavily downweighted for rank credit.
+- Per-payer daily count caps, per-payer amount caps, and concentration penalties constrain spam contribution.
 
 GhostWire scoring rules:
 - GhostWire affects GhostRank only for provider-attributed jobs.
@@ -259,19 +274,11 @@ Route:
 - `POST /api/gate/<service>`
 
 Required headers:
-- `x-ghost-sig` *(required unless x402 compatibility mode is active)*
-- `x-ghost-payload` (`service`, `timestamp`, `nonce`) *(required unless x402 compatibility mode is active)*
+- `x-ghost-sig`
+- `x-ghost-payload` (`service`, `timestamp`, `nonce`)
 
 Optional headers:
 - `x-ghost-credit-cost`
-
-x402 compatibility headers (when `GHOST_GATE_X402_ENABLED=true`):
-- `payment-signature` (request)
-- `payment-required` (`402` response)
-- `payment-response` (`200` response)
-
-Feature flag:
-- `GHOST_GATE_X402_ENABLED` (default `false`)
 
 Validation + outcomes:
 - Signature recovery and typed-data verification.
@@ -279,7 +286,7 @@ Validation + outcomes:
 - Service/path match enforcement.
 - Credit debit on success.
 - Replay response when nonce uniqueness enforcement triggers.
-- Underlying auth validation semantics (EIP-712 signature verification, replay checks, and credit debits) are identical regardless of transport mode.
+- `/api/gate/<service>` is Express only; open `x402` runs directly against merchant endpoints.
 
 Status codes:
 - `200` authorized
@@ -300,8 +307,13 @@ Capabilities:
   - `defaultRequestCreditCost`
   - `allowClientCostOverride`
   - `dbServicePricingEnabled`
-  - `x402CompatibilityEnabled`
-  - `x402Scheme`
+- Returns canonical `x402` metadata including:
+   - `supported`
+   - `rankEligible`
+   - `reportingMode`
+   - `supportedSchemes`
+   - `rankEligibleAssets`
+   - `notes`
 
 ### 5.3 Cost Resolution Priority
 In order:
@@ -312,13 +324,36 @@ In order:
 
 Gate request IDs are server-derived from `service:signer:nonce`; client `x-ghost-request-id` overrides are not used.
 
-### 5.4 Credit Ledger + Nonce Storage
+### 5.4 Open x402 settlement reporting
+Route:
+- `POST /api/telemetry/x402/settlements`
+
+Purpose:
+- Persist merchant-signed settlement evidence so open `x402` traffic can feed GhostRank.
+
+Auth:
+- owner wallet or active delegated signer
+- action: `x402_settlement_report`
+- body includes `authPayload` + `authSignature`
+
+Rank-eligibility rules in v1:
+- scheme must be `exact`
+- asset must be `USDC`
+- settlement must be successful
+- related-party traffic is excluded from rank credit
+
+Persistence:
+- rows are stored in `X402SettlementEvent`
+- duplicates are idempotent
+- counted/non-counted events are both stored for auditability
+
+### 5.5 Credit Ledger + Nonce Storage
 - Credit state: `CreditBalance`.
 - Ledger journaling (when enabled): `CreditLedger`.
 - Nonce persistence (when enabled): `AccessNonce`.
 - Gate telemetry journaling: `GateAccessEvent`.
 
-### 5.5 Fulfillment (Direct-to-Merchant)
+### 5.6 Fulfillment (Direct-to-Merchant)
 
 Core routes:
 - `POST /api/fulfillment/ticket`
@@ -444,10 +479,16 @@ Selection behavior:
 ### 8.1 Node SDK (`packages/sdk/src/index.ts`)
 - Class: `GhostAgent`
 - Optional constructor params:
-  - `authMode?: "ghost-eip712" | "x402"` (default: `ghost-eip712`)
-  - `x402Scheme?: string` (default: `ghost-eip712-credit-v1`)
+  - `apiKey?: string`
+  - `agentId?: string`
+  - `baseUrl?: string`
+  - `privateKey?: 0x...`
+  - `chainId?: number`
+  - `serviceSlug?: string`
+  - `creditCost?: number`
 - Canonical gate / telemetry methods:
   - `connect(apiKey?)`
+  - `requestX402(...)`
   - `pulse(...)`
   - `outcome(...)`
   - `startHeartbeat(...)`
@@ -462,21 +503,33 @@ Selection behavior:
   - signs typed payload
   - calls `/api/gate/<serviceSlug>`
   - reports `apiKeyPrefix` in result
+- `requestX402(...)`:
+  - is the real standards-native `x402` helper
+  - performs the `402 -> payment -> retry` flow automatically in the Node SDK
 - Gate authorization itself is signature + credits driven.
 - `GhostMerchant` extends the fulfillment merchant surface and adds merchant-onboarding helpers:
   - `getGatewayConfig(...)`
   - `configureGateway(...)`
   - `verifyGateway(...)`
   - `registerDelegatedSigner(...)`
+  - `reportX402Settlement(...)`
+  - `reportX402Settlements(...)`
   - `activate(...)` (one-call configure -> verify -> signer registration -> heartbeat flow)
 
 ### 8.2 Python SDK (`sdks/python/ghostgate.py`)
 - Class: `GhostGate`
 - Optional constructor params:
-  - `auth_mode: str = "ghost-eip712"`
-  - `x402_scheme: str = "ghost-eip712-credit-v1"`
+  - `api_key: str | None = None`
+  - `private_key: str | None = None`
+  - `chain_id: int = 8453`
+  - `base_url: str = "https://ghostprotocol.cc"`
+  - `service_slug: str = "connect"`
+  - `credit_cost: int = 1`
+  - `timeout_seconds: float = 10.0`
 - Canonical access methods:
   - `connect(...)`
+  - `request_x402(...)`
+  - `report_x402_settlement(...)`
   - `pulse(...)`
   - `outcome(...)`
   - `start_heartbeat(...)`
@@ -492,6 +545,9 @@ Selection behavior:
 - Backward-compatible aliases retained:
   - `send_pulse(...)`
   - `report_consumer_outcome(...)`
+- Python `request_x402(...)` is the lower-level helper:
+  - first call returns the merchant response, which may be a `402` challenge
+  - caller may retry with `payment_header` to complete the flow
 - Guard decorator still performs signed gate verification for route protection.
 
 ### 8.3 Telemetry Route Parity
@@ -561,6 +617,7 @@ Supported tools:
 
 Scope:
 - Read-only discovery/pricing access only.
+- `get_payment_requirements` surfaces canonical Ghost `x402` metadata in addition to Express pricing.
 - No settlement, no ticket issuance, no credit mutation, no privileged admin writes.
 
 ---
@@ -650,10 +707,11 @@ File: `.github/workflows/settlement-operator.yml`
 3. Service pricing defaults to 1 credit unless DB/env pricing is explicitly enabled.
 4. Receipt signing is optional and only active when `GHOST_GATE_RECEIPT_SIGNING_SECRET` is configured.
 5. Merchant fulfillment is not auto-enabled for all agents; each agent still requires gateway config, successful canary verification (`LIVE`), delegated signer registration, and runtime secret binding.
-6. x402 transport compatibility is envelope-level interop only (`GHOST_GATE_X402_ENABLED`). It does not implement native x402 crypto payment acceptance or settlement.
-7. GhostWire is now a direct self-serve rail, but it still depends on artifact validation, reconciliation cadence, and bounded recovery logic to keep status accurate.
-8. GhostWire is direct-only in the current launch shape: the external client wallet is the on-chain client for approval, create, and fund; sponsorship / relays are not part of the production path.
-9. GhostWire-to-GhostRank scoring is now rail-aware, but real market calibration still depends on broader attributed production usage. Until live volume exists, fairness tuning remains partly design- and snapshot-driven rather than fully behaviorally validated.
+6. Open `x402` is live as its own rail, but GhostRank visibility depends on merchant-side settlement reporting. Unreported off-platform `x402` traffic is intentionally invisible to scoring.
+7. Open `x402` rank eligibility is intentionally narrow in v1: `exact` scheme, `USDC`, successful settlement, and anti-sybil filtering/caps.
+8. GhostWire is now a direct self-serve rail, but it still depends on artifact validation, reconciliation cadence, and bounded recovery logic to keep status accurate.
+9. GhostWire is direct-only in the current launch shape: the external client wallet is the on-chain client for approval, create, and fund; sponsorship / relays are not part of the production path.
+10. Rail-aware GhostRank scoring is now live across Express, open `x402`, and GhostWire, but fairness tuning still depends on broader attributed production usage.
 
 ---
 

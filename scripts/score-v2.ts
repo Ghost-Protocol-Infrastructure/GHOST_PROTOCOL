@@ -9,7 +9,11 @@ import {
   SnapshotStatus,
   type TxMetricSource,
 } from "@prisma/client";
-import { hasAttributedWireEvidence, statusIndicatesClaimed } from "../lib/agent-claim";
+import {
+  hasAttributedWireEvidence,
+  hasAttributedX402Evidence,
+  statusIndicatesClaimed,
+} from "../lib/agent-claim";
 import { prisma } from "../lib/db";
 import {
   computeCommerceQuality,
@@ -29,7 +33,13 @@ import {
   scoreV2RailMetricFieldsChanged,
 } from "../lib/score-v2-rail-sync";
 import { fetchGhostWireProviderRollups, GHOSTWIRE_SCORE_WINDOW_DAYS } from "../lib/ghostwire-score-rollup";
+import {
+  deriveX402BreadthScore,
+  deriveX402RepeatScore,
+  fetchX402AgentRollups,
+} from "../lib/x402-score-rollup";
 import { resolveScoreV2RunMode } from "../lib/score-v2-run-mode";
+import { X402_SCORE_WINDOW_DAYS } from "../lib/x402-reporting";
 
 type AgentIndexMode = "erc8004" | "olas";
 type ScoreTxSource = "agent" | "owner" | "creator";
@@ -76,17 +86,29 @@ type ScoreInputRow = {
   metricSource: TxMetricSource;
   yield: number;
   expressYield: number;
+  x402Yield: number;
   wireYield: number;
   uptime: number;
   commerceQuality: number;
   expressConfidence: number;
+  x402Confidence: number;
   wireConfidence: number;
+  x402QualifiedCount30d: number;
+  x402UniqueCounterparties30d: number;
+  x402RepeatCounterparties30d: number;
+  x402ActiveDays30d: number;
+  x402GrossVolume30d: bigint;
+  x402NetVolume30d: bigint;
+  x402SuccessRate30d: number;
+  x402ConcentrationPenalty: number;
+  x402RelatedPartyFilteredCount30d: number;
   wireCompletedCount30d: number;
   wireRejectedCount30d: number;
   wireExpiredCount30d: number;
   wireSettledPrincipal30d: bigint;
   wireSettledProviderEarnings30d: bigint;
   expressReputation: number | null;
+  x402Reputation: number | null;
   wireReputation: number | null;
   railMode: AgentRailMode;
   isClaimed: boolean;
@@ -117,7 +139,19 @@ type ExistingScoreInputSeedRow = Pick<
   | "metricSource"
   | "yield"
   | "expressYield"
+  | "x402Yield"
+  | "wireYield"
   | "uptime"
+  | "x402Confidence"
+  | "x402QualifiedCount30d"
+  | "x402UniqueCounterparties30d"
+  | "x402RepeatCounterparties30d"
+  | "x402ActiveDays30d"
+  | "x402GrossVolume30d"
+  | "x402NetVolume30d"
+  | "x402SuccessRate30d"
+  | "x402ConcentrationPenalty"
+  | "x402RelatedPartyFilteredCount30d"
   | "isClaimed"
   | "txCountUpdatedAt"
 >;
@@ -145,6 +179,8 @@ type PendingInputUpsert = {
   metricSource: TxMetricSource;
   yieldValue: number;
   expressYield: number;
+  x402Yield: number;
+  wireYield: number;
   uptime: number;
   isClaimed: boolean;
   txCountUpdatedAt: Date | null;
@@ -209,12 +245,24 @@ type SnapshotScoreRow = {
   rankScore: number;
   yieldValue: number;
   expressYield: number;
+  x402Yield: number;
   wireYield: number;
   uptime: number;
   commerceQuality: number;
   expressConfidence: number;
+  x402Confidence: number;
   wireConfidence: number;
+  x402QualifiedCount30d: number;
+  x402UniqueCounterparties30d: number;
+  x402RepeatCounterparties30d: number;
+  x402ActiveDays30d: number;
+  x402GrossVolume30d: bigint;
+  x402NetVolume30d: bigint;
+  x402SuccessRate30d: number;
+  x402ConcentrationPenalty: number;
+  x402RelatedPartyFilteredCount30d: number;
   expressReputation: number | null;
+  x402Reputation: number | null;
   wireReputation: number | null;
   railMode: AgentRailMode;
   volume: bigint;
@@ -684,7 +732,8 @@ const hasSourceDelta = (
   isClaimed: boolean,
 ): boolean => {
   if (!existing) return true;
-  const nextYield = Math.max(0, row.yield ?? 0);
+  const nextExpressYield = Math.max(0, row.yield ?? 0);
+  const nextYield = nextExpressYield + Math.max(0, existing.x402Yield ?? 0) + Math.max(0, existing.wireYield ?? 0);
   const nextUptime = clamp(row.uptime ?? 0, 0, 100);
 
   return (
@@ -703,7 +752,7 @@ const hasSourceDelta = (
     existing.canonicalOnchainAddress !== canonicalOnchainAddress ||
     existing.canonicalAddressSource !== canonicalAddressSource ||
     existing.yield !== nextYield ||
-    existing.expressYield !== nextYield ||
+    existing.expressYield !== nextExpressYield ||
     existing.uptime !== nextUptime ||
     existing.isClaimed !== isClaimed
   );
@@ -752,6 +801,8 @@ const upsertScoreInputs = async (rows: PendingInputUpsert[]): Promise<void> => {
                 metricSource: row.metricSource,
                 yield: row.yieldValue,
                 expressYield: row.expressYield,
+                x402Yield: row.x402Yield,
+                wireYield: row.wireYield,
                 uptime: row.uptime,
                 isClaimed: row.isClaimed,
                 txCountUpdatedAt: row.txCountUpdatedAt,
@@ -779,6 +830,8 @@ const upsertScoreInputs = async (rows: PendingInputUpsert[]): Promise<void> => {
                 metricSource: row.metricSource,
                 yield: row.yieldValue,
                 expressYield: row.expressYield,
+                x402Yield: row.x402Yield,
+                wireYield: row.wireYield,
                 uptime: row.uptime,
                 isClaimed: row.isClaimed,
                 txCountUpdatedAt: row.txCountUpdatedAt,
@@ -939,6 +992,19 @@ const syncRailMetricsToScoreInputs = async (
   existingRailMetricsByAddress: Map<
     string,
     {
+      yield: number;
+      expressYield: number;
+      x402Yield: number;
+      x402Confidence: number;
+      x402QualifiedCount30d: number;
+      x402UniqueCounterparties30d: number;
+      x402RepeatCounterparties30d: number;
+      x402ActiveDays30d: number;
+      x402GrossVolume30d: bigint;
+      x402NetVolume30d: bigint;
+      x402SuccessRate30d: number;
+      x402ConcentrationPenalty: number;
+      x402RelatedPartyFilteredCount30d: number;
       wireYield: number;
       commerceQuality: number;
       wireConfidence: number;
@@ -952,8 +1018,10 @@ const syncRailMetricsToScoreInputs = async (
 ): Promise<number> => {
   if (agents.length === 0) return 0;
 
-  const since = new Date(Date.now() - GHOSTWIRE_SCORE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const scoreWindowDays = Math.max(GHOSTWIRE_SCORE_WINDOW_DAYS, X402_SCORE_WINDOW_DAYS);
+  const since = new Date(Date.now() - scoreWindowDays * 24 * 60 * 60 * 1000);
   const wireRollupsByAgentId = await fetchGhostWireProviderRollups(since);
+  const x402RollupsByAgentId = await fetchX402AgentRollups(since);
   let processed = 0;
   let updatedRows = 0;
   const now = new Date();
@@ -961,9 +1029,20 @@ const syncRailMetricsToScoreInputs = async (
   for (const chunk of chunkArray(agents, SCORE_V2_AGENT_WRITE_BATCH_SIZE)) {
     const pendingRailUpdates = chunk.flatMap((agent) => {
       const currentRailMetrics = existingRailMetricsByAddress.get(agent.address);
-      const nextRailMetrics = buildScoreV2RailMetricFields(wireRollupsByAgentId.get(agent.agentId));
+      const nextRailMetrics = buildScoreV2RailMetricFields(
+        wireRollupsByAgentId.get(agent.agentId),
+        x402RollupsByAgentId.get(agent.agentId),
+      );
       if (!scoreV2RailMetricFieldsChanged(currentRailMetrics, nextRailMetrics)) return [];
-      return [{ agentAddress: agent.address, nextRailMetrics }];
+      const expressYield = Math.max(0, agent.yield ?? 0);
+      return [
+        {
+          agentAddress: agent.address,
+          expressYield,
+          totalYield: expressYield + nextRailMetrics.x402Yield + nextRailMetrics.wireYield,
+          nextRailMetrics,
+        },
+      ];
     });
 
     if (pendingRailUpdates.length > 0) {
@@ -971,13 +1050,26 @@ const syncRailMetricsToScoreInputs = async (
         `score-v2 sync rail metrics ${processed + 1}-${Math.min(processed + chunk.length, agents.length)}`,
         () =>
           prisma.$transaction(
-            pendingRailUpdates.map(({ agentAddress, nextRailMetrics }) =>
+            pendingRailUpdates.map(({ agentAddress, expressYield, totalYield, nextRailMetrics }) =>
               prisma.agentScoreInput.update({
                 where: { agentAddress },
                 data: {
+                  yield: totalYield,
+                  expressYield,
+                  x402Yield: nextRailMetrics.x402Yield,
                   wireYield: nextRailMetrics.wireYield,
+                  x402Confidence: nextRailMetrics.x402Confidence,
                   commerceQuality: nextRailMetrics.commerceQuality,
                   wireConfidence: nextRailMetrics.wireConfidence,
+                  x402QualifiedCount30d: nextRailMetrics.x402QualifiedCount30d,
+                  x402UniqueCounterparties30d: nextRailMetrics.x402UniqueCounterparties30d,
+                  x402RepeatCounterparties30d: nextRailMetrics.x402RepeatCounterparties30d,
+                  x402ActiveDays30d: nextRailMetrics.x402ActiveDays30d,
+                  x402GrossVolume30d: nextRailMetrics.x402GrossVolume30d,
+                  x402NetVolume30d: nextRailMetrics.x402NetVolume30d,
+                  x402SuccessRate30d: nextRailMetrics.x402SuccessRate30d,
+                  x402ConcentrationPenalty: nextRailMetrics.x402ConcentrationPenalty,
+                  x402RelatedPartyFilteredCount30d: nextRailMetrics.x402RelatedPartyFilteredCount30d,
                   wireCompletedCount30d: nextRailMetrics.wireCompletedCount30d,
                   wireRejectedCount30d: nextRailMetrics.wireRejectedCount30d,
                   wireExpiredCount30d: nextRailMetrics.wireExpiredCount30d,
@@ -1087,6 +1179,14 @@ const buildSnapshotRows = (
   }
   const uniqueSignerCounts = preparedInputs.map((item) => Math.max(0, item.gateSignal.uniqueSignerCount));
   const maxUniqueSignerCount = uniqueSignerCounts.length > 0 ? Math.max(...uniqueSignerCounts) : 0;
+  const canUseX402Metrics = (input: ScoreInputRow): boolean =>
+    input.isClaimed ||
+    hasAttributedX402Evidence({
+      x402YieldValue: input.x402Yield,
+      x402QualifiedCount: input.x402QualifiedCount30d,
+      x402UniqueCounterpartiesCount: input.x402UniqueCounterparties30d,
+      x402NetVolumeValue: input.x402NetVolume30d,
+    });
   const canUseWireMetrics = (input: ScoreInputRow): boolean =>
     input.isClaimed ||
     hasAttributedWireEvidence({
@@ -1100,7 +1200,12 @@ const buildSnapshotRows = (
   const claimedExpressYields = inputs
     .map((input) => (input.isClaimed ? Math.max(0, input.expressYield) : 0))
     .filter((value) => value > 0);
-  const maxClaimedYield = claimedExpressYields.length > 0 ? Math.max(...claimedExpressYields) : 0;
+  const maxClaimedExpressYield = claimedExpressYields.length > 0 ? Math.max(...claimedExpressYields) : 0;
+  const maxClaimedX402NetVolume = inputs.reduce(
+    (maxValue, input) =>
+      Math.max(maxValue, canUseX402Metrics(input) ? toSafeInt(input.x402NetVolume30d) : 0),
+    0,
+  );
   const claimedWireYields = inputs
     .map((input) => (canUseWireMetrics(input) ? Math.max(0, input.wireYield) : 0))
     .filter((value) => value > 0);
@@ -1141,16 +1246,34 @@ const buildSnapshotRows = (
     const velocityNorm = roundToTwo(
       txVolumeNorm * normalizedTxSignalWeight + uniqueSignerNorm * normalizedUniqueSignalWeight,
     );
+    const canUseX402Evidence = canUseX402Metrics(input);
     const canUseWireEvidence = canUseWireMetrics(input);
     const expressYieldValue = input.isClaimed ? Math.max(0, input.expressYield) : 0;
+    const x402YieldValue = canUseX402Evidence ? Math.max(0, input.x402Yield) : 0;
     const wireYieldValue = canUseWireEvidence ? Math.max(0, input.wireYield) : 0;
     const uptime = input.isClaimed ? clamp(input.uptime, 0, 100) : 0;
+    const x402QualifiedCount = canUseX402Evidence ? Math.max(0, input.x402QualifiedCount30d) : 0;
+    const x402UniqueCounterparties = canUseX402Evidence ? Math.max(0, input.x402UniqueCounterparties30d) : 0;
+    const x402RepeatCounterparties = canUseX402Evidence ? Math.max(0, input.x402RepeatCounterparties30d) : 0;
+    const x402ActiveDays = canUseX402Evidence ? Math.max(0, input.x402ActiveDays30d) : 0;
+    const x402GrossVolume = canUseX402Evidence ? input.x402GrossVolume30d : 0n;
+    const x402NetVolume = canUseX402Evidence ? input.x402NetVolume30d : 0n;
+    const x402SuccessRate = canUseX402Evidence ? clamp(input.x402SuccessRate30d, 0, 100) : 0;
+    const x402ConcentrationPenalty = canUseX402Evidence ? Math.max(0, input.x402ConcentrationPenalty) : 0;
+    const x402RelatedPartyFilteredCount = canUseX402Evidence ? Math.max(0, input.x402RelatedPartyFilteredCount30d) : 0;
     const wireCompletedCount = canUseWireEvidence ? Math.max(0, input.wireCompletedCount30d) : 0;
     const wireRejectedCount = canUseWireEvidence ? Math.max(0, input.wireRejectedCount30d) : 0;
     const wireExpiredCount = canUseWireEvidence ? Math.max(0, input.wireExpiredCount30d) : 0;
     const wireTerminalJobs = wireCompletedCount + wireRejectedCount + wireExpiredCount;
     const wireSettledPrincipal = canUseWireEvidence ? toSafeInt(input.wireSettledPrincipal30d) : 0;
-    const expressYieldNorm = maxClaimedYield > 0 ? normalizeLog100(expressYieldValue, maxClaimedYield) : 0;
+    const expressYieldNorm = maxClaimedExpressYield > 0 ? normalizeLog100(expressYieldValue, maxClaimedExpressYield) : 0;
+    const x402YieldNorm =
+      maxClaimedX402NetVolume > 0 ? normalizeLog100(toSafeInt(x402NetVolume), maxClaimedX402NetVolume) : 0;
+    const x402BreadthScore = deriveX402BreadthScore({
+      uniqueCounterparties30d: x402UniqueCounterparties,
+      activeDays30d: x402ActiveDays,
+    });
+    const x402RepeatScore = deriveX402RepeatScore(x402RepeatCounterparties);
     const wireYieldNorm = maxClaimedWireYield > 0 ? normalizeLog100(wireYieldValue, maxClaimedWireYield) : 0;
     const volumeConfidence =
       maxWireSettledPrincipal > 0 ? normalizeLog100(wireSettledPrincipal, maxWireSettledPrincipal) / 100 : 0;
@@ -1171,6 +1294,7 @@ const buildSnapshotRows = (
           expressYield: expressYieldValue,
         })
       : 0;
+    const x402Confidence = canUseX402Evidence ? Math.max(0, input.x402Confidence) : 0;
     const wireConfidence = canUseWireEvidence
       ? computeWireConfidence({
           terminalJobs: wireTerminalJobs,
@@ -1185,7 +1309,8 @@ const buildSnapshotRows = (
       sybilMaxPenalty = Math.max(sybilMaxPenalty, antiWashPenalty);
     }
 
-    const railScore = input.isClaimed || canUseWireEvidence
+    const hasAttributedRailEvidence = canUseX402Evidence || canUseWireEvidence;
+    const railScore = input.isClaimed || hasAttributedRailEvidence
       ? scoreAgentRailAware({
           velocity: velocityNorm,
           antiWashPenalty,
@@ -1195,6 +1320,18 @@ const buildSnapshotRows = (
                   uptime,
                   expressYieldNorm,
                   confidence: expressConfidence,
+                }
+              : null,
+          x402:
+            x402QualifiedCount > 0 || x402YieldValue > 0 || x402SuccessRate > 0
+              ? {
+                  breadthScore: x402BreadthScore,
+                  repeatScore: x402RepeatScore,
+                  x402YieldNorm,
+                  successRate: x402SuccessRate,
+                  uptime,
+                  concentrationPenalty: x402ConcentrationPenalty,
+                  confidence: x402Confidence,
                 }
               : null,
           wire:
@@ -1211,15 +1348,16 @@ const buildSnapshotRows = (
     const baselineRankScore = roundToTwo(clamp(baselineReputation * 0.7 + velocityNorm * 0.3 - antiWashPenalty, 0, 100));
     const reputation = input.isClaimed
       ? railScore?.reputation ?? 0
-      : canUseWireEvidence
+      : hasAttributedRailEvidence
         ? Math.max(baselineReputation, railScore?.reputation ?? 0)
         : baselineReputation;
     const rankScore = input.isClaimed
       ? railScore?.rankScore ?? 0
-      : canUseWireEvidence
+      : hasAttributedRailEvidence
         ? Math.max(baselineRankScore, railScore?.rankScore ?? 0)
         : baselineRankScore;
     const tier = resolveScoreV2Tier(txCount, input.isClaimed, prepared.metricSource);
+    const yieldValue = expressYieldValue + x402YieldValue + wireYieldValue;
 
     return {
       input,
@@ -1234,14 +1372,26 @@ const buildSnapshotRows = (
       reputation,
       rankScore,
       tier,
-      yieldValue: expressYieldValue,
+      yieldValue,
       expressYield: expressYieldValue,
+      x402Yield: x402YieldValue,
       wireYield: wireYieldValue,
       uptime,
       commerceQuality,
       expressConfidence,
+      x402Confidence,
       wireConfidence,
+      x402QualifiedCount30d: x402QualifiedCount,
+      x402UniqueCounterparties30d: x402UniqueCounterparties,
+      x402RepeatCounterparties30d: x402RepeatCounterparties,
+      x402ActiveDays30d: x402ActiveDays,
+      x402GrossVolume30d: x402GrossVolume,
+      x402NetVolume30d: x402NetVolume,
+      x402SuccessRate30d: x402SuccessRate,
+      x402ConcentrationPenalty: x402ConcentrationPenalty,
+      x402RelatedPartyFilteredCount30d: x402RelatedPartyFilteredCount,
       expressReputation: railScore?.expressReputation ?? null,
+      x402Reputation: railScore?.x402Reputation ?? null,
       wireReputation: railScore?.wireReputation ?? null,
       railMode: railScore?.railMode ?? "UNPROVEN",
       volume: BigInt(txCount),
@@ -1284,12 +1434,24 @@ const buildSnapshotRows = (
     rankScore: row.rankScore,
     yieldValue: row.yieldValue,
     expressYield: row.expressYield,
+    x402Yield: row.x402Yield,
     wireYield: row.wireYield,
     uptime: row.uptime,
     commerceQuality: row.commerceQuality,
     expressConfidence: row.expressConfidence,
+    x402Confidence: row.x402Confidence,
     wireConfidence: row.wireConfidence,
+    x402QualifiedCount30d: row.x402QualifiedCount30d,
+    x402UniqueCounterparties30d: row.x402UniqueCounterparties30d,
+    x402RepeatCounterparties30d: row.x402RepeatCounterparties30d,
+    x402ActiveDays30d: row.x402ActiveDays30d,
+    x402GrossVolume30d: row.x402GrossVolume30d,
+    x402NetVolume30d: row.x402NetVolume30d,
+    x402SuccessRate30d: row.x402SuccessRate30d,
+    x402ConcentrationPenalty: row.x402ConcentrationPenalty,
+    x402RelatedPartyFilteredCount30d: row.x402RelatedPartyFilteredCount30d,
     expressReputation: row.expressReputation,
+    x402Reputation: row.x402Reputation,
     wireReputation: row.wireReputation,
     railMode: row.railMode,
     volume: row.volume,
@@ -1297,6 +1459,8 @@ const buildSnapshotRows = (
     agentCreatedAt: row.input.createdAt,
     agentUpdatedAt: row.input.updatedAt,
   }));
+
+  const maxClaimedYield = scored.reduce((maxValue, row) => Math.max(maxValue, row.yieldValue), 0);
 
   return { rows, maxTxCount, maxClaimedYield, sybilPenalizedAgents, sybilMaxPenalty, txMetricPathCounts };
 };
@@ -1363,12 +1527,24 @@ const writeSnapshot = async (
               rankScore: row.rankScore,
               yield: row.yieldValue,
               expressYield: row.expressYield,
+              x402Yield: row.x402Yield,
               wireYield: row.wireYield,
               uptime: row.uptime,
               commerceQuality: row.commerceQuality,
               expressConfidence: row.expressConfidence,
+              x402Confidence: row.x402Confidence,
               wireConfidence: row.wireConfidence,
+              x402QualifiedCount30d: row.x402QualifiedCount30d,
+              x402UniqueCounterparties30d: row.x402UniqueCounterparties30d,
+              x402RepeatCounterparties30d: row.x402RepeatCounterparties30d,
+              x402ActiveDays30d: row.x402ActiveDays30d,
+              x402GrossVolume30d: row.x402GrossVolume30d,
+              x402NetVolume30d: row.x402NetVolume30d,
+              x402SuccessRate30d: row.x402SuccessRate30d,
+              x402ConcentrationPenalty: row.x402ConcentrationPenalty,
+              x402RelatedPartyFilteredCount30d: row.x402RelatedPartyFilteredCount30d,
               expressReputation: row.expressReputation,
+              x402Reputation: row.x402Reputation,
               wireReputation: row.wireReputation,
               railMode: row.railMode,
               volume: row.volume,
@@ -1498,10 +1674,21 @@ const ingestScoreInputs = async (): Promise<{
         metricSource: true,
         yield: true,
         expressYield: true,
+        x402Yield: true,
         wireYield: true,
         uptime: true,
         commerceQuality: true,
+        x402Confidence: true,
         wireConfidence: true,
+        x402QualifiedCount30d: true,
+        x402UniqueCounterparties30d: true,
+        x402RepeatCounterparties30d: true,
+        x402ActiveDays30d: true,
+        x402GrossVolume30d: true,
+        x402NetVolume30d: true,
+        x402SuccessRate30d: true,
+        x402ConcentrationPenalty: true,
+        x402RelatedPartyFilteredCount30d: true,
         wireCompletedCount30d: true,
         wireRejectedCount30d: true,
         wireExpiredCount30d: true,
@@ -1568,6 +1755,10 @@ const ingestScoreInputs = async (): Promise<{
       seedOnchainTxCountOwner = 0;
     }
 
+    const seedExpressYield = Math.max(0, agent.yield ?? 0);
+    const seedX402Yield = Math.max(0, existing?.x402Yield ?? 0);
+    const seedWireYield = Math.max(0, existing?.wireYield ?? 0);
+
     pendingUpserts.push({
       agentAddress: agent.address,
       agentId: agent.agentId,
@@ -1589,8 +1780,10 @@ const ingestScoreInputs = async (): Promise<{
       onchainTxCountOwner: seedOnchainTxCountOwner,
       usageAuthorizedCount7d: Math.max(0, existing?.usageAuthorizedCount7d ?? 0),
       metricSource: existing?.metricSource ?? "UNRESOLVED",
-      yieldValue: Math.max(0, agent.yield ?? 0),
-      expressYield: Math.max(0, agent.yield ?? 0),
+      yieldValue: seedExpressYield + seedX402Yield + seedWireYield,
+      expressYield: seedExpressYield,
+      x402Yield: seedX402Yield,
+      wireYield: seedWireYield,
       uptime: clamp(agent.uptime ?? 0, 0, 100),
       isClaimed,
       txCountUpdatedAt: seedTxCountUpdatedAt,
@@ -1677,17 +1870,29 @@ const runSnapshotRanking = async (): Promise<{
         metricSource: true,
         yield: true,
         expressYield: true,
+        x402Yield: true,
         wireYield: true,
         uptime: true,
         commerceQuality: true,
         expressConfidence: true,
+        x402Confidence: true,
         wireConfidence: true,
+        x402QualifiedCount30d: true,
+        x402UniqueCounterparties30d: true,
+        x402RepeatCounterparties30d: true,
+        x402ActiveDays30d: true,
+        x402GrossVolume30d: true,
+        x402NetVolume30d: true,
+        x402SuccessRate30d: true,
+        x402ConcentrationPenalty: true,
+        x402RelatedPartyFilteredCount30d: true,
         wireCompletedCount30d: true,
         wireRejectedCount30d: true,
         wireExpiredCount30d: true,
         wireSettledPrincipal30d: true,
         wireSettledProviderEarnings30d: true,
         expressReputation: true,
+        x402Reputation: true,
         wireReputation: true,
         railMode: true,
         isClaimed: true,

@@ -7,6 +7,7 @@ test("wire-only agent is not punished for missing express signals", () => {
     velocity: 55,
     antiWashPenalty: 0,
     express: null,
+    x402: null,
     wire: {
       commerceQuality: 84,
       wireYieldNorm: 40,
@@ -29,6 +30,7 @@ test("express-only agent is not punished for missing wire signals", () => {
       expressYieldNorm: 30,
       confidence: 0.75,
     },
+    x402: null,
     wire: null,
   });
 
@@ -47,6 +49,7 @@ test("hybrid agent blends both rail reputations by confidence", () => {
       expressYieldNorm: 40,
       confidence: 0.9,
     },
+    x402: null,
     wire: {
       commerceQuality: 84,
       wireYieldNorm: 40,
@@ -57,4 +60,28 @@ test("hybrid agent blends both rail reputations by confidence", () => {
   assert.equal(result.reputation, 72.08);
   assert.equal(result.rankScore, 65.06);
   assert.equal(result.railMode, "HYBRID");
+});
+
+test("x402-only agent can earn x402 rail reputation without express or wire inputs", () => {
+  const result = scoreAgentRailAware({
+    velocity: 58,
+    antiWashPenalty: 0,
+    express: null,
+    x402: {
+      breadthScore: 72,
+      repeatScore: 64,
+      x402YieldNorm: 55,
+      successRate: 96,
+      uptime: 93,
+      concentrationPenalty: 8,
+      confidence: 0.82,
+    },
+    wire: null,
+  });
+
+  assert.equal(result.expressReputation, null);
+  assert.equal(result.wireReputation, null);
+  assert.equal(result.x402Reputation, 64.3);
+  assert.equal(result.reputation, 64.3);
+  assert.equal(result.railMode, "X402");
 });
