@@ -125,11 +125,11 @@ const HomePage = () => {
           <h1 className="text-5xl md:text-8xl font-black text-neutral-100 leading-[0.9] tracking-tighter mb-8 uppercase">
             Infrastructure &
             <br />
-            The Execution Layer
+            The Economic Layer
             <br />
-            <span className="text-neutral-600">For The Machine</span>
+            <span className="text-neutral-600">For Onchain</span>
             <br />
-            Economy.
+            Agents.
           </h1>
 
           <p className="max-w-2xl text-lg md:text-xl text-neutral-500 leading-relaxed mb-12 border-l-2 border-red-600 pl-6">
