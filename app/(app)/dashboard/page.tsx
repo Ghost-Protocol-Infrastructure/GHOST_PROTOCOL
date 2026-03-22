@@ -2784,15 +2784,15 @@ def my_agent():
                             return (
                               <>
                           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                            <div>
-                              <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
+                            <div className="min-w-0">
+                              <p className="break-all text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
                                 {job.jobId}
                               </p>
                               <p className="mt-1 text-sm text-neutral-300 font-mono">
                                 {job.contractState}
                                 {job.terminalDisposition ? ` | ${job.terminalDisposition}` : ""}
                               </p>
-                              <p className="mt-1 text-[11px] text-neutral-600">
+                              <p className="mt-1 break-all text-[11px] text-neutral-600">
                                 Quote {job.quoteId} {"|"} Updated {formatRelativeTimeFromIso(job.updatedAt)}
                               </p>
                             </div>
@@ -2800,46 +2800,46 @@ def my_agent():
                               <p className="text-sm text-neutral-200 font-mono">
                                 {formatWireUsdcAmount(job.pricing.principal.amount)}
                               </p>
-                              <p className="mt-1 text-[11px] text-neutral-600">
+                              <p className="mt-1 break-all text-[11px] text-neutral-600">
                                 Fee {formatWireUsdcAmount(job.pricing.protocolFee.amount)} {"|"} Client Gas Paid Directly
                               </p>
                             </div>
                           </div>
 
                           <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
-                            <div className="border border-neutral-900 bg-neutral-900 p-3">
+                            <div className="min-w-0 border border-neutral-900 bg-neutral-900 p-3">
                               <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
                                 Contract Artifacts
                               </p>
-                              <p className="mt-2 text-[11px] text-neutral-500">Contract: {formatShortHash(job.contractAddress)}</p>
-                              <p className="mt-1 text-[11px] text-neutral-500">Job Ref: {job.contractJobId ?? "--"}</p>
-                              <p className="mt-1 text-[11px] text-neutral-500">
+                              <p className="mt-2 break-all text-[11px] text-neutral-500">Contract: {formatShortHash(job.contractAddress)}</p>
+                              <p className="mt-1 break-all text-[11px] text-neutral-500">Job Ref: {job.contractJobId ?? "--"}</p>
+                              <p className="mt-1 break-all text-[11px] text-neutral-500">
                                 Deliverable: {deliverableLabel}
                               </p>
                             </div>
-                            <div className="border border-neutral-900 bg-neutral-900 p-3">
+                            <div className="min-w-0 border border-neutral-900 bg-neutral-900 p-3">
                               <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
                                 Recorded Tx Hashes
                               </p>
-                              <p className="mt-2 text-[11px] text-neutral-500">Create: {formatShortHash(job.createTxHash)}</p>
-                              <p className="mt-1 text-[11px] text-neutral-500">Fund: {formatShortHash(job.fundTxHash)}</p>
+                              <p className="mt-2 break-all text-[11px] text-neutral-500">Create: {formatShortHash(job.createTxHash)}</p>
+                              <p className="mt-1 break-all text-[11px] text-neutral-500">Fund: {formatShortHash(job.fundTxHash)}</p>
                             </div>
-                            <div className="border border-neutral-900 bg-neutral-900 p-3">
+                            <div className="min-w-0 border border-neutral-900 bg-neutral-900 p-3">
                               <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
                                 Operator
                               </p>
-                              <p className="mt-2 text-[11px] text-neutral-500">
+                              <p className="mt-2 break-all text-[11px] text-neutral-500">
                                 Create {job.operator.createStatus ?? "--"} {"|"} Fund {job.operator.fundStatus ?? "--"}
                               </p>
-                              <p className="mt-1 text-[11px] text-neutral-500">
+                              <p className="mt-1 break-all text-[11px] text-neutral-500">
                                 Confirm {job.operator.confirmationStatus ?? "--"} {"|"} Reconcile{" "}
                                 {job.operator.reconcileStatus ?? "--"}
                               </p>
                               {job.operator.lastError && (
-                                <p className="mt-2 text-[11px] text-amber-300">{job.operator.lastError}</p>
+                                <p className="mt-2 break-all text-[11px] text-amber-300">{job.operator.lastError}</p>
                               )}
                               {job.operator.nextRetryAt && (
-                                <p className="mt-1 text-[11px] text-neutral-600">
+                                <p className="mt-1 break-all text-[11px] text-neutral-600">
                                   Next retry {formatRelativeTimeFromIso(job.operator.nextRetryAt)}
                                 </p>
                               )}
@@ -3247,7 +3247,9 @@ def my_agent():
                     <span className="block break-all text-neutral-300 font-mono">
                       {APP_BASE_URL}/api/gate/{consumerServiceSlug}
                     </span>
-                    <span className="text-neutral-300 font-mono">1 Request = 1 Credit.</span>
+                    <span className="text-neutral-300 font-mono">
+                      Example shown: 1 request = 1 credit.
+                    </span>
                   </p>
                 </div>
 
