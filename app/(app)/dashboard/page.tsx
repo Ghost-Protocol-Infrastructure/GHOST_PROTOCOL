@@ -634,7 +634,9 @@ function DashboardPageContent() {
   const [showRevokedMerchantDelegatedSignerHistory, setShowRevokedMerchantDelegatedSignerHistory] = useState(
     DEFAULT_MERCHANT_REVOKED_SIGNER_HISTORY_VISIBLE,
   );
+  const [showMerchantSdkPreview, setShowMerchantSdkPreview] = useState(false);
   const [merchantWireJobs, setMerchantWireJobs] = useState<WireJobListItem[]>([]);
+  const [showMerchantWireJobs, setShowMerchantWireJobs] = useState(false);
   const [isLoadingMerchantWireJobs, setIsLoadingMerchantWireJobs] = useState(false);
   const [merchantWireJobsError, setMerchantWireJobsError] = useState<string | null>(null);
   const [consumerGatewayReadinessStatus, setConsumerGatewayReadinessStatus] = useState<GatewayReadinessStatus | null>(null);
@@ -2632,10 +2634,26 @@ def my_agent():
                 </div>
 
                 <div className="mt-5 border border-neutral-900 bg-neutral-900 p-4">
-                  <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">SDK Usage Preview</p>
-                  <pre className="overflow-x-auto whitespace-pre-wrap text-sm text-neutral-300 font-mono">
-                    <code>{merchantSdkExample}</code>
-                  </pre>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">SDK Usage Preview</p>
+                    <button
+                      type="button"
+                      onClick={() => setShowMerchantSdkPreview((current) => !current)}
+                      className="inline-flex items-center justify-center border border-neutral-800 px-3 py-1.5 text-[11px] uppercase tracking-[0.16em] text-neutral-300 transition hover:border-neutral-700 hover:text-neutral-100"
+                    >
+                      {showMerchantSdkPreview ? "Hide Preview" : "Show Preview"}
+                    </button>
+                  </div>
+                  {!showMerchantSdkPreview && (
+                    <p className="mt-3 text-xs text-neutral-600">
+                      Merchant SDK example is collapsed to keep the dashboard compact.
+                    </p>
+                  )}
+                  {showMerchantSdkPreview && (
+                    <pre className="mt-3 overflow-x-auto whitespace-pre-wrap text-sm text-neutral-300 font-mono">
+                      <code>{merchantSdkExample}</code>
+                    </pre>
+                  )}
                 </div>
 
                 <SdkDocsLinks mode="merchant" />
@@ -2725,11 +2743,22 @@ def my_agent():
                         </p>
                       )}
                     </div>
-                    {isLoadingMerchantWireJobs && (
-                      <p className="text-[11px] uppercase tracking-[0.16em] text-neutral-500 font-bold">
-                        Loading GhostWire backlog...
-                      </p>
-                    )}
+                    <div className="flex flex-col gap-2 sm:items-end">
+                      {isLoadingMerchantWireJobs && (
+                        <p className="text-[11px] uppercase tracking-[0.16em] text-neutral-500 font-bold">
+                          Loading GhostWire backlog...
+                        </p>
+                      )}
+                      {merchantWireJobs.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowMerchantWireJobs((current) => !current)}
+                          className="inline-flex items-center justify-center border border-neutral-800 px-3 py-1.5 text-[11px] uppercase tracking-[0.16em] text-neutral-300 transition hover:border-neutral-700 hover:text-neutral-100"
+                        >
+                          {showMerchantWireJobs ? "Hide Job Log" : `Show Job Log (${merchantWireJobs.length})`}
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
@@ -2767,101 +2796,111 @@ def my_agent():
                     </p>
                   )}
 
-                  {merchantWireJobs.length > 0 && (
-                    <div className="mt-4 space-y-3">
-                      {merchantWireJobs.map((job) => (
-                        <div key={job.jobId} className="border border-neutral-800 bg-neutral-950 p-3">
-                          {(() => {
-                            const deliverableLocator = job.deliverable?.locatorUrl ?? job.metadataUri;
-                            const deliverableState = job.deliverable?.state ?? (job.metadataUri ? "PENDING" : "UNCONFIGURED");
-                            const deliverableLabel =
-                              deliverableState === "READY"
-                                ? "Locator Ready"
-                                : deliverableState === "PENDING"
-                                  ? "Locator Pending"
-                                  : "Locator Unset";
+                  {merchantWireJobs.length > 0 && !showMerchantWireJobs && (
+                    <p className="mt-4 text-xs text-neutral-600">
+                      GhostWire job details are collapsed to keep the merchant console compact.
+                    </p>
+                  )}
 
-                            return (
-                              <>
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                            <div className="min-w-0">
-                              <p className="break-all text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
-                                {job.jobId}
-                              </p>
-                              <p className="mt-1 text-sm text-neutral-300 font-mono">
-                                {job.contractState}
-                                {job.terminalDisposition ? ` | ${job.terminalDisposition}` : ""}
-                              </p>
-                              <p className="mt-1 break-all text-[11px] text-neutral-600">
-                                Quote {job.quoteId} {"|"} Updated {formatRelativeTimeFromIso(job.updatedAt)}
-                              </p>
-                            </div>
-                            <div className="text-left sm:text-right">
-                              <p className="text-sm text-neutral-200 font-mono">
-                                {formatWireUsdcAmount(job.pricing.principal.amount)}
-                              </p>
-                              <p className="mt-1 break-all text-[11px] text-neutral-600">
-                                Fee {formatWireUsdcAmount(job.pricing.protocolFee.amount)} {"|"} Client Gas Paid Directly
-                              </p>
-                            </div>
-                          </div>
+                  {merchantWireJobs.length > 0 && showMerchantWireJobs && (
+                    <div className="mt-4 border border-neutral-800 bg-neutral-950 p-2">
+                      <div className="max-h-[28rem] overflow-y-auto pr-1 sm:max-h-[36rem]">
+                        <div className="space-y-3">
+                          {merchantWireJobs.map((job) => (
+                            <div key={job.jobId} className="border border-neutral-800 bg-neutral-950 p-3">
+                              {(() => {
+                                const deliverableLocator = job.deliverable?.locatorUrl ?? job.metadataUri;
+                                const deliverableState = job.deliverable?.state ?? (job.metadataUri ? "PENDING" : "UNCONFIGURED");
+                                const deliverableLabel =
+                                  deliverableState === "READY"
+                                    ? "Locator Ready"
+                                    : deliverableState === "PENDING"
+                                      ? "Locator Pending"
+                                      : "Locator Unset";
 
-                          <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
-                            <div className="min-w-0 border border-neutral-900 bg-neutral-900 p-3">
-                              <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
-                                Contract Artifacts
-                              </p>
-                              <p className="mt-2 break-all text-[11px] text-neutral-500">Contract: {formatShortHash(job.contractAddress)}</p>
-                              <p className="mt-1 break-all text-[11px] text-neutral-500">Job Ref: {job.contractJobId ?? "--"}</p>
-                              <p className="mt-1 break-all text-[11px] text-neutral-500">
-                                Deliverable: {deliverableLabel}
-                              </p>
-                            </div>
-                            <div className="min-w-0 border border-neutral-900 bg-neutral-900 p-3">
-                              <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
-                                Recorded Tx Hashes
-                              </p>
-                              <p className="mt-2 break-all text-[11px] text-neutral-500">Create: {formatShortHash(job.createTxHash)}</p>
-                              <p className="mt-1 break-all text-[11px] text-neutral-500">Fund: {formatShortHash(job.fundTxHash)}</p>
-                            </div>
-                            <div className="min-w-0 border border-neutral-900 bg-neutral-900 p-3">
-                              <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
-                                Operator
-                              </p>
-                              <p className="mt-2 break-all text-[11px] text-neutral-500">
-                                Create {job.operator.createStatus ?? "--"} {"|"} Fund {job.operator.fundStatus ?? "--"}
-                              </p>
-                              <p className="mt-1 break-all text-[11px] text-neutral-500">
-                                Confirm {job.operator.confirmationStatus ?? "--"} {"|"} Reconcile{" "}
-                                {job.operator.reconcileStatus ?? "--"}
-                              </p>
-                              {job.operator.lastError && (
-                                <p className="mt-2 break-all text-[11px] text-amber-300">{job.operator.lastError}</p>
+                                return (
+                                  <>
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="min-w-0">
+                                  <p className="break-all text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
+                                    {job.jobId}
+                                  </p>
+                                  <p className="mt-1 text-sm text-neutral-300 font-mono">
+                                    {job.contractState}
+                                    {job.terminalDisposition ? ` | ${job.terminalDisposition}` : ""}
+                                  </p>
+                                  <p className="mt-1 break-all text-[11px] text-neutral-600">
+                                    Quote {job.quoteId} {"|"} Updated {formatRelativeTimeFromIso(job.updatedAt)}
+                                  </p>
+                                </div>
+                                <div className="text-left sm:text-right">
+                                  <p className="text-sm text-neutral-200 font-mono">
+                                    {formatWireUsdcAmount(job.pricing.principal.amount)}
+                                  </p>
+                                  <p className="mt-1 break-all text-[11px] text-neutral-600">
+                                    Fee {formatWireUsdcAmount(job.pricing.protocolFee.amount)} {"|"} Client Gas Paid Directly
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
+                                <div className="min-w-0 border border-neutral-900 bg-neutral-900 p-3">
+                                  <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
+                                    Contract Artifacts
+                                  </p>
+                                  <p className="mt-2 break-all text-[11px] text-neutral-500">Contract: {formatShortHash(job.contractAddress)}</p>
+                                  <p className="mt-1 break-all text-[11px] text-neutral-500">Job Ref: {job.contractJobId ?? "--"}</p>
+                                  <p className="mt-1 break-all text-[11px] text-neutral-500">
+                                    Deliverable: {deliverableLabel}
+                                  </p>
+                                </div>
+                                <div className="min-w-0 border border-neutral-900 bg-neutral-900 p-3">
+                                  <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
+                                    Recorded Tx Hashes
+                                  </p>
+                                  <p className="mt-2 break-all text-[11px] text-neutral-500">Create: {formatShortHash(job.createTxHash)}</p>
+                                  <p className="mt-1 break-all text-[11px] text-neutral-500">Fund: {formatShortHash(job.fundTxHash)}</p>
+                                </div>
+                                <div className="min-w-0 border border-neutral-900 bg-neutral-900 p-3">
+                                  <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
+                                    Operator
+                                  </p>
+                                  <p className="mt-2 break-all text-[11px] text-neutral-500">
+                                    Create {job.operator.createStatus ?? "--"} {"|"} Fund {job.operator.fundStatus ?? "--"}
+                                  </p>
+                                  <p className="mt-1 break-all text-[11px] text-neutral-500">
+                                    Confirm {job.operator.confirmationStatus ?? "--"} {"|"} Reconcile{" "}
+                                    {job.operator.reconcileStatus ?? "--"}
+                                  </p>
+                                  {job.operator.lastError && (
+                                    <p className="mt-2 break-all text-[11px] text-amber-300">{job.operator.lastError}</p>
+                                  )}
+                                  {job.operator.nextRetryAt && (
+                                    <p className="mt-1 break-all text-[11px] text-neutral-600">
+                                      Next retry {formatRelativeTimeFromIso(job.operator.nextRetryAt)}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+
+                              {deliverableLocator && (
+                                <div className="mt-3 border border-neutral-900 bg-neutral-900 p-3">
+                                  <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
+                                    Deliverable Locator
+                                  </p>
+                                  <p className="mt-2 break-all text-[11px] text-neutral-500 font-mono">{deliverableLocator}</p>
+                                  <p className="mt-1 text-[11px] text-neutral-600">
+                                    Consumers can resolve this deliverable after completion through the GhostWire SDK helpers.
+                                  </p>
+                                </div>
                               )}
-                              {job.operator.nextRetryAt && (
-                                <p className="mt-1 break-all text-[11px] text-neutral-600">
-                                  Next retry {formatRelativeTimeFromIso(job.operator.nextRetryAt)}
-                                </p>
-                              )}
+                                  </>
+                                );
+                              })()}
                             </div>
-                          </div>
-
-                          {deliverableLocator && (
-                            <div className="mt-3 border border-neutral-900 bg-neutral-900 p-3">
-                              <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
-                                Deliverable Locator
-                              </p>
-                              <p className="mt-2 break-all text-[11px] text-neutral-500 font-mono">{deliverableLocator}</p>
-                              <p className="mt-1 text-[11px] text-neutral-600">
-                                Consumers can resolve this deliverable after completion through the GhostWire SDK helpers.
-                              </p>
-                            </div>
-                          )}
-                              </>
-                            );
-                          })()}
+                          ))}
                         </div>
-                      ))}
+                      </div>
                     </div>
                   )}
                 </div>
