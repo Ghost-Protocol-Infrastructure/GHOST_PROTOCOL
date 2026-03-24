@@ -71,6 +71,7 @@ export type GhostWireArtifactAuthPayload = {
 const GHOSTWIRE_ARTIFACT_AUTH_SCOPE = "ghostwire_artifacts" as const;
 const GHOSTWIRE_ARTIFACT_AUTH_VERSION = "1" as const;
 const GHOSTWIRE_ARTIFACT_AUTH_MAX_AGE_SECONDS = 300;
+const GHOSTWIRE_CREATE_READBACK_RETRY_DELAYS_MS = [250, 1_000, 2_500] as const;
 
 const getWireChain = (chainId: GhostWireSupportedChainId) =>
   chainId === GHOSTWIRE_SUPPORTED_MAINNET_CHAIN_ID ? base : baseSepolia;
@@ -89,6 +90,11 @@ const normalizeHash = (value: string | null | undefined): Hash | null => {
   const trimmed = value?.trim().toLowerCase();
   return trimmed && /^0x[a-f0-9]{64}$/.test(trimmed) ? (trimmed as Hash) : null;
 };
+
+const delay = async (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 export const buildGhostWireJobDescription = (input: {
   metadataUri?: string | null;
@@ -352,6 +358,59 @@ const readGhostWireJob = async (input: {
   });
 };
 
+type GhostWireOnchainJobSnapshot = {
+  client: Address;
+  provider: Address;
+  evaluator: Address;
+  description: string;
+  budget: bigint;
+  expiredAt: bigint;
+  status: bigint | number;
+};
+
+const buildGhostWireCreateReadbackMismatchMessage = (input: {
+  contractAddress: Address;
+  contractJobId: string;
+  expectedClientAddress: string;
+  expectedProviderAddress: string;
+  expectedEvaluatorAddress: string;
+  expectedDescription: string;
+  expectedExpiry: bigint;
+  onchainJob: GhostWireOnchainJobSnapshot;
+}) => {
+  const expectedClient = getAddress(input.expectedClientAddress).toLowerCase();
+  const expectedProvider = getAddress(input.expectedProviderAddress).toLowerCase();
+  const expectedEvaluator = getAddress(input.expectedEvaluatorAddress).toLowerCase();
+  const observedClient = getAddress(input.onchainJob.client).toLowerCase();
+  const observedProvider = getAddress(input.onchainJob.provider).toLowerCase();
+  const observedEvaluator = getAddress(input.onchainJob.evaluator).toLowerCase();
+  const mismatches: string[] = [];
+
+  if (observedClient !== expectedClient) {
+    mismatches.push(`client expected=${expectedClient} observed=${observedClient}`);
+  }
+  if (observedProvider !== expectedProvider) {
+    mismatches.push(`provider expected=${expectedProvider} observed=${observedProvider}`);
+  }
+  if (observedEvaluator !== expectedEvaluator) {
+    mismatches.push(`evaluator expected=${expectedEvaluator} observed=${observedEvaluator}`);
+  }
+  if (input.onchainJob.description !== input.expectedDescription) {
+    mismatches.push(
+      `description expected=${JSON.stringify(input.expectedDescription)} observed=${JSON.stringify(input.onchainJob.description)}`,
+    );
+  }
+  if (input.onchainJob.expiredAt !== input.expectedExpiry) {
+    mismatches.push(
+      `expiredAt expected=${input.expectedExpiry.toString()} observed=${input.onchainJob.expiredAt.toString()}`,
+    );
+  }
+
+  if (mismatches.length === 0) return null;
+
+  return `On-chain GhostWire job readback did not match the prepared job. contract=${input.contractAddress.toLowerCase()} jobId=${input.contractJobId} ${mismatches.join("; ")}`;
+};
+
 export const validateGhostWireCreateArtifact = async (input: {
   chainId: GhostWireSupportedChainId;
   expectedClientAddress: string;
@@ -407,35 +466,47 @@ export const validateGhostWireCreateArtifact = async (input: {
   if (typeof rawJobId !== "bigint") {
     throw new Error("Create transaction did not emit a matching JobCreated event.");
   }
+  const contractJobId = rawJobId.toString();
+  let onchainJob: GhostWireOnchainJobSnapshot | null = null;
+  let lastReadbackError =
+    `On-chain GhostWire job readback did not stabilize after create. contract=${contractAddress.toLowerCase()} jobId=${contractJobId}`;
 
-  const onchainJob = (await readGhostWireJob({
-    chainId: input.chainId,
-    contractAddress,
-    contractJobId: rawJobId.toString(),
-  })) as {
-    client: Address;
-    provider: Address;
-    evaluator: Address;
-    description: string;
-    budget: bigint;
-    expiredAt: bigint;
-    status: bigint | number;
-  };
+  for (let attempt = 0; attempt <= GHOSTWIRE_CREATE_READBACK_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      const candidate = (await readGhostWireJob({
+        chainId: input.chainId,
+        contractAddress,
+        contractJobId,
+      })) as GhostWireOnchainJobSnapshot;
+      const mismatch = buildGhostWireCreateReadbackMismatchMessage({
+        contractAddress,
+        contractJobId,
+        expectedClientAddress: input.expectedClientAddress,
+        expectedProviderAddress: input.expectedProviderAddress,
+        expectedEvaluatorAddress: input.expectedEvaluatorAddress,
+        expectedDescription: input.expectedDescription,
+        expectedExpiry,
+        onchainJob: candidate,
+      });
 
-  if (getAddress(onchainJob.client).toLowerCase() !== getAddress(input.expectedClientAddress).toLowerCase()) {
-    throw new Error("On-chain job client does not match the expected client wallet.");
+      if (!mismatch) {
+        onchainJob = candidate;
+        break;
+      }
+
+      lastReadbackError = mismatch;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown GhostWire readback error.";
+      lastReadbackError = `Failed to read GhostWire job after create. contract=${contractAddress.toLowerCase()} jobId=${contractJobId} error=${message}`;
+    }
+
+    if (attempt < GHOSTWIRE_CREATE_READBACK_RETRY_DELAYS_MS.length) {
+      await delay(GHOSTWIRE_CREATE_READBACK_RETRY_DELAYS_MS[attempt]!);
+    }
   }
-  if (getAddress(onchainJob.provider).toLowerCase() !== getAddress(input.expectedProviderAddress).toLowerCase()) {
-    throw new Error("On-chain job provider does not match the expected provider wallet.");
-  }
-  if (getAddress(onchainJob.evaluator).toLowerCase() !== getAddress(input.expectedEvaluatorAddress).toLowerCase()) {
-    throw new Error("On-chain job evaluator does not match the expected evaluator wallet.");
-  }
-  if (onchainJob.description !== input.expectedDescription) {
-    throw new Error("On-chain job description does not match the prepared GhostWire job.");
-  }
-  if (onchainJob.expiredAt !== expectedExpiry) {
-    throw new Error("On-chain job expiry does not match the prepared GhostWire job.");
+
+  if (!onchainJob) {
+    throw new Error(lastReadbackError);
   }
 
   const latestBlock = await publicClient.getBlockNumber();
@@ -444,7 +515,7 @@ export const validateGhostWireCreateArtifact = async (input: {
 
   return {
     contractAddress,
-    contractJobId: rawJobId.toString(),
+    contractJobId,
     createTxHash: txHash,
     createTxSender: getAddress(transaction.from).toLowerCase(),
     blockNumber: receipt.blockNumber,
