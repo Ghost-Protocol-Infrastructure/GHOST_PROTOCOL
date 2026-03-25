@@ -14,7 +14,7 @@ This bundle does not use the removed GhostGate x402-compat envelope. `call-x402.
 If you want a real ClawHub bundle with helper scripts included, publish the folder root:
 
 ```bash
-clawhub publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.3.0 --tags latest,agents,eip712,ghostprotocol,ghostwire,mcp,openclaw,payments,x402
+clawhub publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.4.0 --tags latest,agents,eip712,ghostprotocol,ghostwire,mcp,openclaw,payments,x402
 ```
 
 Do not rely on a web-form-only publish if it only captures `SKILL.md`; the installable bundle needs the helper scripts under `bin/`.
@@ -23,7 +23,7 @@ If `clawhub` returns `fetch failed` from this machine/network, run the bundled w
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File ./scripts/clawhub.ps1 whoami
-powershell -ExecutionPolicy Bypass -File ./scripts/clawhub.ps1 publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.3.0 --tags latest,agents,eip712,ghostprotocol,ghostwire,mcp,openclaw,payments,x402
+powershell -ExecutionPolicy Bypass -File ./scripts/clawhub.ps1 publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.4.0 --tags latest,agents,eip712,ghostprotocol,ghostwire,mcp,openclaw,payments,x402
 ```
 
 ## Contents
@@ -34,7 +34,7 @@ powershell -ExecutionPolicy Bypass -File ./scripts/clawhub.ps1 publish ./integra
 - `bin/call-x402.mjs` - real `x402` client helper for merchant endpoints
 - `bin/report-x402-settlement.mjs` - merchant-signed settlement report helper for GhostRank
 - `bin/get-wire-quote.mjs` - MCP wrapper for GhostWire quote creation
-- `bin/create-wire-job-from-quote.mjs` - direct GhostWire job preparation from an issued quote
+- `bin/create-wire-job-from-quote.mjs` - direct GhostWire job preparation from an issued quote with a consumer-authored request
 - `bin/get-wire-job-status.mjs` - MCP wrapper for GhostWire job status polling
 
 ## Usage
@@ -62,7 +62,7 @@ node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --client 0x... --pro
 ```
 
 ```bash
-node integrations/openclaw-ghost-pay/bin/create-wire-job-from-quote.mjs --quote-id wq_... --client 0x... --provider 0x... --evaluator 0x... --spec-hash 0x...
+node integrations/openclaw-ghost-pay/bin/create-wire-job-from-quote.mjs --quote-id wq_... --client 0x... --provider 0x... --evaluator 0x... --request-prompt "Roast my wallet honestly."
 ```
 
 ```bash
@@ -82,7 +82,10 @@ node integrations/openclaw-ghost-pay/bin/get-wire-job-status.mjs --job-id wj_...
 - `GHOSTWIRE_EVALUATOR_ADDRESS` (optional default for `get-wire-quote`)
 - `GHOSTWIRE_PRINCIPAL_AMOUNT` (optional default for `get-wire-quote`)
 - `GHOSTWIRE_CLIENT_ADDRESS` (optional default for wire create)
-- `GHOSTWIRE_SPEC_HASH` (optional default for wire create, required by API)
+- `GHOSTWIRE_SPEC_HASH` (optional explicit override; otherwise derive from request)
+- `GHOSTWIRE_REQUEST_PROMPT` (optional default consumer task prompt)
+- `GHOSTWIRE_REQUEST_JSON` (optional full consumer request JSON)
+- `GHOSTWIRE_REQUEST_METADATA_JSON` (optional structured request metadata)
 - `GHOSTWIRE_METADATA_URI` (optional)
 - `GHOSTWIRE_WEBHOOK_URL` + `GHOSTWIRE_WEBHOOK_SECRET` (optional pair)
 - `GHOSTWIRE_APPROVAL_MODE` (optional: `exact` or `unlimited`)
@@ -126,9 +129,9 @@ Use this copy when submitting `openclaw-ghost-pay` to directories.
 
 - Display Name: Ghost Protocol OpenClaw Pay
 - Slug: openclaw-ghost-pay
-- Version: 1.3.0
+- Version: 1.4.0
 - Short Description: Discover Ghost payment requirements, execute real x402 calls, report verified x402 settlements, and prepare GhostWire direct escrow jobs.
-- Long Description: Ghost Protocol gives OpenClaw agents one bundle for GhostGate Express discovery, open x402 execution, x402 settlement reporting for GhostRank, and GhostWire direct escrow prep. Agents can discover pricing requirements, call merchant x402 endpoints, report verified settlements back to Ghost, and prepare GhostWire quote/status flows from a single skill bundle. The ClawHub bundle includes the helper scripts it references and requires a trusted server-side signer key.
+- Long Description: Ghost Protocol gives OpenClaw agents one bundle for GhostGate Express discovery, open x402 execution, x402 settlement reporting for GhostRank, and GhostWire direct escrow prep. Agents can discover pricing requirements, call merchant x402 endpoints, report verified settlements back to Ghost, and prepare GhostWire quote/status flows from a single skill bundle. GhostWire prep now carries a consumer-authored request payload while keeping `metadataUri` reserved for the merchant deliverable locator. The ClawHub bundle includes the helper scripts it references and requires a trusted server-side signer key.
 
 Verified production benchmark:
 

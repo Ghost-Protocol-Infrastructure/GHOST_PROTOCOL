@@ -149,6 +149,13 @@ type WireJobDeliverableSummary = {
   state: "READY" | "PENDING" | "UNCONFIGURED";
 };
 
+type WireJobRequestPayload = {
+  version?: number;
+  prompt: string;
+  walletAddress?: string | null;
+  metadata?: Record<string, unknown> | null;
+};
+
 type WireJobListItem = {
   id: string;
   jobId: string;
@@ -166,6 +173,7 @@ type WireJobListItem = {
   fundTxHash: string | null;
   terminalTxHash: string | null;
   metadataUri: string | null;
+  request?: WireJobRequestPayload | null;
   createdAt: string;
   updatedAt: string;
   pricing: {
@@ -966,6 +974,10 @@ function DashboardPageContent() {
             typeof row.deliverable === "object" && row.deliverable !== null
               ? (row.deliverable as WireJobDeliverableSummary)
               : null;
+          const requestPayload =
+            typeof row.request === "object" && row.request !== null && typeof (row.request as Record<string, unknown>).prompt === "string"
+              ? (row.request as WireJobRequestPayload)
+              : null;
 
           if (!principal || !protocolFee || !networkReserve || !operator) {
             return null;
@@ -988,6 +1000,7 @@ function DashboardPageContent() {
             fundTxHash: typeof row.fundTxHash === "string" ? row.fundTxHash : null,
             terminalTxHash: typeof row.terminalTxHash === "string" ? row.terminalTxHash : null,
             metadataUri: typeof row.metadataUri === "string" ? row.metadataUri : null,
+            request: requestPayload,
             createdAt: typeof row.createdAt === "string" ? row.createdAt : new Date().toISOString(),
             updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : new Date().toISOString(),
             pricing: {
@@ -2892,6 +2905,20 @@ def my_agent():
                                   <p className="mt-1 text-[11px] text-neutral-600">
                                     Consumers can resolve this deliverable after completion through the GhostWire SDK helpers.
                                   </p>
+                                </div>
+                              )}
+
+                              {job.request && (
+                                <div className="mt-3 border border-neutral-900 bg-neutral-900 p-3">
+                                  <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
+                                    Consumer Request
+                                  </p>
+                                  <p className="mt-2 text-[11px] text-neutral-300">{job.request.prompt}</p>
+                                  {job.request.walletAddress && (
+                                    <p className="mt-1 break-all text-[11px] text-neutral-500">
+                                      Wallet: {job.request.walletAddress}
+                                    </p>
+                                  )}
                                 </div>
                               )}
                                   </>

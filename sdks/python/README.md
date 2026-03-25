@@ -17,7 +17,7 @@ pip install ghostgate-sdk
 
 ```python
 import os
-from ghostgate import GhostGate
+from ghostgate import GhostGate, build_wire_request_spec_hash
 
 sdk = GhostGate(
     api_key=os.environ["GHOST_API_KEY"],
@@ -90,6 +90,30 @@ print(report)
 - `get_wire_job(...)`
 - `wait_for_wire_terminal(...)`
 - `get_wire_deliverable(...)`
+- `build_wire_request_spec_hash(...)`
+
+## GhostWire request example
+
+```python
+request_payload = {
+    "prompt": "Roast my wallet honestly.",
+    "walletAddress": "0xclient...",
+    "metadata": {
+        "skill": "booski",
+        "tone": "merciless",
+    },
+}
+
+prepared = sdk.prepare_wire_job(
+    quote_id="wq_123",
+    client="0xclient...",
+    provider="0xprovider...",
+    evaluator="0xevaluator...",
+    request=request_payload,
+    spec_hash=build_wire_request_spec_hash(request_payload),
+    metadata_uri="https://merchant.example.com/ghostwire/deliverable?contract=0x...&job=3",
+)
+```
 
 Backward-compatible aliases are also available:
 
@@ -103,4 +127,5 @@ Backward-compatible aliases are also available:
 - Recommended default for `Express` is `5+` credits per request. Use `x402` for cheap or high-frequency paid access.
 - `request_x402()` is the real x402 helper, but it is intentionally low-level: it returns the initial challenge unless you supply a retry `payment_header`.
 - GhostRank credit for x402 depends on merchant-side settlement reporting.
+- For GhostWire, `request` is the consumer-authored task payload. Keep `metadata_uri` for the merchant-controlled deliverable locator.
 - Use signer private keys only in trusted backend/server/CLI environments.

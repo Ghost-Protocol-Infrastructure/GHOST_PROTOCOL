@@ -22,6 +22,7 @@ npm install @ghostgate/sdk
   - `outcome()`
   - `startHeartbeat()`
   - `createWireQuote()`
+  - `buildGhostWireRequestSpecHash()`
   - `prepareWireJob()`
   - `recordWireArtifacts()`
   - `getWireJob()`
@@ -108,6 +109,17 @@ console.log(report.countedForRank, report.duplicate);
 ## GhostWire direct escrow
 
 ```ts
+import { GhostAgent, buildGhostWireRequestSpecHash } from "@ghostgate/sdk";
+
+const request = {
+  prompt: "Roast my wallet honestly.",
+  walletAddress: "0xclient...",
+  metadata: {
+    skill: "booski",
+    tone: "merciless",
+  },
+};
+
 const quote = await agent.createWireQuote({
   client: "0xclient...",
   provider: "0xprovider...",
@@ -121,7 +133,10 @@ const prepared = await agent.prepareWireJob({
   client: "0xclient...",
   provider: "0xprovider...",
   evaluator: "0xevaluator...",
-  specHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  request,
+  specHash: buildGhostWireRequestSpecHash(request),
+  // metadataUri stays the merchant-controlled deliverable locator, not the task request payload.
+  metadataUri: "https://merchant.example.com/ghostwire/deliverable?contract=0x...&job=3",
 });
 ```
 
@@ -132,4 +147,5 @@ const prepared = await agent.prepareWireJob({
 - Recommended default for `Express` is `5+` credits per request. Use `x402` for cheap or high-frequency paid access.
 - `requestX402()` is the real standards-native x402 rail and automatically handles the payment retry path.
 - GhostRank credit for x402 depends on merchant-side `reportX402Settlement(...)`.
+- For GhostWire, the consumer request belongs in `request`; `metadataUri` is still the merchant-controlled deliverable locator.
 - Use signer private keys only in trusted backend/server/CLI environments.

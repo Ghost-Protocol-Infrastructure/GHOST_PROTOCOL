@@ -29,6 +29,11 @@ import {
   type GhostWireWalletTxRequest,
   type WireApprovalMode,
 } from "@/lib/ghostwire-direct";
+import {
+  hashGhostWireRequestPayload,
+  normalizeGhostWireRequestPayload,
+  type GhostWireRequestPayload,
+} from "@/lib/ghostwire-request";
 
 const buildGhostWireId = (prefix: "wq" | "wj"): string => `${prefix}_${randomUUID().replace(/-/g, "")}`;
 const buildWireOpenEventId = (jobId: string): string => `wire_job_open:${jobId}`;
@@ -296,6 +301,7 @@ const buildOpenWebhookPayload = (job: {
   principalAmount: bigint;
   protocolFeeAmount: bigint;
   networkReserveAmount: bigint;
+  requestPayload?: unknown;
   createdAt: Date;
 }) => ({
   jobId: job.jobId,
@@ -303,6 +309,7 @@ const buildOpenWebhookPayload = (job: {
   state: job.publicState,
   contractState: job.contractState,
   createdAt: job.createdAt.toISOString(),
+  request: normalizeGhostWireRequestPayload(job.requestPayload) ?? null,
   pricing: buildWirePricingPayload(job),
 });
 
@@ -317,6 +324,7 @@ const buildFundedWebhookPayload = (job: {
   principalAmount: bigint;
   protocolFeeAmount: bigint;
   networkReserveAmount: bigint;
+  requestPayload?: unknown;
   createTxHash: string | null;
   fundTxHash: string | null;
   updatedAt: Date;
@@ -330,6 +338,7 @@ const buildFundedWebhookPayload = (job: {
   createTxHash: job.createTxHash,
   fundTxHash: job.fundTxHash,
   observedAt: job.updatedAt.toISOString(),
+  request: normalizeGhostWireRequestPayload(job.requestPayload) ?? null,
   pricing: buildWirePricingPayload(job),
 });
 
@@ -346,6 +355,7 @@ const buildSubmittedWebhookPayload = (job: {
   principalAmount: bigint;
   protocolFeeAmount: bigint;
   networkReserveAmount: bigint;
+  requestPayload?: unknown;
 }) => ({
   jobId: job.jobId,
   quoteId: job.quoteId,
@@ -355,6 +365,7 @@ const buildSubmittedWebhookPayload = (job: {
   contractJobId: job.contractJobId,
   fundTxHash: job.fundTxHash,
   observedAt: job.updatedAt.toISOString(),
+  request: normalizeGhostWireRequestPayload(job.requestPayload) ?? null,
   pricing: buildWirePricingPayload(job),
 });
 
@@ -373,6 +384,7 @@ const buildTerminalWebhookPayload = (job: {
   protocolFeeAmount: bigint;
   networkReserveAmount: bigint;
   operatorSpends: Array<{ nativeAmountSpent: bigint }>;
+  requestPayload?: unknown;
 }) => ({
   jobId: job.jobId,
   quoteId: job.quoteId,
@@ -383,6 +395,7 @@ const buildTerminalWebhookPayload = (job: {
   terminalDisposition: job.terminalDisposition,
   terminalTxHash: job.terminalTxHash,
   observedAt: job.updatedAt.toISOString(),
+  request: normalizeGhostWireRequestPayload(job.requestPayload) ?? null,
   pricing: buildWirePricingPayload(job),
   settlement: deriveTerminalSettlement({
     contractState: job.contractState,
@@ -399,6 +412,9 @@ const hasWireWebhookTarget = (job: {
   webhookSecret?: string | null;
 }): boolean => Boolean(job.webhookTargetUrl && job.webhookSecret);
 
+const normalizeStoredGhostWireRequestPayload = (value: Prisma.JsonValue | null | undefined): GhostWireRequestPayload | null =>
+  value == null ? null : normalizeGhostWireRequestPayload(value);
+
 export const prepareWireJobFromQuote = async (input: {
   quoteId: string;
   clientAddress: string;
@@ -406,7 +422,8 @@ export const prepareWireJobFromQuote = async (input: {
   providerAgentId?: string | null;
   providerServiceSlug?: string | null;
   evaluatorAddress: string;
-  specHash: `0x${string}`;
+  specHash?: `0x${string}` | null;
+  requestPayload?: GhostWireRequestPayload | null;
   metadataUri?: string | null;
   webhookTargetUrl?: string | null;
   webhookSecret?: string | null;
@@ -444,6 +461,22 @@ export const prepareWireJobFromQuote = async (input: {
   };
 }> => {
   const approvalMode = input.approvalMode ?? "exact";
+  const normalizedRequestPayload = input.requestPayload ? normalizeGhostWireRequestPayload(input.requestPayload) : null;
+  if (input.requestPayload && !normalizedRequestPayload) {
+    throw new Error("Invalid GhostWire request payload.");
+  }
+  const derivedSpecHash = normalizedRequestPayload ? hashGhostWireRequestPayload(normalizedRequestPayload) : null;
+  if (
+    input.specHash &&
+    derivedSpecHash &&
+    input.specHash.toLowerCase() !== derivedSpecHash.toLowerCase()
+  ) {
+    throw new WireQuoteMismatchError("GhostWire request payload does not match the supplied specHash.");
+  }
+  const resolvedSpecHash = input.specHash ?? derivedSpecHash;
+  if (!resolvedSpecHash) {
+    throw new Error("GhostWire job creation requires either specHash or requestPayload.");
+  }
   const quoteForPreflight = await prisma.wireQuote.findUnique({
     where: { quoteId: input.quoteId },
     select: {
@@ -554,8 +587,9 @@ export const prepareWireJobFromQuote = async (input: {
         protocolFeeAmount: quote.protocolFeeAmount,
         networkReserveAmount: quote.networkReserveAmount,
         networkReserveAsset: quote.networkReserveAsset,
-        specHash: input.specHash,
+        specHash: resolvedSpecHash,
         metadataUri: input.metadataUri ?? null,
+        requestPayload: normalizedRequestPayload ? (normalizedRequestPayload as Prisma.InputJsonValue) : Prisma.DbNull,
         webhookTargetUrl: input.webhookTargetUrl ?? null,
         webhookSecret: input.webhookSecret ?? null,
         contractState: "OPEN",
@@ -621,6 +655,7 @@ export const prepareWireJobFromQuote = async (input: {
       contractBudgetAmount: job.contractBudgetAmount,
       specHash: job.specHash,
       metadataUri: job.metadataUri,
+      requestPayload: normalizeStoredGhostWireRequestPayload(job.requestPayload),
       state: job.publicState,
       contractState: job.contractState,
       pricing: buildWirePricingPayload(job),
@@ -691,6 +726,7 @@ export const getWireJobById = async (jobId: string): Promise<{
   evaluatorAddress: string;
   specHash: string;
   metadataUri: string | null;
+  request: GhostWireRequestPayload | null;
   contractAddress: string | null;
   contractJobId: string | null;
   createTxHash: string | null;
@@ -748,6 +784,7 @@ export const getWireJobById = async (jobId: string): Promise<{
     evaluatorAddress: job.evaluatorAddress,
     specHash: job.specHash,
     metadataUri: job.metadataUri,
+    request: normalizeStoredGhostWireRequestPayload(job.requestPayload),
     contractAddress: job.contractAddress,
     contractJobId: job.contractJobId,
     createTxHash: job.createTxHash,
@@ -841,6 +878,7 @@ export const listWireJobsNeedingOperatorWork = async (limit: number) =>
       evaluatorAddress: true,
       specHash: true,
       metadataUri: true,
+      requestPayload: true,
       createdAt: true,
       updatedAt: true,
       workflow: {
@@ -938,6 +976,7 @@ export const listWireJobs = async (input: {
     terminalTxHash: string | null;
     artifactsRecordedAt?: string | null;
     metadataUri: string | null;
+    request: GhostWireRequestPayload | null;
     createdAt: string;
     updatedAt: string;
     pricing: ReturnType<typeof buildWirePricingPayload>;
@@ -996,6 +1035,7 @@ export const listWireJobs = async (input: {
       terminalTxHash: job.terminalTxHash,
       artifactsRecordedAt: job.artifactsRecordedAt?.toISOString() ?? null,
       metadataUri: job.metadataUri,
+      request: normalizeStoredGhostWireRequestPayload(job.requestPayload),
       artifactValidationState: job.artifactValidationState,
       artifactValidationError: job.artifactValidationError,
       createdAt: job.createdAt.toISOString(),
@@ -1262,6 +1302,7 @@ export const getWireJobArtifactContext = async (jobId: string) => {
       contractBudgetAmount: true,
       specHash: true,
       metadataUri: true,
+      requestPayload: true,
       createTxHash: true,
       createTxSender: true,
       fundTxHash: true,
@@ -1386,6 +1427,7 @@ export const listWireJobsForArtifactRecovery = async (input: {
       evaluatorAddress: true,
       specHash: true,
       metadataUri: true,
+      requestPayload: true,
       createdAt: true,
       updatedAt: true,
       workflow: {
@@ -1536,6 +1578,7 @@ export const reconcileWireJobSubmittedState = async (input: {
         principalAmount: true,
         protocolFeeAmount: true,
         networkReserveAmount: true,
+        requestPayload: true,
         fundTxHash: true,
         webhookTargetUrl: true,
         webhookSecret: true,
@@ -1669,6 +1712,7 @@ export const reconcileWireJobTerminalState = async (input: {
         principalAmount: true,
         protocolFeeAmount: true,
         networkReserveAmount: true,
+        requestPayload: true,
         webhookTargetUrl: true,
         webhookSecret: true,
         updatedAt: true,
@@ -1797,6 +1841,7 @@ export const reconcileWireJobFundedState = async (input: {
         principalAmount: true,
         protocolFeeAmount: true,
         networkReserveAmount: true,
+        requestPayload: true,
         createTxHash: true,
         fundTxHash: true,
         webhookTargetUrl: true,

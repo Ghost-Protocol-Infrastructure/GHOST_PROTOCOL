@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { decodeXPaymentResponse, type PaymentRequirementsSelector, wrapFetchWithPayment } from "x402-fetch";
 import { createSigner } from "x402/types";
+import { keccak256, toHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { GhostFulfillmentMerchantConfig } from "./fulfillment.js";
 import { GhostFulfillmentMerchant } from "./fulfillment.js";
@@ -199,6 +200,13 @@ export type GhostWireBalanceAnalysis = {
   sufficient?: boolean;
 };
 
+export type GhostWireRequestPayload = {
+  version?: 1;
+  prompt: string;
+  walletAddress?: `0x${string}` | string | null;
+  metadata?: Record<string, unknown> | null;
+};
+
 export type GhostWireDirectPrepare = {
   approvalMode: "exact" | "unlimited";
   contractAddress: string;
@@ -248,7 +256,8 @@ export type WireJobPrepareInput = {
   evaluator: `0x${string}` | string;
   providerAgentId?: string | null;
   providerServiceSlug?: string | null;
-  specHash: `0x${string}` | string;
+  specHash?: `0x${string}` | string | null;
+  request?: GhostWireRequestPayload | null;
   metadataUri?: string | null;
   webhookUrl?: string | null;
   webhookSecret?: string | null;
@@ -303,6 +312,7 @@ export type WireJobSnapshot = {
   evaluatorAddress: string;
   specHash: string;
   metadataUri: string | null;
+  request?: GhostWireRequestPayload | null;
   contractAddress: string | null;
   contractJobId: string | null;
   createTxHash: string | null;
@@ -397,6 +407,65 @@ const normalizeOptionalString = (value: string | null | undefined): string | nul
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
 };
+
+const normalizeJsonValue = (value: unknown): unknown => {
+  if (value == null) return null;
+  if (typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("GhostWire request metadata contains a non-finite number.");
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(normalizeJsonValue);
+  }
+  if (typeof value === "object") {
+    return Object.keys(value as Record<string, unknown>)
+      .sort()
+      .reduce<Record<string, unknown>>((result, key) => {
+        result[key] = normalizeJsonValue((value as Record<string, unknown>)[key]);
+        return result;
+      }, {});
+  }
+  throw new Error("GhostWire request metadata must be valid JSON data.");
+};
+
+const normalizeGhostWireRequestPayload = (
+  value: GhostWireRequestPayload | null | undefined,
+): GhostWireRequestPayload | null => {
+  if (!value || typeof value !== "object") return null;
+  const prompt = normalizeOptionalString(value.prompt);
+  if (!prompt) {
+    throw new Error("GhostWire request.prompt must be a non-empty string.");
+  }
+
+  const walletAddress = normalizeOptionalString(value.walletAddress ?? null);
+  const normalizedMetadata =
+    Object.prototype.hasOwnProperty.call(value, "metadata") ? normalizeJsonValue(value.metadata ?? null) : undefined;
+
+  return {
+    version: 1,
+    prompt,
+    ...(walletAddress ? { walletAddress } : {}),
+    ...(normalizedMetadata !== undefined ? { metadata: normalizedMetadata as Record<string, unknown> | null } : {}),
+  };
+};
+
+const canonicalizeGhostWireRequestPayload = (value: GhostWireRequestPayload): string => {
+  const normalized = normalizeGhostWireRequestPayload(value);
+  if (!normalized) {
+    throw new Error("GhostWire request payload is required.");
+  }
+
+  return JSON.stringify({
+    version: 1,
+    prompt: normalized.prompt,
+    ...(normalized.walletAddress ? { walletAddress: normalized.walletAddress } : {}),
+    ...(normalized.metadata !== undefined ? { metadata: normalized.metadata } : {}),
+  });
+};
+
+export const buildGhostWireRequestSpecHash = (value: GhostWireRequestPayload): `0x${string}` =>
+  keccak256(toHex(canonicalizeGhostWireRequestPayload(value)));
 
 const getApiKeyPrefix = (apiKey: string): string => {
   if (apiKey.length <= 8) return apiKey;
@@ -936,6 +1005,20 @@ export class GhostAgent {
 
   async prepareWireJob(input: WireJobPrepareInput): Promise<WireJobPrepareResult> {
     const endpoint = `${this.baseUrl}/api/wire/jobs`;
+    const normalizedRequest = normalizeGhostWireRequestPayload(input.request ?? null);
+    const normalizedSpecHash = normalizeOptionalString(input.specHash ?? null);
+    if (normalizedSpecHash && normalizedRequest) {
+      const derivedSpecHash = buildGhostWireRequestSpecHash(normalizedRequest);
+      if (normalizedSpecHash.toLowerCase() !== derivedSpecHash.toLowerCase()) {
+        throw new Error("prepareWireJob(...) request does not match the supplied specHash.");
+      }
+    }
+    const resolvedSpecHash = normalizedSpecHash ?? (normalizedRequest ? buildGhostWireRequestSpecHash(normalizedRequest) : null);
+
+    if (!resolvedSpecHash) {
+      throw new Error("prepareWireJob(...) requires either specHash or request.");
+    }
+
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
@@ -953,7 +1036,8 @@ export class GhostAgent {
         ...(normalizeOptionalString(input.providerServiceSlug ?? null)
           ? { providerServiceSlug: input.providerServiceSlug }
           : {}),
-        specHash: input.specHash,
+        specHash: resolvedSpecHash,
+        ...(normalizedRequest ? { request: normalizedRequest } : {}),
         ...(normalizeOptionalString(input.metadataUri ?? null) ? { metadataUri: input.metadataUri } : {}),
         ...(normalizeOptionalString(input.webhookUrl ?? null) ? { webhookUrl: input.webhookUrl } : {}),
         ...(normalizeOptionalString(input.webhookSecret ?? null) ? { webhookSecret: input.webhookSecret } : {}),

@@ -52,7 +52,7 @@ Do not use GhostWire when:
 ## Direct flow
 
 1. Request a quote from `POST /api/wire/quote`.
-2. Prepare the job from `POST /api/wire/jobs`.
+2. Prepare the job from `POST /api/wire/jobs` with the consumer-authored `request` payload.
 3. If needed, submit `approveTxRequest` from the client wallet.
 4. Submit `createTxRequest` from the client wallet.
 5. Record the create artifact with `POST /api/wire/jobs/[jobId]/artifacts`.
@@ -68,6 +68,7 @@ You need:
 
 - a provider wallet with enough ETH to call `submit`
 - an evaluator wallet with enough ETH to call `complete` or `reject`
+- the ability to read the consumer-authored `job.request` payload from Ghost or provider webhooks
 - a merchant-controlled deliverable locator if consumers should fetch output after completion
 - optional webhook receiver if the provider wants state transition pushes
 
@@ -99,10 +100,17 @@ The buyer wallet needs:
 GhostWire quote pricing tells the buyer what escrow principal and protocol fee are required.
 Gas is paid directly by the buyer wallet and is not part of the GhostWire quote charge.
 
+When the client prepares a job, it should send the human task input in `request`.
+
+- `request.prompt` is the canonical consumer-authored task text
+- `request.walletAddress` is optional but useful when the task is about a target wallet/profile
+- `request.metadata` is optional structured JSON for merchant-specific execution hints
+- `metadataUri` is not the task prompt; it remains the merchant-controlled final deliverable locator
+
 ## Node example
 
 ```ts
-import { GhostAgent } from "@ghostgate/sdk";
+import { GhostAgent, buildGhostWireRequestSpecHash } from "@ghostgate/sdk";
 
 const ghost = new GhostAgent({
   baseUrl: "https://ghostprotocol.cc",
@@ -119,12 +127,22 @@ const quote = await ghost.createWireQuote({
   providerServiceSlug: "agent-18755",
 });
 
+const wireRequest = {
+  prompt: "Roast my wallet honestly.",
+  walletAddress: "0xclient...",
+  metadata: {
+    skill: "booski",
+    tone: "merciless",
+  },
+};
+
 const prepared = await ghost.prepareWireJob({
   quoteId: quote.quoteId!,
   client: "0xclient...",
   provider: "0xprovider...",
   evaluator: "0xevaluator...",
-  specHash: "0x" + "aa".repeat(32),
+  request: wireRequest,
+  specHash: buildGhostWireRequestSpecHash(wireRequest),
   metadataUri: "https://merchant.example.com/ghostwire/deliverable?contract=0x...&job=3",
 });
 
@@ -146,6 +164,8 @@ await ghost.recordWireArtifacts({
 });
 
 const terminal = await ghost.waitForWireTerminal(prepared.jobId!);
+const job = await ghost.getWireJob(terminal.jobId);
+console.log(job.job?.request?.prompt);
 const deliverable = await ghost.getWireDeliverable(terminal.jobId);
 ```
 

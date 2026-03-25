@@ -25,6 +25,10 @@ import {
   parseOptionalString,
   parseRequiredString,
 } from "@/lib/ghostwire-route";
+import {
+  hashGhostWireRequestPayload,
+  normalizeGhostWireRequestPayload,
+} from "@/lib/ghostwire-request";
 
 export const runtime = "nodejs";
 
@@ -109,6 +113,8 @@ export async function POST(request: NextRequest) {
   const provider = parseAddressString(parsed.body.provider);
   const evaluator = parseAddressString(parsed.body.evaluator);
   const specHash = parseHex32String(parsed.body.specHash);
+  const hasRequestInput = Object.prototype.hasOwnProperty.call(parsed.body, "request");
+  const requestPayload = hasRequestInput ? normalizeGhostWireRequestPayload(parsed.body.request) : null;
   const metadataUri = parseOptionalString(parsed.body.metadataUri);
   const providerAgentId = parseOptionalString(parsed.body.providerAgentId);
   const providerServiceSlug = parseOptionalString(parsed.body.providerServiceSlug);
@@ -116,11 +122,35 @@ export async function POST(request: NextRequest) {
   const webhookSecret = parseOptionalString(parsed.body.webhookSecret);
   const approvalMode = parseWireApprovalMode(parsed.body.approvalMode) ?? "exact";
 
-  if (!quoteId || !client || !provider || !evaluator || !specHash) {
+  if (hasRequestInput && !requestPayload) {
     return ghostWireJson(
       {
         code: 400,
-        error: "quoteId, client, provider, evaluator, and specHash are required.",
+        error: "request must be an object with a non-empty prompt and optional walletAddress/metadata fields.",
+        errorCode: "INVALID_WIRE_REQUEST_PAYLOAD",
+      },
+      400,
+    );
+  }
+
+  const derivedSpecHash = requestPayload ? hashGhostWireRequestPayload(requestPayload) : null;
+  if (specHash && derivedSpecHash && specHash.toLowerCase() !== derivedSpecHash.toLowerCase()) {
+    return ghostWireJson(
+      {
+        code: 409,
+        error: "request does not match the supplied specHash.",
+        errorCode: "WIRE_REQUEST_SPEC_HASH_MISMATCH",
+      },
+      409,
+    );
+  }
+  const resolvedSpecHash = specHash ?? derivedSpecHash;
+
+  if (!quoteId || !client || !provider || !evaluator || !resolvedSpecHash) {
+    return ghostWireJson(
+      {
+        code: 400,
+        error: "quoteId, client, provider, evaluator, and either specHash or request are required.",
         errorCode: "INVALID_WIRE_JOB_PARAMS",
       },
       400,
@@ -203,7 +233,8 @@ export async function POST(request: NextRequest) {
       providerAgentId: attribution.providerAgentId,
       providerServiceSlug: attribution.providerServiceSlug,
       evaluatorAddress: evaluator,
-      specHash,
+      specHash: resolvedSpecHash,
+      requestPayload,
       metadataUri,
       webhookTargetUrl,
       webhookSecret,

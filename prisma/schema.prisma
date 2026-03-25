@@ -776,6 +776,7 @@ model WireJob {
   networkReserveAsset  WireReserveAsset
   specHash             String
   metadataUri          String?
+  requestPayload       Json?
   contractState        WireContractState        @default(OPEN)
   publicState          WireContractState        @default(OPEN)
   terminalDisposition  WireTerminalDisposition?

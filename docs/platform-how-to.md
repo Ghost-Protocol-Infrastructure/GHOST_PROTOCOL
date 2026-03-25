@@ -85,7 +85,7 @@ Current model:
 Basic flow:
 
 1. Request a quote from `POST /api/wire/quote`.
-2. Prepare the job from `POST /api/wire/jobs`.
+2. Prepare the job from `POST /api/wire/jobs` with the consumer-authored `request`.
 3. Send the returned `approveTxRequest` if needed.
 4. Send the returned `createTxRequest`.
 5. Record the create transaction through `POST /api/wire/jobs/[jobId]/artifacts`.
@@ -97,6 +97,7 @@ Basic flow:
 
 Recommended GhostWire deliverable pattern:
 
+- put the task/prompt in `request`, not `metadataUri`
 - set `metadataUri` to a merchant-controlled HTTPS endpoint
 - key it by `jobId`, `quoteId`, or another stable reference
 - return JSON or text

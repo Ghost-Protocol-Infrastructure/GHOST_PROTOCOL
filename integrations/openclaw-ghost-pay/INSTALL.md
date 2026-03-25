@@ -24,13 +24,13 @@ npm install
 For ClawHub publish/install, publish the folder root so the helper scripts ship with the skill bundle:
 
 ```bash
-clawhub publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.3.0 --tags latest,agents,eip712,ghostprotocol,ghostwire,mcp,openclaw,payments,x402
+clawhub publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.4.0 --tags latest,agents,eip712,ghostprotocol,ghostwire,mcp,openclaw,payments,x402
 ```
 
 If `clawhub` fails with `fetch failed` in this environment, use the bundled wrapper:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/clawhub.ps1 publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.3.0 --tags latest,agents,eip712,ghostprotocol,ghostwire,mcp,openclaw,payments,x402
+powershell -ExecutionPolicy Bypass -File ./scripts/clawhub.ps1 publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.4.0 --tags latest,agents,eip712,ghostprotocol,ghostwire,mcp,openclaw,payments,x402
 ```
 
 ## 2. Set runtime env
@@ -54,7 +54,7 @@ GHOSTWIRE_PROVIDER_ADDRESS=0x...
 GHOSTWIRE_EVALUATOR_ADDRESS=0x...
 GHOSTWIRE_PRINCIPAL_AMOUNT=1000000
 GHOSTWIRE_CLIENT_ADDRESS=0x...
-GHOSTWIRE_SPEC_HASH=0x...
+GHOSTWIRE_REQUEST_PROMPT=Roast my wallet honestly.
 GHOSTWIRE_APPROVAL_MODE=exact
 ```
 
@@ -105,7 +105,7 @@ node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --client 0x... --pro
 ```
 
 ```bash
-node integrations/openclaw-ghost-pay/bin/create-wire-job-from-quote.mjs --quote-id wq_... --client 0x... --provider 0x... --evaluator 0x... --spec-hash 0x...
+node integrations/openclaw-ghost-pay/bin/create-wire-job-from-quote.mjs --quote-id wq_... --client 0x... --provider 0x... --evaluator 0x... --request-prompt "Roast my wallet honestly."
 ```
 
 ```bash

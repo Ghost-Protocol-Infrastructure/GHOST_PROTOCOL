@@ -1,7 +1,7 @@
 ---
 name: openclaw-ghost-pay
 description: Discover Ghost payment requirements, execute real x402 calls, report x402 settlements, and run GhostWire quote/prepare/status flows for direct escrow.
-version: 1.3.0
+version: 1.4.0
 metadata: {"clawdis":{"homepage":"https://github.com/Ghost-Protocol-Infrastructure/GHOST_PROTOCOL/tree/main/integrations/openclaw-ghost-pay","os":["darwin","linux","win32"],"requires":{"env":["GHOST_SIGNER_PRIVATE_KEY"],"bins":["node"]},"primaryEnv":"GHOST_SIGNER_PRIVATE_KEY","install":[{"id":"viem","kind":"node","package":"viem","label":"Install viem (required for settlement reporting)"}]}}
 ---
 
@@ -25,7 +25,16 @@ This skill executes real `x402` calls and can prepare GhostWire direct escrow jo
 - `GHOST_OPENCLAW_AGENT_ID` (optional default agent id for settlement reporting)
 - `GHOST_OPENCLAW_X402_URL` (optional default merchant endpoint URL for `call-x402.mjs`)
 - `GHOST_OPENCLAW_TIMEOUT_MS` (optional, default: `15000`)
+- `GHOSTWIRE_PROVIDER_ADDRESS` (optional default for `get-wire-quote`)
+- `GHOSTWIRE_EVALUATOR_ADDRESS` (optional default for `get-wire-quote`)
+- `GHOSTWIRE_PRINCIPAL_AMOUNT` (optional default for `get-wire-quote`)
 - `GHOSTWIRE_CLIENT_ADDRESS` (required for wire quote/create helpers)
+- `GHOSTWIRE_SPEC_HASH` (optional explicit override; otherwise derive from request)
+- `GHOSTWIRE_REQUEST_PROMPT` (optional default consumer task prompt)
+- `GHOSTWIRE_REQUEST_JSON` (optional full consumer request JSON)
+- `GHOSTWIRE_REQUEST_WALLET` (optional request wallet override; defaults to `GHOSTWIRE_CLIENT_ADDRESS`)
+- `GHOSTWIRE_REQUEST_METADATA_JSON` (optional structured request metadata)
+- `GHOSTWIRE_METADATA_URI` (optional merchant deliverable locator)
 - `GHOSTWIRE_APPROVAL_MODE` (optional: `exact` or `unlimited`)
 
 Never put private keys in prompts, code blocks, or frontend output.
@@ -66,7 +75,7 @@ node {baseDir}/../../bin/get-wire-quote.mjs --client 0x... --provider 0x... --ev
 ## Step 5 (Optional): Prepare GhostWire Job from Quote
 
 ```bash
-node {baseDir}/../../bin/create-wire-job-from-quote.mjs --quote-id wq_... --client 0x... --provider 0x... --evaluator 0x... --spec-hash 0x...
+node {baseDir}/../../bin/create-wire-job-from-quote.mjs --quote-id wq_... --client 0x... --provider 0x... --evaluator 0x... --request-prompt "Roast my wallet honestly."
 ```
 
 ## Step 6 (Optional): Poll GhostWire Job Status
@@ -81,3 +90,4 @@ node {baseDir}/../../bin/get-wire-job-status.mjs --job-id wj_... --wait-terminal
 - Do not log signer private keys.
 - Prefer `--dry-run true` before first live call in a new runtime.
 - Treat any `402` response as an `x402` challenge or payment-policy failure, not transport failure.
+- For GhostWire, put the consumer task in `--request-prompt` / `--request-json`; keep `--metadata-uri` for the merchant deliverable locator.

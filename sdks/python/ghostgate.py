@@ -18,6 +18,7 @@ from urllib.parse import quote
 import requests
 from eth_account import Account
 from eth_account.messages import encode_defunct, encode_typed_data
+from eth_utils import keccak as eth_keccak
 
 
 ConnectResult = dict[str, Any]
@@ -27,6 +28,50 @@ WireQuoteResult = dict[str, Any]
 WireJobResult = dict[str, Any]
 WireDeliverableResult = dict[str, Any]
 WireArtifactResult = dict[str, Any]
+GhostWireRequestPayload = dict[str, Any]
+
+
+def _normalize_optional_string(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _normalize_wire_request_payload(request: Optional[dict[str, Any]]) -> Optional[GhostWireRequestPayload]:
+    if request is None:
+        return None
+    if not isinstance(request, dict):
+        raise ValueError("GhostWire request must be a JSON object.")
+
+    prompt = _normalize_optional_string(request.get("prompt"))
+    if not prompt:
+        raise ValueError("GhostWire request.prompt must be a non-empty string.")
+
+    wallet_address = _normalize_optional_string(request.get("walletAddress"))
+
+    normalized: GhostWireRequestPayload = {
+        "version": 1,
+        "prompt": prompt,
+    }
+    if wallet_address:
+        normalized["walletAddress"] = wallet_address
+    if "metadata" in request:
+        try:
+            json.dumps(request.get("metadata"), sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+        except (TypeError, ValueError) as error:
+            raise ValueError("GhostWire request.metadata must be valid JSON data.") from error
+        normalized["metadata"] = request.get("metadata")
+
+    return normalized
+
+
+def build_wire_request_spec_hash(request: dict[str, Any]) -> str:
+    normalized = _normalize_wire_request_payload(request)
+    if normalized is None:
+        raise ValueError("GhostWire request payload is required.")
+    canonical = json.dumps(normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+    return f"0x{eth_keccak(text=canonical).hex()}"
 
 
 class HeartbeatController:
@@ -323,7 +368,8 @@ class GhostGate:
         evaluator: str,
         provider_agent_id: Optional[str] = None,
         provider_service_slug: Optional[str] = None,
-        spec_hash: str,
+        spec_hash: Optional[str] = None,
+        request: Optional[dict[str, Any]] = None,
         metadata_uri: Optional[str] = None,
         webhook_url: Optional[str] = None,
         webhook_secret: Optional[str] = None,
@@ -331,6 +377,18 @@ class GhostGate:
         timeout_seconds: Optional[float] = None,
     ) -> WireJobResult:
         endpoint = f"{self.base_url}/api/wire/jobs"
+        normalized_request = _normalize_wire_request_payload(request)
+        normalized_spec_hash = self._normalize_optional_string(spec_hash)
+        if normalized_request and normalized_spec_hash:
+            derived_spec_hash = build_wire_request_spec_hash(normalized_request)
+            if derived_spec_hash.lower() != normalized_spec_hash.lower():
+                raise ValueError("prepare_wire_job request does not match the supplied spec_hash.")
+        resolved_spec_hash = normalized_spec_hash or (
+            build_wire_request_spec_hash(normalized_request) if normalized_request is not None else None
+        )
+        if not resolved_spec_hash:
+            raise ValueError("prepare_wire_job requires either spec_hash or request.")
+
         response = requests.post(
             endpoint,
             json={
@@ -344,7 +402,8 @@ class GhostGate:
                     if self._normalize_optional_string(provider_service_slug)
                     else {}
                 ),
-                "specHash": spec_hash,
+                "specHash": resolved_spec_hash,
+                **({"request": normalized_request} if normalized_request is not None else {}),
                 **({"metadataUri": metadata_uri} if self._normalize_optional_string(metadata_uri) else {}),
                 **({"webhookUrl": webhook_url} if self._normalize_optional_string(webhook_url) else {}),
                 **({"webhookSecret": webhook_secret} if self._normalize_optional_string(webhook_secret) else {}),

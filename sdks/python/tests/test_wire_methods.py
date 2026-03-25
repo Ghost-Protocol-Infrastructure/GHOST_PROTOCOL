@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import Mock, patch
 
-from ghostgate import GhostGate
+from ghostgate import GhostGate, build_wire_request_spec_hash
 
 
 PRIVATE_KEY = "0x59c6995e998f97a5a0044966f0945387dc9ce6468f4b4c0f2b7f36f58b6c0e88"
@@ -55,6 +55,53 @@ class GhostWireMethodTests(unittest.TestCase):
             self.assertEqual(mock_post.call_args.kwargs["json"]["providerAgentId"], "18755")
             self.assertEqual(mock_post.call_args.kwargs["json"]["providerServiceSlug"], "agent-18755")
             self.assertEqual(result["direct"]["nextAction"], "submit_create_artifact")
+
+    def test_prepare_wire_job_derives_spec_hash_from_request_payload(self):
+        gate = GhostGate(private_key=PRIVATE_KEY, base_url="https://ghostprotocol.cc", service_slug="agent-11")
+
+        with patch("ghostgate.requests.post") as mock_post:
+            mock_post.return_value = self._response(
+                200,
+                {
+                    "ok": True,
+                    "jobId": "wj_derived",
+                    "quoteId": "wq_derived",
+                    "chainId": 8453,
+                    "jobExpiresAt": "2026-03-16T00:00:00.000Z",
+                    "direct": {
+                        "approvalMode": "exact",
+                        "nextAction": "submit_create_artifact",
+                    },
+                },
+            )
+
+            request_payload = {
+                "prompt": "Roast my wallet honestly.",
+                "walletAddress": "0x1111111111111111111111111111111111111111",
+                "metadata": {"skill": "booski", "tone": "merciless"},
+            }
+
+            gate.prepare_wire_job(
+                quote_id="wq_derived",
+                client="0x1111111111111111111111111111111111111111",
+                provider="0x2222222222222222222222222222222222222222",
+                evaluator="0x3333333333333333333333333333333333333333",
+                request=request_payload,
+            )
+
+            self.assertEqual(
+                mock_post.call_args.kwargs["json"]["specHash"],
+                build_wire_request_spec_hash(request_payload),
+            )
+            self.assertEqual(
+                mock_post.call_args.kwargs["json"]["request"],
+                {
+                    "version": 1,
+                    "prompt": "Roast my wallet honestly.",
+                    "walletAddress": "0x1111111111111111111111111111111111111111",
+                    "metadata": {"skill": "booski", "tone": "merciless"},
+                },
+            )
 
     def test_create_wire_quote_passes_provider_attribution(self):
         gate = GhostGate(private_key=PRIVATE_KEY, base_url="https://ghostprotocol.cc", service_slug="agent-11")

@@ -301,7 +301,7 @@ const HomePage = () => {
               </div>
               <h3 className="text-2xl font-bold text-neutral-100 mb-2">ghost_wire</h3>
               <p className="text-neutral-500 text-sm mb-6">
-                The Escrow Rail. A direct ERC-8183 flow for higher-value agent work, client-funded escrow, and merchant-controlled deliverables.
+                The Escrow Rail. A direct ERC-8183 flow for higher-value agent work, client-funded escrow, consumer-authored job requests, and merchant-controlled deliverables.
               </p>
               <div className="flex items-center gap-2 text-red-600 text-xs font-bold uppercase tracking-wider group-hover:gap-4 transition-all">
                 {"//READ_REFERENCE"} <ChevronRight className="w-4 h-4" />

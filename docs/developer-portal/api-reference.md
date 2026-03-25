@@ -271,6 +271,7 @@ GhostWire is a direct escrow rail.
 
 - the external client wallet is the on-chain client
 - Ghost prepares transaction payloads, validates reported artifacts, reconciles status, and delivers provider-facing webhooks
+- `request` is the consumer-authored task payload persisted on the prepared job
 - `metadataUri` should be treated as the preferred merchant-controlled deliverable locator when consumer-friendly retrieval is needed
 
 ### `POST /api/wire/quote`
@@ -335,7 +336,13 @@ Request body:
 - `client`
 - `provider`
 - `evaluator`
+- `request` (recommended)
+  - `prompt` (required)
+  - `walletAddress` (optional)
+  - `metadata` (optional structured JSON)
 - `specHash`
+  - required only if you do not provide `request`
+  - if both `request` and `specHash` are supplied, they must match
 - `providerAgentId` (optional override/debug parity with quote attribution)
 - `providerServiceSlug` (optional override/debug parity with quote attribution)
 - `metadataUri` (optional, recommended)
@@ -386,6 +393,7 @@ Returns one GhostWire job snapshot by `jobId`.
 Response notes:
 
 - `job.metadataUri` remains the raw stored locator value.
+- `job.request` is the stored consumer-authored task payload.
 - `job.deliverable` is the launch-friendly summary:
   - `available`
   - `locatorUrl`

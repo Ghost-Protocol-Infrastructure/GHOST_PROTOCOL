@@ -45,7 +45,14 @@ const makePrepareBody = (input: {
   client: input.clientAddress,
   provider: input.providerAddress,
   evaluator: input.evaluatorAddress,
-  specHash: `0x${"aa".repeat(32)}`,
+  request: {
+    prompt: "Roast my wallet honestly.",
+    walletAddress: input.clientAddress,
+    metadata: {
+      skill: "booski",
+      mode: "verification",
+    },
+  },
   metadataUri: "https://merchant.example.com/ghostwire/deliverable?jobId=placeholder",
 });
 
@@ -187,6 +194,10 @@ const run = async (): Promise<void> => {
 
       assert(getJobRes.status === 200, `Expected prepared job fetch 200, got ${getJobRes.status}`);
       assert(getJobPayload?.contractState === "OPEN", `Expected OPEN contract state, got ${String(getJobPayload?.contractState)}`);
+      assert(
+        ((getJobPayload?.request as Record<string, unknown> | undefined)?.prompt) === "Roast my wallet honestly.",
+        "Expected consumer request prompt on prepared GhostWire job.",
+      );
       assert(
         (getJobPayload?.operator as Record<string, unknown> | undefined)?.artifactStatus === "PENDING",
         "Expected artifactStatus=PENDING for prepared direct GhostWire job.",

@@ -13,7 +13,7 @@
 - `node {baseDir}/bin/call-x402.mjs --url https://merchant.example.com/ask --method POST --body-json "{\"prompt\":\"hello\"}"`
 - `node {baseDir}/bin/report-x402-settlement.mjs --agent-id 18755 --service agent-18755 --request-id req_123 --payment-reference 0xabc --payer-identity 0xpayer --amount-atomic 1000000 --success true --status-code 200`
 - `node {baseDir}/bin/get-wire-quote.mjs ...`
-- `node {baseDir}/bin/create-wire-job-from-quote.mjs ...`
+- `node {baseDir}/bin/create-wire-job-from-quote.mjs --request-prompt "Roast my wallet honestly." ...`
 - `node {baseDir}/bin/get-wire-job-status.mjs ...`
 
 ## Environment
@@ -31,3 +31,4 @@
 - `call-x402.mjs` is for the real x402 rail
 - it does not use GhostGate Express headers
 - settlement reporting is the step that makes x402 usage visible to GhostRank
+- for GhostWire, the consumer task belongs in `--request-prompt` / `--request-json`; `--metadata-uri` remains the merchant deliverable locator

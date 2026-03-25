@@ -28,6 +28,7 @@ Core methods:
 - `outcome(...)`
 - `startHeartbeat(...)`
 - `createWireQuote(...)`
+- `buildGhostWireRequestSpecHash(...)`
 - `prepareWireJob(...)`
 - `recordWireArtifacts(...)`
 - `getWireJob(...)`
@@ -148,6 +149,7 @@ Core methods:
 - `get_wire_job(...)`
 - `wait_for_wire_terminal(...)`
 - `get_wire_deliverable(...)`
+- `build_wire_request_spec_hash(...)`
 
 Example:
 
@@ -197,3 +199,4 @@ sdk.report_x402_settlement(
 - `x402` is now a separate rail surfaced through dedicated request/report helpers.
 - Node `requestX402()` is the high-level auto-pay helper. Python `request_x402()` is the lower-level request/retry helper and returns the initial merchant response unless you pass a retry `payment_header`.
 - GhostWire remains the direct escrow rail.
+- GhostWire consumer task input belongs in `request`; `metadataUri` / `metadata_uri` stays the merchant-controlled deliverable locator.

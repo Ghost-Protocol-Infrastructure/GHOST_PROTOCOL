@@ -25,6 +25,8 @@ These map directly to the mirrored GhostWire lifecycle:
 
 `wire.job.completed`, `wire.job.rejected`, and `wire.job.expired` always include a terminal settlement payload.
 
+Every lifecycle payload also includes the prepared consumer `request` object when one was supplied during `POST /api/wire/jobs`.
+
 ## Delivery contract
 
 GhostWire sends `POST` requests with `content-type: application/json` and these headers:
@@ -65,6 +67,14 @@ Rules:
   "state": "OPEN",
   "contractState": "OPEN",
   "createdAt": "2026-03-10T20:00:00.000Z",
+  "request": {
+    "version": 1,
+    "prompt": "Roast my wallet honestly.",
+    "walletAddress": "0x1111111111111111111111111111111111111111",
+    "metadata": {
+      "skill": "booski"
+    }
+  },
   "pricing": {
     "principal": { "asset": "USDC", "amount": "500000000", "decimals": 6 },
     "protocolFee": { "asset": "USDC", "amount": "12500000", "decimals": 6, "bps": 250 },
@@ -86,6 +96,14 @@ Rules:
   "createTxHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "fundTxHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   "observedAt": "2026-03-10T20:03:00.000Z",
+  "request": {
+    "version": 1,
+    "prompt": "Roast my wallet honestly.",
+    "walletAddress": "0x1111111111111111111111111111111111111111",
+    "metadata": {
+      "skill": "booski"
+    }
+  },
   "pricing": {
     "principal": { "asset": "USDC", "amount": "500000000", "decimals": 6 },
     "protocolFee": { "asset": "USDC", "amount": "12500000", "decimals": 6, "bps": 250 },

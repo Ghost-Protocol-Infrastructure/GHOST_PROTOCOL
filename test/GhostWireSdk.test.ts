@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { GhostAgent } from "../packages/sdk/src/index";
+import { GhostAgent, buildGhostWireRequestSpecHash } from "../packages/sdk/src/index";
 
 const originalFetch = globalThis.fetch;
 
@@ -131,6 +131,60 @@ describe("GhostAgent GhostWire helpers", () => {
     assert.equal(calls[0]!.body?.providerAgentId, "18755");
     assert.equal(calls[0]!.body?.providerServiceSlug, "agent-18755");
     assert.equal(result.direct?.nextAction, "submit_create_artifact");
+  });
+
+  it("derives the GhostWire spec hash from a consumer request payload", async () => {
+    const calls: Array<{ body: Record<string, unknown> | null }> = [];
+
+    globalThis.fetch = async (_input: URL | RequestInfo, init?: RequestInit): Promise<Response> => {
+      const body =
+        typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : null;
+      calls.push({ body });
+
+      return createJsonResponse(200, {
+        ok: true,
+        apiVersion: 1,
+        jobId: "wj_derived",
+        quoteId: "wq_derived",
+        chainId: 8453,
+        jobExpiresAt: new Date().toISOString(),
+        direct: {
+          approvalMode: "exact",
+          nextAction: "submit_create_artifact",
+        },
+      });
+    };
+
+    const agent = new GhostAgent({ privateKey: "0x59c6995e998f97a5a0044966f0945387dc9ce6468f4b4c0f2b7f36f58b6c0e88" });
+    const request = {
+      prompt: "Roast my wallet honestly.",
+      walletAddress: "0x1111111111111111111111111111111111111111",
+      metadata: {
+        skill: "booski",
+        tone: "merciless",
+      },
+    } as const;
+
+    await agent.prepareWireJob({
+      quoteId: "wq_derived",
+      client: "0x1111111111111111111111111111111111111111",
+      provider: "0x2222222222222222222222222222222222222222",
+      evaluator: "0x3333333333333333333333333333333333333333",
+      request,
+      metadataUri: "https://merchant.example.com/ghostwire/deliverable?quoteId=wq_derived",
+    });
+
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0]!.body?.request, {
+      version: 1,
+      prompt: "Roast my wallet honestly.",
+      walletAddress: "0x1111111111111111111111111111111111111111",
+      metadata: {
+        skill: "booski",
+        tone: "merciless",
+      },
+    });
+    assert.equal(calls[0]!.body?.specHash, buildGhostWireRequestSpecHash(request));
   });
 
   it("records direct GhostWire artifacts with signed client-wallet authorization", async () => {

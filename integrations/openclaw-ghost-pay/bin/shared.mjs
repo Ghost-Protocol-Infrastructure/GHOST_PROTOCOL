@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { keccak256, stringToHex } from "viem";
 
 export const DEFAULT_BASE_URL = "https://ghostprotocol.cc";
 export const DEFAULT_CHAIN_ID = 8453;
@@ -71,6 +72,48 @@ export function parseJson(raw, fallback = null) {
   } catch {
     return fallback;
   }
+}
+
+function sortJsonValue(value) {
+  if (Array.isArray(value)) return value.map(sortJsonValue);
+  if (value && typeof value === "object") {
+    return Object.keys(value)
+      .sort()
+      .reduce((result, key) => {
+        result[key] = sortJsonValue(value[key]);
+        return result;
+      }, {});
+  }
+  return value;
+}
+
+export function normalizeGhostWireRequestPayload(value) {
+  if (value == null) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("GhostWire request must be a JSON object.");
+  }
+
+  const prompt = normalizeOptionalString(value.prompt);
+  if (!prompt) {
+    throw new Error("GhostWire request.prompt must be a non-empty string.");
+  }
+
+  return {
+    version: 1,
+    prompt,
+    ...(normalizeOptionalString(value.walletAddress) ? { walletAddress: normalizeOptionalString(value.walletAddress) } : {}),
+    ...(Object.prototype.hasOwnProperty.call(value, "metadata")
+      ? { metadata: sortJsonValue(value.metadata ?? null) }
+      : {}),
+  };
+}
+
+export function buildGhostWireRequestSpecHash(value) {
+  const normalized = normalizeGhostWireRequestPayload(value);
+  if (!normalized) {
+    throw new Error("GhostWire request payload is required.");
+  }
+  return keccak256(stringToHex(JSON.stringify(sortJsonValue(normalized))));
 }
 
 export function createNonce(bytes = 16) {
