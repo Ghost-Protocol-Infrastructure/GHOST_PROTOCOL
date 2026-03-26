@@ -6,11 +6,17 @@ using credit checks.
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import os
+import re
 import threading
 import time
 import uuid
+from base64 import b64decode, b64encode
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from functools import wraps
 from typing import Any, Callable, Optional
 from urllib.parse import quote
@@ -29,6 +35,43 @@ WireJobResult = dict[str, Any]
 WireDeliverableResult = dict[str, Any]
 WireArtifactResult = dict[str, Any]
 GhostWireRequestPayload = dict[str, Any]
+SettlementEvidence = dict[str, Any]
+X402SettlementReportResult = dict[str, Any]
+X402SettlementReporterEvent = dict[str, Any]
+
+HEXISH_PATTERN = re.compile(r"^0x[0-9a-fA-F]+$")
+X402_PROTOCOL_VERSION = 1
+X402_REQUEST_HEADER_NAME = "X-PAYMENT"
+X402_RESPONSE_HEADER_NAME = "X-PAYMENT-RESPONSE"
+X402_REPORTING_RUNTIME_SUPPORT = (
+    {
+        "runtime": "python_server",
+        "support": "first_class",
+        "durability": "in_process_async_outbox",
+        "note": "Long-lived Python servers are the primary target for automatic x402 settlement reporting.",
+    },
+    {
+        "runtime": "serverless_python",
+        "support": "best_effort",
+        "durability": "best_effort",
+        "note": "Short-lived Python runtimes can use best-effort auto-reporting or manual settlement reporting.",
+    },
+    {
+        "runtime": "manual_only",
+        "support": "manual_only",
+        "durability": "manual_only",
+        "note": "Manual settlement reporting remains the fallback for unsupported Python runtimes.",
+    },
+)
+_X402_REPORTING_RUNTIME_SUPPORT_BY_RUNTIME = {
+    entry["runtime"]: entry for entry in X402_REPORTING_RUNTIME_SUPPORT
+}
+DEFAULT_X402_REPORTER_MAX_QUEUE_SIZE = 100
+DEFAULT_X402_REPORTER_RETRY_DELAYS_MS = (0.25, 1.0, 5.0)
+X402_NETWORK_TO_CHAIN_ID = {
+    "base": 8453,
+    "base-sepolia": 84532,
+}
 
 
 def _normalize_optional_string(value: Any) -> Optional[str]:
@@ -74,6 +117,547 @@ def build_wire_request_spec_hash(request: dict[str, Any]) -> str:
     return f"0x{eth_keccak(text=canonical).hex()}"
 
 
+def _normalize_integer_range(value: Any, field_name: str, minimum: int, maximum: int) -> Optional[int]:
+    if value is None:
+        return None
+    if not isinstance(value, int) or value < minimum or value > maximum:
+        raise ValueError(f"{field_name} must be an integer between {minimum} and {maximum}.")
+    return value
+
+
+def _normalize_positive_int_string(value: int | str, field_name: str) -> str:
+    if isinstance(value, int):
+        if value <= 0:
+            raise ValueError(f"{field_name} must be a positive integer.")
+        return str(value)
+    normalized = value.strip()
+    if not normalized.isdigit():
+        raise ValueError(f"{field_name} must be a positive integer string.")
+    if int(normalized) <= 0:
+        raise ValueError(f"{field_name} must be a positive integer.")
+    return normalized
+
+
+def _normalize_json_metadata(value: Any) -> Optional[dict[str, Any]]:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("metadata must be a JSON object.")
+    try:
+        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+    except (TypeError, ValueError) as error:
+        raise ValueError("metadata must be valid JSON data.") from error
+    return value
+
+
+def _normalize_payment_reference(value: Any) -> Optional[str]:
+    normalized = _normalize_optional_string(value)
+    if not normalized:
+        return None
+    return normalized.lower() if HEXISH_PATTERN.match(normalized) else normalized
+
+
+def _normalize_iso_timestamp(value: Any) -> str:
+    if value is None:
+        return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    normalized = _normalize_optional_string(value)
+    if not normalized:
+        return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return normalized
+
+
+def create_settlement_evidence(
+    *,
+    request_id: str,
+    payment_reference: str,
+    payer_identity: str,
+    amount_atomic: int | str,
+    success: bool,
+    payer_address: Optional[str] = None,
+    scheme: str = "exact",
+    network: Optional[str] = None,
+    chain_id: Optional[int] = None,
+    asset: str = "USDC",
+    decimals: Optional[int] = 6,
+    status_code: Optional[int] = None,
+    latency_ms: Optional[int] = None,
+    occurred_at: Optional[str | datetime] = None,
+    metadata: Optional[dict[str, Any]] = None,
+) -> SettlementEvidence:
+    normalized_request_id = _normalize_optional_string(request_id)
+    normalized_payment_reference = _normalize_payment_reference(payment_reference)
+    normalized_payer_identity = _normalize_optional_string(payer_identity)
+    normalized_payer_address = _normalize_optional_string(payer_address)
+    normalized_scheme = (_normalize_optional_string(scheme) or "exact").lower()
+    normalized_network = _normalize_optional_string(network)
+    normalized_chain_id = _normalize_integer_range(chain_id, "chain_id", 1, 100_000_000)
+    normalized_asset = (_normalize_optional_string(asset) or "USDC").upper()
+    normalized_amount_atomic = _normalize_positive_int_string(amount_atomic, "amount_atomic")
+    normalized_decimals = _normalize_integer_range(decimals, "decimals", 0, 18)
+    normalized_status_code = _normalize_integer_range(status_code, "status_code", 100, 599)
+    normalized_latency_ms = _normalize_integer_range(latency_ms, "latency_ms", 0, 60 * 60 * 1000)
+    normalized_metadata = _normalize_json_metadata(metadata)
+
+    if not normalized_request_id:
+        raise ValueError("create_settlement_evidence requires a non-empty request_id.")
+    if not normalized_payment_reference:
+        raise ValueError("create_settlement_evidence requires a non-empty payment_reference.")
+    if not normalized_payer_identity:
+        raise ValueError("create_settlement_evidence requires a non-empty payer_identity.")
+
+    evidence: SettlementEvidence = {
+        "requestId": normalized_request_id,
+        "paymentReference": normalized_payment_reference,
+        "payerIdentity": normalized_payer_identity,
+        "payerAddress": normalized_payer_address.lower() if normalized_payer_address else None,
+        "scheme": normalized_scheme,
+        "network": normalized_network,
+        "chainId": normalized_chain_id,
+        "asset": normalized_asset,
+        "amountAtomic": normalized_amount_atomic,
+        "decimals": normalized_decimals if normalized_decimals is not None else 6,
+        "success": bool(success),
+        "statusCode": normalized_status_code,
+        "latencyMs": normalized_latency_ms,
+        "occurredAt": _normalize_iso_timestamp(occurred_at),
+    }
+    if normalized_metadata is not None:
+        evidence["metadata"] = normalized_metadata
+    return evidence
+
+
+def _build_settlement_reporter_identity(
+    *, agent_id: str, service_slug: str, request_id: str, payment_reference: str
+) -> dict[str, str]:
+    normalized_agent_id = _normalize_optional_string(agent_id)
+    normalized_service_slug = _normalize_optional_string(service_slug)
+    normalized_request_id = _normalize_optional_string(request_id)
+    normalized_payment_reference = _normalize_payment_reference(payment_reference)
+
+    if not normalized_agent_id:
+        raise ValueError("x402 settlement reporter requires a non-empty agent_id.")
+    if not normalized_service_slug:
+        raise ValueError("x402 settlement reporter requires a non-empty service_slug.")
+    if not normalized_request_id:
+        raise ValueError("x402 settlement reporter requires a non-empty request_id.")
+    if not normalized_payment_reference:
+        raise ValueError("x402 settlement reporter requires a non-empty payment_reference.")
+
+    return {
+        "agentId": normalized_agent_id,
+        "serviceSlug": normalized_service_slug,
+        "requestId": normalized_request_id,
+        "paymentReference": normalized_payment_reference,
+        "dedupeKey": f"{normalized_agent_id}:{normalized_payment_reference}",
+    }
+
+
+def _to_error_message(error: Any) -> str:
+    if isinstance(error, BaseException):
+        return str(error)
+    normalized = _normalize_optional_string(str(error) if error is not None else None)
+    return normalized or "Unknown x402 reporting error."
+
+
+async def _resolve_maybe_awaitable(value: Any) -> Any:
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
+def _resolve_maybe_awaitable_in_thread(value: Any) -> Any:
+    if inspect.isawaitable(value):
+        return asyncio.run(value)
+    return value
+
+
+def _safe_base64_decode(value: str) -> str:
+    normalized = value.strip()
+    padding = "=" * (-len(normalized) % 4)
+    return b64decode(f"{normalized}{padding}".encode("utf-8")).decode("utf-8")
+
+
+def _safe_base64_encode(value: str) -> str:
+    return b64encode(value.encode("utf-8")).decode("utf-8")
+
+
+@dataclass
+class _X402SettlementReporterQueueEntry:
+    dedupe_key: str
+    payload: dict[str, Any]
+    attempt: int
+    next_attempt_at: float
+
+
+@dataclass
+class _GhostPythonAdapterResponse:
+    status_code: int
+    body: Any
+    headers: dict[str, str]
+    is_json: bool = True
+
+
+class X402SettlementReporter:
+    def __init__(
+        self,
+        transport: Callable[..., X402SettlementReportResult],
+        *,
+        runtime: str,
+        max_queue_size: int = DEFAULT_X402_REPORTER_MAX_QUEUE_SIZE,
+        retry_delays_seconds: tuple[float, ...] = DEFAULT_X402_REPORTER_RETRY_DELAYS_MS,
+        on_event: Optional[Callable[[X402SettlementReporterEvent], None]] = None,
+    ) -> None:
+        runtime_support = _X402_REPORTING_RUNTIME_SUPPORT_BY_RUNTIME.get(runtime)
+        if runtime_support is None:
+            raise ValueError(f"Unsupported x402 reporting runtime: {runtime}")
+        if not isinstance(max_queue_size, int) or max_queue_size <= 0:
+            raise ValueError("max_queue_size must be a positive integer.")
+        normalized_retry_delays: tuple[float, ...]
+        if runtime_support["support"] == "first_class":
+            normalized_retry_delays = tuple(float(delay) for delay in retry_delays_seconds)
+            for delay in normalized_retry_delays:
+                if delay < 0:
+                    raise ValueError("retry_delays_seconds must contain non-negative values.")
+        else:
+            normalized_retry_delays = ()
+
+        self._transport = transport
+        self._runtime_support = runtime_support
+        self._max_queue_size = max_queue_size
+        self._retry_delays_seconds = normalized_retry_delays
+        self._on_event = on_event
+        self._queue: list[_X402SettlementReporterQueueEntry] = []
+        self._dedupe_keys: set[str] = set()
+        self._counters = {
+            "paymentVerified": 0,
+            "reportEnqueued": 0,
+            "duplicate": 0,
+            "reportSent": 0,
+            "reportAccepted": 0,
+            "reportDropped": 0,
+        }
+        self._last_error: Optional[str] = None
+        self._lock = threading.Lock()
+        self._worker: Optional[threading.Thread] = None
+        self._pending_preparations = 0
+
+    def record_payment_verified(self, *, agent_id: str, service_slug: str, request_id: str, payment_reference: str) -> dict[str, str]:
+        identity = _build_settlement_reporter_identity(
+            agent_id=agent_id,
+            service_slug=service_slug,
+            request_id=request_id,
+            payment_reference=payment_reference,
+        )
+        with self._lock:
+            self._counters["paymentVerified"] += 1
+        self._emit_event({"name": "payment_verified", **identity})
+        return {"dedupeKey": identity["dedupeKey"]}
+
+    def record_dropped(
+        self, *, agent_id: str, service_slug: str, request_id: str, payment_reference: str, error: Any
+    ) -> dict[str, str]:
+        identity = _build_settlement_reporter_identity(
+            agent_id=agent_id,
+            service_slug=service_slug,
+            request_id=request_id,
+            payment_reference=payment_reference,
+        )
+        message = _to_error_message(error)
+        with self._lock:
+            self._last_error = message
+            self._counters["reportDropped"] += 1
+        self._emit_event({"name": "report_dropped", **identity, "error": message})
+        return {"dedupeKey": identity["dedupeKey"]}
+
+    def enqueue(self, **input: Any) -> dict[str, Any]:
+        evidence = create_settlement_evidence(
+            request_id=input["request_id"],
+            payment_reference=input["payment_reference"],
+            payer_identity=input["payer_identity"],
+            payer_address=input.get("payer_address"),
+            scheme=input.get("scheme", "exact"),
+            network=input.get("network"),
+            chain_id=input.get("chain_id"),
+            asset=input.get("asset", "USDC"),
+            amount_atomic=input["amount_atomic"],
+            decimals=input.get("decimals", 6),
+            success=bool(input["success"]),
+            status_code=input.get("status_code"),
+            latency_ms=input.get("latency_ms"),
+            occurred_at=input.get("occurred_at"),
+            metadata=input.get("metadata"),
+        )
+        identity = _build_settlement_reporter_identity(
+            agent_id=input["agent_id"],
+            service_slug=input["service_slug"],
+            request_id=evidence["requestId"],
+            payment_reference=evidence["paymentReference"],
+        )
+        mode = (
+            "manual_only"
+            if self._runtime_support["support"] == "manual_only"
+            else "best_effort"
+            if self._runtime_support["support"] == "best_effort"
+            else "queued"
+        )
+
+        if self._runtime_support["support"] == "manual_only":
+            return {
+                "accepted": False,
+                "duplicate": False,
+                "mode": mode,
+                "requiresManualReporting": True,
+                "dedupeKey": identity["dedupeKey"],
+                "queueSize": len(self._queue),
+            }
+
+        payload = {
+            "agent_id": identity["agentId"],
+            "service_slug": identity["serviceSlug"],
+            "request_id": evidence["requestId"],
+            "payment_reference": evidence["paymentReference"],
+            "payer_identity": evidence["payerIdentity"],
+            "payer_address": evidence["payerAddress"],
+            "scheme": evidence["scheme"],
+            "network": evidence["network"],
+            "chain_id": evidence["chainId"],
+            "asset": evidence["asset"],
+            "amount_atomic": evidence["amountAtomic"],
+            "decimals": evidence["decimals"],
+            "success": evidence["success"],
+            "status_code": evidence["statusCode"],
+            "latency_ms": evidence["latencyMs"],
+            "occurred_at": evidence["occurredAt"],
+            "metadata": evidence.get("metadata"),
+        }
+
+        with self._lock:
+            if identity["dedupeKey"] in self._dedupe_keys:
+                self._counters["duplicate"] += 1
+                queue_size = len(self._queue)
+                should_emit_duplicate = True
+                should_emit_drop = False
+                should_emit_enqueue = False
+            elif len(self._queue) >= self._max_queue_size:
+                self._last_error = f"X402SettlementReporter queue is full (max_queue_size={self._max_queue_size})."
+                self._counters["reportDropped"] += 1
+                queue_size = len(self._queue)
+                drop_error = self._last_error
+                should_emit_duplicate = False
+                should_emit_drop = True
+                should_emit_enqueue = False
+            else:
+                self._dedupe_keys.add(identity["dedupeKey"])
+                self._queue.append(
+                    _X402SettlementReporterQueueEntry(
+                        dedupe_key=identity["dedupeKey"],
+                        payload=payload,
+                        attempt=0,
+                        next_attempt_at=time.monotonic(),
+                    )
+                )
+                self._counters["reportEnqueued"] += 1
+                queue_size = len(self._queue)
+                self._ensure_worker()
+                should_emit_duplicate = False
+                should_emit_drop = False
+                should_emit_enqueue = True
+
+        if should_emit_enqueue:
+            self._emit_event({"name": "report_enqueued", **identity})
+            return {
+                "accepted": True,
+                "duplicate": False,
+                "mode": mode,
+                "requiresManualReporting": False,
+                "dedupeKey": identity["dedupeKey"],
+                "queueSize": queue_size,
+            }
+        if should_emit_drop:
+            self._emit_event(
+                {
+                    "name": "report_dropped",
+                    **identity,
+                    "error": drop_error,
+                }
+            )
+            return {
+                "accepted": False,
+                "duplicate": False,
+                "mode": mode,
+                "requiresManualReporting": False,
+                "dedupeKey": identity["dedupeKey"],
+                "queueSize": queue_size,
+            }
+
+        self._emit_event({"name": "duplicate", **identity})
+        return {
+            "accepted": False,
+            "duplicate": True,
+            "mode": mode,
+            "requiresManualReporting": False,
+            "dedupeKey": identity["dedupeKey"],
+            "queueSize": queue_size,
+        }
+
+    def flush(self, timeout_seconds: float = 5.0) -> None:
+        if self._runtime_support["support"] == "manual_only":
+            return
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            with self._lock:
+                worker = self._worker
+                queue_size = len(self._queue)
+                pending_preparations = self._pending_preparations
+            if queue_size == 0 and pending_preparations == 0 and (worker is None or not worker.is_alive()):
+                return
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Timed out while flushing x402 settlement reporter.")
+            time.sleep(0.01)
+
+    def get_snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            worker = self._worker
+            return {
+                "runtime": self._runtime_support["runtime"],
+                "support": self._runtime_support["support"],
+                "durability": self._runtime_support["durability"],
+                "queueSize": len(self._queue),
+                "processing": worker.is_alive() if worker else False,
+                "pendingPreparations": self._pending_preparations,
+                "lastError": self._last_error,
+                "counters": dict(self._counters),
+            }
+
+    def run_background_prepare(self, fn: Callable[[], None]) -> None:
+        with self._lock:
+            self._pending_preparations += 1
+
+        def _run() -> None:
+            try:
+                fn()
+            finally:
+                with self._lock:
+                    self._pending_preparations = max(0, self._pending_preparations - 1)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _emit_event(self, event: dict[str, Any]) -> None:
+        if self._on_event is None:
+            return
+        try:
+            with self._lock:
+                queue_size = len(self._queue)
+            self._on_event(
+                {
+                    **event,
+                    "runtime": self._runtime_support["runtime"],
+                    "support": self._runtime_support["support"],
+                    "durability": self._runtime_support["durability"],
+                    "occurredAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    "queueSize": queue_size,
+                }
+            )
+        except Exception:
+            pass
+
+    def _ensure_worker(self) -> None:
+        if self._worker is not None and self._worker.is_alive():
+            return
+        self._worker = threading.Thread(target=self._process_queue, daemon=True)
+        self._worker.start()
+
+    def _process_queue(self) -> None:
+        while True:
+            with self._lock:
+                if not self._queue:
+                    self._worker = None
+                    return
+                self._queue.sort(key=lambda entry: entry.next_attempt_at)
+                entry = self._queue[0]
+                wait_seconds = max(0.0, entry.next_attempt_at - time.monotonic())
+                if wait_seconds > 0:
+                    next_entry = None
+                else:
+                    next_entry = self._queue.pop(0)
+            if wait_seconds > 0:
+                time.sleep(min(wait_seconds, 0.025))
+                continue
+            if next_entry is not None:
+                self._send_entry(next_entry)
+
+    def _send_entry(self, entry: _X402SettlementReporterQueueEntry) -> None:
+        with self._lock:
+            self._counters["reportSent"] += 1
+        self._emit_event(
+            {
+                "name": "report_sent",
+                "agentId": entry.payload["agent_id"],
+                "serviceSlug": entry.payload["service_slug"],
+                "requestId": entry.payload["request_id"],
+                "paymentReference": entry.payload["payment_reference"],
+                "dedupeKey": entry.dedupe_key,
+                "attempt": entry.attempt + 1,
+            }
+        )
+        try:
+            result = self._transport(**entry.payload)
+            if not result.get("ok"):
+                raise RuntimeError(f"Ghost settlement report failed with status {result.get('status')}.")
+            with self._lock:
+                self._last_error = None
+                self._counters["reportAccepted"] += 1
+                self._dedupe_keys.discard(entry.dedupe_key)
+            self._emit_event(
+                {
+                    "name": "report_accepted",
+                    "agentId": entry.payload["agent_id"],
+                    "serviceSlug": entry.payload["service_slug"],
+                    "requestId": entry.payload["request_id"],
+                    "paymentReference": entry.payload["payment_reference"],
+                    "dedupeKey": entry.dedupe_key,
+                    "attempt": entry.attempt + 1,
+                    "status": result.get("status"),
+                    "countedForRank": result.get("countedForRank"),
+                    "relatedParty": result.get("relatedParty"),
+                    "serverDuplicate": result.get("duplicate"),
+                }
+            )
+        except Exception as error:
+            message = _to_error_message(error)
+            retry_delay = self._retry_delays_seconds[entry.attempt] if entry.attempt < len(self._retry_delays_seconds) else None
+            if retry_delay is None:
+                with self._lock:
+                    self._last_error = message
+                    self._counters["reportDropped"] += 1
+                    self._dedupe_keys.discard(entry.dedupe_key)
+                self._emit_event(
+                    {
+                        "name": "report_dropped",
+                        "agentId": entry.payload["agent_id"],
+                        "serviceSlug": entry.payload["service_slug"],
+                        "requestId": entry.payload["request_id"],
+                        "paymentReference": entry.payload["payment_reference"],
+                        "dedupeKey": entry.dedupe_key,
+                        "attempt": entry.attempt + 1,
+                        "error": message,
+                    }
+                )
+                return
+            with self._lock:
+                self._last_error = message
+                self._queue.append(
+                    _X402SettlementReporterQueueEntry(
+                        dedupe_key=entry.dedupe_key,
+                        payload=entry.payload,
+                        attempt=entry.attempt + 1,
+                        next_attempt_at=time.monotonic() + retry_delay,
+                    )
+                )
+
+
 class HeartbeatController:
     """Controls a best-effort heartbeat loop started by `start_heartbeat`."""
 
@@ -83,6 +667,496 @@ class HeartbeatController:
     def stop(self) -> None:
         self._stop_callback()
 
+
+@dataclass
+class GhostX402AdapterConfig:
+    gate: "GhostGate"
+    agent_id: str
+    payment_requirements: dict[str, Any] | list[dict[str, Any]]
+    x402_client: Any
+    service_slug: Optional[str] = None
+    reporting_runtime: str = "python_server"
+    reporter: Optional[X402SettlementReporter] = None
+    reporter_config: Optional[dict[str, Any]] = None
+    decode_payment_header: Optional[Callable[[str], dict[str, Any]]] = None
+    verify_payment: Optional[Callable[[dict[str, Any]], dict[str, Any]]] = None
+    settle_payment: Optional[Callable[[dict[str, Any]], dict[str, Any]]] = None
+    get_request_id: Optional[Callable[[dict[str, Any]], str]] = None
+    get_payer_identity: Optional[Callable[[dict[str, Any]], str]] = None
+    get_payer_address: Optional[Callable[[dict[str, Any]], Optional[str]]] = None
+    get_metadata: Optional[Callable[[dict[str, Any]], Optional[dict[str, Any]]]] = None
+
+
+def _normalize_payment_requirements_list(value: dict[str, Any] | list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if isinstance(value, dict):
+        return [value]
+    if isinstance(value, list) and value and all(isinstance(entry, dict) for entry in value):
+        return list(value)
+    raise ValueError("payment_requirements must be a payment requirement object or a non-empty list of them.")
+
+
+def _decode_payment_header(payment_header: str) -> dict[str, Any]:
+    parsed = json.loads(_safe_base64_decode(payment_header))
+    if not isinstance(parsed, dict):
+        raise ValueError("Decoded payment header must be a JSON object.")
+    return parsed
+
+
+def _find_matching_payment_requirement(
+    accepts: list[dict[str, Any]], payment_payload: dict[str, Any]
+) -> Optional[dict[str, Any]]:
+    payload_scheme = _normalize_optional_string(payment_payload.get("scheme"))
+    payload_network = _normalize_optional_string(payment_payload.get("network"))
+    for requirement in accepts:
+        requirement_scheme = _normalize_optional_string(requirement.get("scheme"))
+        requirement_network = _normalize_optional_string(requirement.get("network"))
+        if requirement_scheme and payload_scheme and requirement_scheme != payload_scheme:
+            continue
+        if requirement_network and payload_network and requirement_network != payload_network:
+            continue
+        return requirement
+    return None
+
+
+def _create_payment_required_response(
+    accepts: list[dict[str, Any]], error: Optional[str] = None, payer: Optional[str] = None
+) -> _GhostPythonAdapterResponse:
+    payload: dict[str, Any] = {
+        "x402Version": X402_PROTOCOL_VERSION,
+        "accepts": accepts,
+    }
+    normalized_error = _normalize_optional_string(error)
+    normalized_payer = _normalize_optional_string(payer)
+    if normalized_error:
+        payload["error"] = normalized_error
+    if normalized_payer:
+        payload["payer"] = normalized_payer
+    return _GhostPythonAdapterResponse(
+        status_code=402,
+        body=payload,
+        headers={"cache-control": "no-store"},
+        is_json=True,
+    )
+
+
+def _create_payment_infrastructure_error_response(
+    accepts: list[dict[str, Any]], error: str, payer: Optional[str] = None
+) -> _GhostPythonAdapterResponse:
+    payload: dict[str, Any] = {
+        "x402Version": X402_PROTOCOL_VERSION,
+        "error": error,
+        "accepts": accepts,
+    }
+    normalized_payer = _normalize_optional_string(payer)
+    if normalized_payer:
+        payload["payer"] = normalized_payer
+    return _GhostPythonAdapterResponse(
+        status_code=502,
+        body=payload,
+        headers={"cache-control": "no-store"},
+        is_json=True,
+    )
+
+
+def _append_header_token(headers: dict[str, str], name: str, token: str) -> None:
+    existing = headers.get(name) or headers.get(name.lower()) or headers.get(name.title())
+    if not existing:
+        headers[name] = token
+        return
+    tokens = [part.strip() for part in existing.split(",") if part.strip()]
+    if any(part.lower() == token.lower() for part in tokens):
+        headers[name] = ", ".join(tokens)
+        return
+    headers[name] = ", ".join([*tokens, token])
+
+
+def _encode_settlement_response_header(settle_result: dict[str, Any]) -> str:
+    return _safe_base64_encode(json.dumps(settle_result, separators=(",", ":"), ensure_ascii=False))
+
+
+def _with_settlement_response_headers(response: _GhostPythonAdapterResponse, settle_result: dict[str, Any]) -> _GhostPythonAdapterResponse:
+    headers = dict(response.headers)
+    headers[X402_RESPONSE_HEADER_NAME] = _encode_settlement_response_header(settle_result)
+    _append_header_token(headers, "Access-Control-Expose-Headers", X402_RESPONSE_HEADER_NAME)
+    return _GhostPythonAdapterResponse(
+        status_code=response.status_code,
+        body=response.body,
+        headers=headers,
+        is_json=response.is_json,
+    )
+
+
+def _to_python_adapter_response(value: Any) -> _GhostPythonAdapterResponse:
+    try:
+        from fastapi.responses import JSONResponse as FastAPIJSONResponse
+        from fastapi.responses import Response as FastAPIResponse
+    except Exception:
+        FastAPIJSONResponse = None
+        FastAPIResponse = None
+
+    if FastAPIResponse is not None and isinstance(value, FastAPIResponse):
+        body = getattr(value, "body", b"")
+        headers = {key: val for key, val in value.headers.items()}
+        if isinstance(body, bytes):
+            try:
+                parsed = json.loads(body.decode("utf-8"))
+                return _GhostPythonAdapterResponse(
+                    status_code=value.status_code,
+                    body=parsed,
+                    headers=headers,
+                    is_json=True,
+                )
+            except Exception:
+                return _GhostPythonAdapterResponse(
+                    status_code=value.status_code,
+                    body=body.decode("utf-8"),
+                    headers=headers,
+                    is_json=False,
+                )
+
+    if isinstance(value, _GhostPythonAdapterResponse):
+        return value
+    if isinstance(value, tuple) and len(value) in (2, 3):
+        body = value[0]
+        status_code = int(value[1])
+        headers = dict(value[2]) if len(value) == 3 and isinstance(value[2], dict) else {}
+        return _GhostPythonAdapterResponse(
+            status_code=status_code,
+            body=body,
+            headers=headers,
+            is_json=isinstance(body, (dict, list)),
+        )
+    if isinstance(value, (dict, list)):
+        return _GhostPythonAdapterResponse(status_code=200, body=value, headers={}, is_json=True)
+    if value is None:
+        return _GhostPythonAdapterResponse(status_code=200, body=None, headers={}, is_json=False)
+    return _GhostPythonAdapterResponse(status_code=200, body=value, headers={}, is_json=False)
+
+
+def _resolve_settlement_asset(payment_requirement: dict[str, Any]) -> tuple[str, int]:
+    asset = _normalize_optional_string(payment_requirement.get("asset")) or "USDC"
+    extra = payment_requirement.get("extra") if isinstance(payment_requirement.get("extra"), dict) else {}
+    decimals = extra.get("decimals")
+    if isinstance(decimals, int):
+        normalized_decimals = _normalize_integer_range(decimals, "decimals", 0, 18)
+    else:
+        normalized_decimals = 6
+    return (asset.upper(), normalized_decimals if normalized_decimals is not None else 6)
+
+
+def _resolve_settlement_chain_id(payment_requirement: dict[str, Any], default_chain_id: Optional[int]) -> Optional[int]:
+    explicit_chain_id = payment_requirement.get("chainId")
+    if isinstance(explicit_chain_id, int):
+        return _normalize_integer_range(explicit_chain_id, "chain_id", 1, 100_000_000)
+    normalized_network = _normalize_optional_string(payment_requirement.get("network"))
+    if normalized_network:
+        mapped_chain_id = X402_NETWORK_TO_CHAIN_ID.get(normalized_network)
+        if mapped_chain_id is not None:
+            return mapped_chain_id
+    if default_chain_id is None:
+        return None
+    return _normalize_integer_range(default_chain_id, "chain_id", 1, 100_000_000)
+
+
+def _resolve_service_slug(config: GhostX402AdapterConfig) -> str:
+    return _normalize_optional_string(config.service_slug) or config.gate.service_slug
+
+
+def _create_reporter_from_config(config: GhostX402AdapterConfig) -> X402SettlementReporter:
+    if config.reporter is not None:
+        return config.reporter
+    reporter_config = config.reporter_config or {}
+    return config.gate.create_x402_settlement_reporter(
+        runtime=config.reporting_runtime,
+        **reporter_config,
+    )
+
+
+async def _execute_python_x402_adapter_async(
+    config: GhostX402AdapterConfig,
+    request: Any,
+    handler: Callable[[dict[str, Any]], Any],
+    context: Optional[dict[str, Any]] = None,
+) -> _GhostPythonAdapterResponse:
+    accepts = _normalize_payment_requirements_list(config.payment_requirements)
+    headers = getattr(request, "headers", {}) or {}
+    payment_header = None
+    if hasattr(headers, "get"):
+        payment_header = headers.get(X402_REQUEST_HEADER_NAME)
+    if not payment_header and isinstance(headers, dict):
+        payment_header = headers.get("x-payment")
+    if not _normalize_optional_string(payment_header):
+        return _create_payment_required_response(accepts)
+
+    started_at = time.monotonic()
+    decode_payment_header = config.decode_payment_header or _decode_payment_header
+    verify_payment = config.verify_payment
+    settle_payment = config.settle_payment
+    if verify_payment is None or settle_payment is None:
+        return _create_payment_infrastructure_error_response(accepts, "unconfigured_payment_adapter")
+
+    try:
+        payment_payload = decode_payment_header(str(payment_header))
+    except Exception:
+        return _create_payment_required_response(accepts, "invalid_payload")
+
+    payment_requirement = _find_matching_payment_requirement(accepts, payment_payload)
+    if payment_requirement is None:
+        return _create_payment_required_response(accepts, "invalid_payment_requirements")
+
+    try:
+        verify_result = verify_payment(
+            {
+                "client": config.x402_client,
+                "payment_payload": payment_payload,
+                "payment_requirements": payment_requirement,
+            }
+        )
+        if hasattr(verify_result, "__await__"):
+            verify_result = await verify_result
+    except Exception:
+        return _create_payment_infrastructure_error_response(accepts, "unexpected_verify_error")
+
+    if not bool(verify_result.get("isValid")):
+        return _create_payment_required_response(
+            accepts,
+            verify_result.get("invalidReason") or "invalid_payment",
+            verify_result.get("payer"),
+        )
+
+    try:
+        settle_result = settle_payment(
+            {
+                "client": config.x402_client,
+                "payment_payload": payment_payload,
+                "payment_requirements": payment_requirement,
+            }
+        )
+        if hasattr(settle_result, "__await__"):
+            settle_result = await settle_result
+    except Exception:
+        return _create_payment_infrastructure_error_response(
+            accepts,
+            "unexpected_settle_error",
+            verify_result.get("payer"),
+        )
+
+    if not bool(settle_result.get("success")):
+        return _create_payment_required_response(
+            accepts,
+            settle_result.get("errorReason") or "unexpected_settle_error",
+            settle_result.get("payer") or verify_result.get("payer"),
+        )
+
+    request_id = (
+        _normalize_optional_string(
+            await _resolve_maybe_awaitable(
+                config.get_request_id(
+                    {
+                        "request": request,
+                        "context": context or {},
+                        "payment_payload": payment_payload,
+                        "payment_requirements": payment_requirement,
+                    }
+                )
+            )
+            if config.get_request_id
+            else None
+        )
+        or str(uuid.uuid4())
+    )
+    default_payer_identity = _normalize_optional_string(str(settle_result.get("payer") or verify_result.get("payer") or "")) or "payer_unavailable"
+    default_payer_address = _normalize_optional_string(str(settle_result.get("payer") or verify_result.get("payer") or ""))
+    payer_args = {
+        "request": request,
+        "context": context or {},
+        "payment_payload": payment_payload,
+        "payment_requirements": payment_requirement,
+        "verify_result": verify_result,
+        "settle_result": settle_result,
+    }
+    payer_identity = (
+        _normalize_optional_string(
+            await _resolve_maybe_awaitable(config.get_payer_identity(payer_args)) if config.get_payer_identity else None
+        )
+        or default_payer_identity
+    )
+    payer_address = (
+        _normalize_optional_string(
+            await _resolve_maybe_awaitable(config.get_payer_address(payer_args)) if config.get_payer_address else None
+        )
+        or default_payer_address
+        or None
+    )
+    payment_reference = _normalize_optional_string(str(settle_result.get("transaction") or "")) or request_id
+    service_slug = _resolve_service_slug(config)
+    reporter = _create_reporter_from_config(config)
+    try:
+        reporter.record_payment_verified(
+            agent_id=config.agent_id,
+            service_slug=service_slug,
+            request_id=request_id,
+            payment_reference=payment_reference,
+        )
+    except Exception:
+        pass
+
+    x402 = {
+        "requestId": request_id,
+        "paymentReference": payment_reference,
+        "paymentRequirements": payment_requirement,
+        "paymentPayload": payment_payload,
+        "verifyResult": verify_result,
+        "settleResult": settle_result,
+        "payerIdentity": payer_identity,
+        "payerAddress": payer_address,
+    }
+    try:
+        handler_result = handler({"request": request, "context": context or {}, "x402": x402})
+        if hasattr(handler_result, "__await__"):
+            handler_result = await handler_result
+        handler_response = _to_python_adapter_response(handler_result)
+    except Exception:
+        handler_response = _GhostPythonAdapterResponse(
+            status_code=500,
+            body={"error": "internal_server_error"},
+            headers={},
+            is_json=True,
+        )
+
+    response = _with_settlement_response_headers(handler_response, settle_result)
+    latency_ms = max(0, int((time.monotonic() - started_at) * 1000))
+    asset, decimals = _resolve_settlement_asset(payment_requirement)
+    chain_id = _resolve_settlement_chain_id(payment_requirement, config.gate.chain_id)
+    occurred_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    def _prepare_and_enqueue_report() -> None:
+        try:
+            metadata = (
+                _resolve_maybe_awaitable_in_thread(config.get_metadata({**payer_args, "response": response}))
+                if config.get_metadata
+                else None
+            )
+            reporter.enqueue(
+                agent_id=config.agent_id,
+                service_slug=service_slug,
+                request_id=request_id,
+                payment_reference=payment_reference,
+                payer_identity=payer_identity,
+                payer_address=payer_address,
+                scheme="x402",
+                network=_normalize_optional_string(payment_requirement.get("network")),
+                chain_id=chain_id,
+                asset=asset,
+                amount_atomic=payment_requirement.get("maxAmountRequired"),
+                decimals=decimals,
+                success=response.status_code < 400,
+                status_code=response.status_code,
+                latency_ms=latency_ms,
+                occurred_at=occurred_at,
+                metadata=metadata,
+            )
+        except Exception as error:
+            try:
+                reporter.record_dropped(
+                    agent_id=config.agent_id,
+                    service_slug=service_slug,
+                    request_id=request_id,
+                    payment_reference=payment_reference,
+                    error=error,
+                )
+            except Exception:
+                pass
+
+    reporter.run_background_prepare(_prepare_and_enqueue_report)
+    return response
+
+
+def _to_fastapi_response(response: _GhostPythonAdapterResponse):
+    from fastapi.responses import JSONResponse, Response
+
+    if response.is_json:
+        return JSONResponse(content=response.body, status_code=response.status_code, headers=response.headers)
+    body = b"" if response.body is None else response.body.encode("utf-8") if isinstance(response.body, str) else response.body
+    return Response(content=body, status_code=response.status_code, headers=response.headers)
+
+
+def with_ghost_x402_fastapi(
+    config: GhostX402AdapterConfig,
+    handler: Callable[[dict[str, Any]], Any],
+) -> Callable[..., Any]:
+    adapter_config = GhostX402AdapterConfig(
+        **{
+            **config.__dict__,
+            "reporter": _create_reporter_from_config(config),
+        }
+    )
+
+    async def wrapped(request: Any, *args: Any, **kwargs: Any):
+        response = await _execute_python_x402_adapter_async(
+            adapter_config,
+            request,
+            handler,
+            context={"args": args, "kwargs": kwargs},
+        )
+        return _to_fastapi_response(response)
+
+    return wrapped
+
+
+def _default_flask_get_request():
+    try:
+        from flask import request as flask_request
+    except ImportError as error:
+        raise RuntimeError("Flask is not installed. Pass get_request=... for testing or install Flask.") from error
+    return flask_request
+
+
+def _default_flask_make_response(body: Any, status_code: int, headers: dict[str, str]):
+    try:
+        from flask import Response as FlaskResponse
+        from flask import make_response
+    except ImportError as error:
+        raise RuntimeError("Flask is not installed. Pass make_response=... for testing or install Flask.") from error
+
+    payload = json.dumps(body) if isinstance(body, (dict, list)) else ("" if body is None else body)
+    response = make_response(payload, status_code)
+    if isinstance(body, (dict, list)):
+        response.headers["content-type"] = "application/json"
+    for key, value in headers.items():
+        response.headers[key] = value
+    return response
+
+
+def with_ghost_x402_flask(
+    config: GhostX402AdapterConfig,
+    handler: Callable[[dict[str, Any]], Any],
+    *,
+    get_request: Optional[Callable[[], Any]] = None,
+    make_response: Optional[Callable[[Any, int, dict[str, str]], Any]] = None,
+) -> Callable[..., Any]:
+    adapter_config = GhostX402AdapterConfig(
+        **{
+            **config.__dict__,
+            "reporter": _create_reporter_from_config(config),
+        }
+    )
+    request_resolver = get_request or _default_flask_get_request
+    response_builder = make_response or _default_flask_make_response
+
+    def wrapped(*args: Any, **kwargs: Any):
+        request = request_resolver()
+        adapter_response = asyncio.run(
+            _execute_python_x402_adapter_async(
+                adapter_config,
+                request,
+                handler,
+                context={"args": args, "kwargs": kwargs},
+            )
+        )
+        return response_builder(adapter_response.body, adapter_response.status_code, adapter_response.headers)
+
+    return wrapped
 
 class GhostGate:
     """Credit-gate helper for Python APIs."""
@@ -760,28 +1834,28 @@ class GhostGate:
     ) -> dict[str, Any]:
         normalized_agent_id = self._normalize_optional_string(agent_id)
         normalized_service_slug = self._normalize_optional_string(service_slug)
-        normalized_request_id = self._normalize_optional_string(request_id)
-        normalized_payment_reference = self._normalize_optional_string(payment_reference)
-        normalized_payer_identity = self._normalize_optional_string(payer_identity)
-        normalized_payer_address = self._normalize_optional_string(payer_address)
-        normalized_scheme = self._normalize_optional_string(scheme) or self.DEFAULT_X402_SCHEME
-        normalized_asset = self._normalize_optional_string(asset) or self.DEFAULT_X402_ASSET
 
         if not normalized_agent_id:
             raise ValueError("report_x402_settlement requires a non-empty agent_id.")
         if not normalized_service_slug:
             raise ValueError("report_x402_settlement requires a non-empty service_slug.")
-        if not normalized_request_id:
-            raise ValueError("report_x402_settlement requires a non-empty request_id.")
-        if not normalized_payment_reference:
-            raise ValueError("report_x402_settlement requires a non-empty payment_reference.")
-        if not normalized_payer_identity:
-            raise ValueError("report_x402_settlement requires a non-empty payer_identity.")
-
-        normalized_amount_atomic = self._normalize_positive_int_string(amount_atomic, "amount_atomic")
-        normalized_status_code = self._normalize_status_code(status_code)
-        normalized_latency_ms = self._normalize_optional_non_negative_int(latency_ms, "latency_ms")
-        normalized_occurred_at = self._normalize_optional_string(occurred_at) or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        evidence = create_settlement_evidence(
+            request_id=request_id,
+            payment_reference=payment_reference,
+            payer_identity=payer_identity,
+            payer_address=payer_address,
+            scheme=scheme,
+            network=network,
+            chain_id=chain_id,
+            asset=asset,
+            amount_atomic=amount_atomic,
+            decimals=decimals,
+            success=success,
+            status_code=status_code,
+            latency_ms=latency_ms,
+            occurred_at=occurred_at,
+            metadata=metadata,
+        )
 
         owner_address = self._fetch_gateway_owner_address(normalized_agent_id)
         actor_address = Account.from_key(self.private_key).address.lower()
@@ -803,30 +1877,30 @@ class GhostGate:
             "ownerAddress": owner_address,
             "actorAddress": actor_address,
             "serviceSlug": normalized_service_slug,
-            "requestId": normalized_request_id,
-            "paymentReference": normalized_payment_reference,
-            "payerIdentity": normalized_payer_identity,
-            "scheme": normalized_scheme,
-            "asset": normalized_asset,
-            "amountAtomic": normalized_amount_atomic,
-            "decimals": int(decimals),
-            "success": bool(success),
-            "occurredAt": normalized_occurred_at,
+            "requestId": evidence["requestId"],
+            "paymentReference": evidence["paymentReference"],
+            "payerIdentity": evidence["payerIdentity"],
+            "scheme": evidence["scheme"],
+            "asset": evidence["asset"],
+            "amountAtomic": evidence["amountAtomic"],
+            "decimals": evidence["decimals"],
+            "success": evidence["success"],
+            "occurredAt": evidence["occurredAt"],
             "authPayload": auth_payload,
             "authSignature": auth_signature,
         }
-        if normalized_payer_address:
-            request_body["payerAddress"] = normalized_payer_address.lower()
-        if self._normalize_optional_string(network):
-            request_body["network"] = self._normalize_optional_string(network)
-        if isinstance(chain_id, int):
-            request_body["chainId"] = chain_id
-        if normalized_status_code is not None:
-            request_body["statusCode"] = normalized_status_code
-        if normalized_latency_ms is not None:
-            request_body["latencyMs"] = normalized_latency_ms
-        if metadata:
-            request_body["metadata"] = metadata
+        if evidence.get("payerAddress"):
+            request_body["payerAddress"] = evidence["payerAddress"]
+        if evidence.get("network") is not None:
+            request_body["network"] = evidence["network"]
+        if evidence.get("chainId") is not None:
+            request_body["chainId"] = evidence["chainId"]
+        if evidence.get("statusCode") is not None:
+            request_body["statusCode"] = evidence["statusCode"]
+        if evidence.get("latencyMs") is not None:
+            request_body["latencyMs"] = evidence["latencyMs"]
+        if evidence.get("metadata") is not None:
+            request_body["metadata"] = evidence["metadata"]
 
         response = requests.post(
             endpoint,
@@ -844,6 +1918,22 @@ class GhostGate:
             "relatedParty": bool(payload.get("relatedParty")) if isinstance(payload, dict) else False,
             "duplicate": bool(payload.get("duplicate")) if isinstance(payload, dict) else False,
         }
+
+    def create_x402_settlement_reporter(
+        self,
+        *,
+        runtime: str,
+        max_queue_size: int = DEFAULT_X402_REPORTER_MAX_QUEUE_SIZE,
+        retry_delays_seconds: tuple[float, ...] = DEFAULT_X402_REPORTER_RETRY_DELAYS_MS,
+        on_event: Optional[Callable[[X402SettlementReporterEvent], None]] = None,
+    ) -> X402SettlementReporter:
+        return X402SettlementReporter(
+            self.report_x402_settlement,
+            runtime=runtime,
+            max_queue_size=max_queue_size,
+            retry_delays_seconds=retry_delays_seconds,
+            on_event=on_event,
+        )
 
     def guard(
         self,

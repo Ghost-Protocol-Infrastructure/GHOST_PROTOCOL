@@ -95,6 +95,7 @@ export type FulfillmentTicketBindingInput = {
   query?: QueryInput | null;
   body?: unknown;
   serviceSlug?: string;
+  cost?: number;
 };
 
 export type VerifiedFulfillmentTicket = {
@@ -501,6 +502,12 @@ export class GhostFulfillmentMerchant {
         const bodyHash = hashCanonicalFulfillmentBodyJson(expected.body);
         if (bodyHash !== payload.bodyHash) {
           throw new Error("Fulfillment ticket bodyHash does not match request body.");
+        }
+      }
+      if (expected.cost !== undefined) {
+        const expectedCost = BigInt(normalizeCost(expected.cost));
+        if (payload.cost !== expectedCost) {
+          throw new Error("Fulfillment ticket cost does not match expected cost.");
         }
       }
     }

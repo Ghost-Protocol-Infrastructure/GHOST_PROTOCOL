@@ -2,10 +2,14 @@
 
 ## PHASE 0: THE "DIRECTORY" LAUNCH (Launch Ready / Live Validating)
 - Goal: Parity with Competitors. List 20,000+ Agents immediately.
-- Current Status: Launch-ready.
+  - Current Status: Launch-ready.
   - The "Big List" is live at 30k+ indexed agents on Base.
   - GhostRank v2 is live on snapshot-backed reads with scheduled scoring stabilized after the split refresh/snapshot pipeline cutover.
   - GhostGate is launchable for onboarded `LIVE` agents.
+  - GhostGate rail model is now:
+    - `x402`: `0%` fee open rail
+    - `Express`: `2.5%` fee premium managed rail
+    - `GhostWire`: `2.5%` fee direct escrow rail
   - GhostWire is live as the direct-only escrow rail for higher-value jobs on Base.
 - The Pivot (COMPLETED): Switch primary indexing to ERC-8004 Registry.
   - Why: Matches the volume of 8004scan.io. Ensures every user finds their agent.
@@ -23,6 +27,16 @@
 
 ## PHASE 1: THE "ENRICHED" SERVER (Quality Layer)
 - Goal: Differentiation. Move beyond "just a list" by adding deep performance data.
+- Early Phase 1 priority: start the cross-protocol evidence foundation for GhostRank before any broader "oracle" claim.
+  - Scope this as a normalized commerce evidence index first, not a full reputation rewrite:
+    - native Ghost evidence (`Express`, `x402`, `GhostWire`)
+    - imported external `x402` settlement evidence
+    - ACP / ERC-8183 compatible escrow evidence
+    - ERC-8004 review / identity evidence
+  - Keep provenance explicit:
+    - native Ghost evidence remains first-class
+    - imported evidence is labeled separately and can carry lower/default confidence until fully verified
+  - Why now: this is the cleanest wedge against Virtuals and other ACP surfaces without blocking nearer-term monetization work.
 - The Upgrade: Activate the Olas Shadow Pipeline (Codex's Hybrid Model).
   - Action: Re-enable the Olas Service indexing in the background.
   - Result: Agents that are actually running (Olas Services) get a "Verified" or "Pro" badge and a higher score based on their deep on-chain activity.
@@ -42,6 +56,10 @@
     - Live monitoring baseline: scheduled settlement operator health checks for key presence, on-chain registration, and low gas balance.
     - Immediate post-Phase-0: replace the GitHub cron with a dedicated settlement worker / managed cron service so settlement no longer depends on GitHub schedule jitter or hosted callback round-trips.
     - Immediate post-Phase-0: add optional treasury-funded automated top-up for the settlement operator wallet only after the dedicated worker and balance monitoring are stable in production.
+  - Optional Phase 1 settlement economics tuning:
+    - Tune `MerchantSettlementRollup` release thresholds and payout timing against real merchant traffic patterns after the aggregation patch is live.
+    - Validate the target tradeoff between margin protection and merchant settlement latency using observed Express credit volume, fee accumulation, and low-volume payout wait times.
+    - Revisit `GHOST_SETTLEMENT_ROLLUP_MIN_FEE_WEI`, `GHOST_SETTLEMENT_ROLLUP_MAX_AGE_MS`, and batching defaults only after enough production merchant flow exists to justify changing them.
   - API abuse/rate-limit hardening (planned, immediate post-Phase-0):
     - Replace process-memory-only API limiter state with durable shared storage (Redis/Upstash/KV) for `/api/gate/*` and `/api/fulfillment/*` routes.
     - Add edge-level throttling/WAF controls (Cloudflare or equivalent) so limits remain effective across cold starts and multi-instance/serverless scaling.
@@ -52,38 +70,15 @@
     - Evaluate queue/orchestration layer (Trigger.dev / Inngest / worker queue) if GitHub Actions/Vercel cron becomes unreliable for canary volume.
     - Plan for static egress IP or proxying if merchant endpoints require IP allowlisting.
     - Preserve `BASE_RPC_URL` PAYG reliability path for indexer while separating RPC concerns from gateway-canary infrastructure.
-  - x402 Interoperability Layer (planned, only after Phase 0 is cleared and GhostVault v2 is stable on mainnet):
-    - x402 gate-mode compatibility is now implemented behind runtime feature flags (default off): `/api/gate` can accept x402-style `payment-signature` envelopes and emit `payment-required` / `payment-response` headers without changing default EIP-712 behavior.
-    - Add x402 support to `/api/gate` first, not fulfillment first, so Ghost can accept standard HTTP `402 Payment Required` machine-to-machine flows without destabilizing the two-phase fulfillment path.
-    - Treat x402 as an edge/payment interoperability standard while Ghost remains the underlying fast settlement engine (credits, holds, allocator, merchant payout).
-    - Ship behind a feature flag with facilitator evaluation, replay/accounting review, and SDK updates for x402-aware clients.
-    - Revisit fulfillment-specific x402 support only after gate-mode interop is proven in production.
-    - Phase A: Compatibility hardening + docs (COMPLETE)
-      - Completed: published a dedicated `GhostGate x402` developer page with:
-        - transport model explanation
-        - `402 -> retry -> success` flow
-        - Node / Python examples
-        - explicit note that Ghost EIP-712 credits remain the underlying rail
-      - Completed: kept `GET /api/pricing?service=...` as the canonical x402 compatibility metadata source.
-      - Completed: docs now explicitly call out:
-        - `x402CompatibilityEnabled`
-        - `x402Scheme`
-        - "check `/api/pricing?service=...` first before attempting x402 mode"
-      - Completed: promoted x402 mode in SDK docs as a first-class optional GhostGate transport, not just an inline note.
-      - Completed: published the demo spec for a public `402 -> automatic retry -> success` showcase flow before shipping a public-facing x402 demo.
-      - Completed: implemented the canonical `x402-demo` target on `/api/gate/x402-demo` plus `npm run verify:x402:demo` smoke verification.
-    - Phase B: Ecosystem-facing proof (COMPLETE, lean public package)
-      - Completed: published one obvious public demo for the x402 crowd:
-        - paid endpoint
-        - `402` challenge
-        - automatic retry
-        - success
-      - Completed: shipped one minimal example client / helper flow that a builder can run without reverse-engineering GhostGate internals.
-      - Completed: treated pricing metadata, docs, and demo behavior as the public compatibility contract.
-    - Phase C: Standards-depth evaluation
-      - Evaluate a true x402 `exact` scheme path for selected endpoints only after Phase A/B prove there is real ecosystem pull.
-      - Keep Ghost EIP-712 credits as the default chat-speed path unless exact-scheme demand clearly justifies the extra complexity/tradeoffs.
-      - Do not force GhostWire into x402 semantics; keep x402 scoped to GhostGate unless a later design proves otherwise.
+  - GhostGate x402 Open Rail (SHIPPED baseline, Phase 1 adoption hardening continues):
+    - `x402` is now a first-class open rail under the GhostGate umbrella, not an Express compatibility envelope.
+    - `/api/gate` is Express-only again; the old x402-compatible Express wrapper has been removed.
+    - `x402` carries `0%` Ghost protocol fee and feeds GhostRank through merchant-signed settlement reporting.
+    - `Express` remains the premium managed rail at `2.5%`.
+    - Pricing policy is now explicit:
+      - `x402` for cheap / high-frequency / commodity paid access
+      - `Express` for premium managed access with a recommended default of `5+` credits per request
+    - Follow-up work should focus on adoption hardening, reporting ergonomics, and GhostRank fairness tuning rather than reviving the old compatibility layer.
   - GhostWire rollout hardening (IN PROGRESS, END OF PHASE 1):
     - Goal: harden the direct-only GhostWire rail for high-value, lower-frequency ERC-8183 escrow commerce while keeping Ghost Credits + express mode unchanged.
     - Product shape (locked direction):

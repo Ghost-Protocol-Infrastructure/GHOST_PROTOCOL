@@ -81,10 +81,15 @@ Core methods:
 - `reportX402Settlement(...)`
 - `reportX402Settlements(...)`
 
+Top-level helpers/constants:
+
+- `createSettlementEvidence(...)`
+- `X402_REPORTING_RUNTIME_SUPPORT`
+
 Example:
 
 ```ts
-import { GhostMerchant } from "@ghostgate/sdk";
+import { GhostMerchant, createSettlementEvidence } from "@ghostgate/sdk";
 
 const merchant = new GhostMerchant({
   serviceSlug: "agent-2212",
@@ -98,9 +103,7 @@ await merchant.activate({
   endpointUrl: "https://merchant.example.com",
 });
 
-await merchant.reportX402Settlement({
-  agentId: "2212",
-  serviceSlug: "agent-2212",
+const evidence = createSettlementEvidence({
   requestId: "req_123",
   paymentReference: "0xabc123",
   payerIdentity: "0xpayer",
@@ -112,6 +115,12 @@ await merchant.reportX402Settlement({
   decimals: 6,
   success: true,
   statusCode: 200,
+});
+
+await merchant.reportX402Settlement({
+  agentId: "2212",
+  serviceSlug: "agent-2212",
+  ...evidence,
 });
 ```
 
@@ -198,5 +207,7 @@ sdk.report_x402_settlement(
 - Recommended default for `Express` is `5+` credits per request. Use `x402` for cheap or high-frequency paid access.
 - `x402` is now a separate rail surfaced through dedicated request/report helpers.
 - Node `requestX402()` is the high-level auto-pay helper. Python `request_x402()` is the lower-level request/retry helper and returns the initial merchant response unless you pass a retry `payment_header`.
+- `createSettlementEvidence(...)` is the canonical settlement evidence contract for future wrappers/adapters; do not invent a second reporting payload shape.
+- Automatic x402 reporting in MVP is first-class for long-lived Node/Python servers and `Next.js` Node runtime handlers. Short-lived/serverless runtimes are best-effort or manual-fallback only.
 - GhostWire remains the direct escrow rail.
 - GhostWire consumer task input belongs in `request`; `metadataUri` / `metadata_uri` stays the merchant-controlled deliverable locator.

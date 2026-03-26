@@ -7,7 +7,12 @@ This package bridges OpenClaw agents to Ghost Protocol's existing stack:
 - Merchant settlement reporting for GhostRank
 - GhostWire quote + direct job-prepare + job-status flows for escrow-mode workflows
 
-This bundle does not use the removed GhostGate x402-compat envelope. `call-x402.mjs` runs the real `402 -> payment -> retry` flow, and `report-x402-settlement.mjs` is the step that makes successful `x402` usage visible to GhostRank.
+This bundle does not use the removed GhostGate x402-compat envelope. `call-x402.mjs` runs the real `402 -> payment -> retry` flow.
+
+Default recommendation:
+
+- if your OpenClaw agent fronts a long-lived Node or Python merchant runtime, use the Ghost SDK auto-reporting wrappers in that runtime as the primary GhostRank path
+- keep `report-x402-settlement.mjs` as the fallback/manual recovery path for custom, short-lived, or unsupported runtimes
 
 ## ClawHub publish path
 
@@ -32,7 +37,7 @@ powershell -ExecutionPolicy Bypass -File ./scripts/clawhub.ps1 publish ./integra
 - `skills/openclaw-ghost-pay/SKILL.md` - skill instructions for OpenClaw
 - `bin/get-payment-requirements.mjs` - MCP-based payment requirement lookup
 - `bin/call-x402.mjs` - real `x402` client helper for merchant endpoints
-- `bin/report-x402-settlement.mjs` - merchant-signed settlement report helper for GhostRank
+- `bin/report-x402-settlement.mjs` - manual merchant-signed settlement report helper for GhostRank fallback/recovery
 - `bin/get-wire-quote.mjs` - MCP wrapper for GhostWire quote creation
 - `bin/create-wire-job-from-quote.mjs` - direct GhostWire job preparation from an issued quote with a consumer-authored request
 - `bin/get-wire-job-status.mjs` - MCP wrapper for GhostWire job status polling
@@ -56,6 +61,24 @@ node integrations/openclaw-ghost-pay/bin/call-x402.mjs --url https://merchant.ex
 ```bash
 node integrations/openclaw-ghost-pay/bin/report-x402-settlement.mjs --agent-id 18755 --service agent-18755 --request-id req_123 --payment-reference 0xabc123 --payer-identity 0xpayer --amount-atomic 1000000 --success true --status-code 200
 ```
+
+## Recommended reporting path
+
+1. run the real paid call with `call-x402.mjs`
+2. if your merchant runtime is Node or Python and long-lived, enable the Ghost SDK auto-reporting wrapper in that runtime
+3. use `report-x402-settlement.mjs` only if:
+   - the runtime is unsupported or short-lived
+   - you need manual backfill / incident recovery
+   - you are integrating through a custom execution surface that cannot host the SDK wrapper directly
+
+For KPI measurement on SDK-backed runtimes, use the reporter counters/event stream:
+
+- `payment_verified`
+- `report_enqueued`
+- `report_sent`
+- `report_accepted`
+- `duplicate`
+- `report_dropped`
 
 ```bash
 node integrations/openclaw-ghost-pay/bin/get-wire-quote.mjs --client 0x... --provider 0x... --evaluator 0x... --principal-amount 1000000

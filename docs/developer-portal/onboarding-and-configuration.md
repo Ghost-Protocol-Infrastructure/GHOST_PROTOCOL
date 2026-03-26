@@ -36,6 +36,83 @@ Use the rails intentionally:
    - `2.5%` Ghost protocol fee on successful completion only
    - best for higher-value asynchronous work where escrow matters more than latency
 
+## 1B. x402 reporting runtime support
+
+Automatic `x402` settlement reporting is currently designed for long-lived runtimes:
+
+- first-class:
+  - Node servers
+  - Python servers
+  - `Next.js` route handlers using `runtime = "nodejs"`
+- best-effort:
+  - short-lived/serverless Node runtimes
+  - short-lived/serverless Python runtimes
+- manual fallback:
+  - Edge runtimes
+  - custom merchants that want direct settlement control
+
+The reporting contract is canonical settlement evidence emitted by the payment verification/gating layer. Do not infer rank-eligible payment success from arbitrary successful handler responses.
+
+Default onboarding recommendation:
+
+1. use the SDK framework wrapper for your runtime
+2. create one shared settlement reporter per adapter instance
+3. attach `onEvent` or poll `getSnapshot().counters` for:
+   - `payment_verified`
+   - `report_enqueued`
+   - `report_sent`
+   - `report_accepted`
+   - `duplicate`
+   - `report_dropped`
+4. keep manual settlement reporting available as the explicit recovery path
+
+KPI note:
+
+- the denominator for x402 evidence coverage is `payment_verified`
+- the healthy success path is `payment_verified -> report_enqueued -> report_sent -> report_accepted`
+- use `duplicate` and `report_dropped` to localize GhostRank evidence gaps before rollout
+
+## 1C. HTTP monetization kit
+
+For existing HTTP handlers, the SDK now supports a config-first monetization kit:
+
+- define a `ghost.config` manifest with:
+  - one `service` mapping (`agentId`, `serviceSlug`, optional `endpointUrl`)
+  - named `routes`
+  - per-route `rail: x402 | express | hybrid`
+- `x402` routes reuse the canonical SDK `402 -> verify -> settle -> SettlementEvidence -> async Ghost reporting` path
+- `express` routes reuse fulfillment ticket verification and capture
+- `hybrid` means one logical route can expose both rails, but the rail must be chosen explicitly when you bind the handler; Ghost does not silently fall back between rails
+
+MVP recommendation:
+
+1. define the route once in `ghost.config`
+2. create one SDK monetization kit per merchant service
+3. bind each handler explicitly to `x402` or `express`
+4. keep `x402` for cheap/high-frequency paid access and reserve `Express` for premium managed calls
+
+Enforcement note:
+
+- `express.creditCost` is part of the fulfillment binding, not just display metadata
+- a managed request only passes when the fulfillment ticket cost matches the configured route cost
+
+## 1D. MCP proxy
+
+For stateless MCP-over-HTTP/SSE servers, the SDK MCP proxy sits on top of the HTTP monetization kit:
+
+- upstream `tools/list` stays free
+- upstream `tools/call` becomes the paid path
+- `initialize`, `notifications/initialized`, and other JSON-RPC methods pass through to the upstream server unchanged
+- tool pricing metadata is added to `tools/list` under `annotations.ghost.pricing`
+- if you enable `descriptionFallbackText`, the proxy also appends a short Ghost pricing summary to the tool description for clients that ignore structured annotations
+
+Recommended MCP shape:
+
+1. define one `ghost.config` route per priced MCP execution path
+2. if multiple tools share the same endpoint path, reuse the same `path` with different route ids and prices
+3. map tool names to route selections in the MCP proxy config
+4. keep discovery free and gate only execution
+
 ## 2. Merchant Onboarding (Fulfillment)
 
 Complete these steps in order for each merchant agent.
@@ -69,6 +146,13 @@ Merchant pricing note:
 - Treat `Express` as the premium managed lane, not the cheap lane.
 - Recommended launch default for Express is at least `5` credits per request.
 - If the service is meant to be ultra-cheap or bursty, prefer `x402` instead of forcing it through Express.
+
+x402 reporting note:
+
+- automatic reporting should not block the merchant response path
+- metadata enrichment and settlement delivery should stay best-effort from the request-path perspective
+- the default onboarding path for supported runtimes is framework wrapper + shared settlement reporter, not ad hoc manual settlement calls
+- keep manual settlement reporting available as the incident-recovery path even when auto-reporting is the default onboarding recommendation
 
 Settlement timing note:
 

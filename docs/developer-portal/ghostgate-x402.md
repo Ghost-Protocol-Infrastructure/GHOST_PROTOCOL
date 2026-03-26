@@ -84,10 +84,30 @@ The Python helper is intentionally lower-level. If you do not pass a retry `paym
 
 Ghost cannot score x402 traffic it cannot observe. If you want GhostRank credit, report verified settlements:
 
+The canonical reporting contract is `SettlementEvidence`:
+
+- `requestId`
+- `paymentReference`
+- `payerIdentity`
+- `payerAddress`
+- `scheme`
+- `network`
+- `chainId`
+- `asset`
+- `amountAtomic`
+- `decimals`
+- `success`
+- `statusCode`
+- `latencyMs`
+- `occurredAt`
+- `metadata`
+
+Framework wrappers should emit settlement evidence from the payment verification/gating layer, then hand that evidence to the reporter. They should not infer payment success from arbitrary `200` responses.
+
 ### Node
 
 ```ts
-import { GhostMerchant } from "@ghostgate/sdk";
+import { GhostMerchant, createSettlementEvidence } from "@ghostgate/sdk";
 
 const merchant = new GhostMerchant({
   serviceSlug: "agent-18755",
@@ -95,9 +115,7 @@ const merchant = new GhostMerchant({
   delegatedPrivateKey: process.env.GHOST_SIGNER_PRIVATE_KEY as `0x${string}`,
 });
 
-await merchant.reportX402Settlement({
-  agentId: "18755",
-  serviceSlug: "agent-18755",
+const evidence = createSettlementEvidence({
   requestId: "req_123",
   paymentReference: "0xabc123",
   payerIdentity: "0xpayer",
@@ -109,6 +127,12 @@ await merchant.reportX402Settlement({
   decimals: 6,
   success: true,
   statusCode: 200,
+});
+
+await merchant.reportX402Settlement({
+  agentId: "18755",
+  serviceSlug: "agent-18755",
+  ...evidence,
 });
 ```
 
@@ -138,3 +162,13 @@ sdk.report_x402_settlement(
 - it is scored separately from Express
 - confidence depends on qualified paid calls, unique counterparties, repeat counterparties, active days, success rate, and concentration
 - related-party traffic is stored but heavily downweighted or excluded from rank credit
+
+## Runtime support
+
+Automatic x402 reporting in the MVP is first-class for:
+
+- long-lived Node servers
+- long-lived Python servers
+- `Next.js` route handlers using `runtime = "nodejs"`
+
+Short-lived/serverless runtimes are best-effort only in the MVP, and Edge runtimes should keep manual reporting as the fallback path.

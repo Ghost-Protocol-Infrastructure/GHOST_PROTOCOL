@@ -1,6 +1,6 @@
 # GHOST PROTOCOL: PROJECT SPEC (AS-BUILT)
 **Version:** 3.0  
-**Last Updated:** 2026-03-18  
+**Last Updated:** 2026-03-19
 **Status:** Live on Base Mainnet with Postgres-backed indexing, snapshot-only GhostRank runtime reads, a single canonical Score V2 refresh/snapshot workflow, GhostVault V2 pooled credit backing, spend-attributed merchant settlement, GhostGate Express authorization, open x402 settlement reporting, fulfillment (ticket/capture/expiry/support), direct-only GhostWire APIs and reconciliation, rail-aware GhostRank scoring inputs, and hosted settlement/operator automation enabled for configured services.
 
 ---
@@ -64,11 +64,12 @@ Primary operator/developer docs:
 6. **GhostWire layer** (`/api/wire/*` + `/api/admin/wire/operator`):
    - Mints short-lived wire quotes with explicit principal / protocol fee pricing.
    - Prepares direct GhostWire jobs from quotes and returns wallet-ready transaction requests.
+   - Persists a consumer-authored `requestPayload` on `WireJob` and derives / validates `specHash` from that payload when the caller supplies `request` instead of a raw hash.
    - Validates client-reported create/fund artifacts.
    - Reconciles ERC-8183 job state through direct-flow operator/recovery logic.
    - Exposes read-side job status and operator backlog inspection.
    - Resolves and persists provider attribution (`providerAgentId`, `providerServiceSlug`) when available for GhostRank scoring.
-   - Treats `metadataUri` as the preferred deliverable locator and derives gateway/IPFS fetch locators when possible after completion.
+   - Treats `metadataUri` as the merchant-controlled deliverable locator and derives gateway/IPFS fetch locators when possible after completion.
 
 ### 2.3 Key Prisma Models
 - `Agent`
@@ -91,7 +92,7 @@ Primary operator/developer docs:
 - `MerchantSettlementBatch`
 - `X402SettlementEvent`
 - `WireQuote`
-- `WireJob`
+- `WireJob` (`requestPayload` now stores the consumer-authored GhostWire task request)
 - `WireJobWorkflow`
 - `WireJobTransition`
 - `WireOperatorSpend`
@@ -268,6 +269,19 @@ Sync metadata notes:
 ---
 
 ## 5. GhostGate (Gateway + Credits) Spec
+### 5.0 Rail fee model and pricing policy
+- `x402`
+  - `0%` Ghost protocol fee
+  - best for low-cost, high-frequency, or commodity paid access
+- `Express`
+  - `2.5%` Ghost protocol fee
+  - premium managed paid-access rail
+  - recommended default: `5+` credits per request
+  - cheap commodity calls should prefer `x402` instead of `Express`
+- `GhostWire`
+  - `2.5%` Ghost protocol fee on successful completion only
+  - direct escrow rail for higher-value asynchronous work
+
 ### 5.1 Gate Auth
 Route:
 - `GET /api/gate/<service>`
