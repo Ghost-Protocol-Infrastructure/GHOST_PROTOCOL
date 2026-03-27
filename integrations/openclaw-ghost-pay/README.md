@@ -19,7 +19,7 @@ Default recommendation:
 If you want a real ClawHub bundle with helper scripts included, publish the folder root:
 
 ```bash
-clawhub publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.4.0 --tags latest,agents,eip712,ghostprotocol,ghostwire,mcp,openclaw,payments,x402
+clawhub publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.5.0 --tags latest,agents,eip712,ghostprotocol,ghostwire,mcp,openclaw,payments,x402
 ```
 
 Do not rely on a web-form-only publish if it only captures `SKILL.md`; the installable bundle needs the helper scripts under `bin/`.
@@ -27,8 +27,8 @@ Do not rely on a web-form-only publish if it only captures `SKILL.md`; the insta
 If `clawhub` returns `fetch failed` from this machine/network, run the bundled wrapper that applies the registry DNS shim:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/clawhub.ps1 whoami
-powershell -ExecutionPolicy Bypass -File ./scripts/clawhub.ps1 publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.4.0 --tags latest,agents,eip712,ghostprotocol,ghostwire,mcp,openclaw,payments,x402
+powershell -ExecutionPolicy Bypass -File ./integrations/openclaw-ghost-pay/scripts/clawhub.ps1 whoami
+powershell -ExecutionPolicy Bypass -File ./integrations/openclaw-ghost-pay/scripts/clawhub.ps1 publish ./integrations/openclaw-ghost-pay --slug openclaw-ghost-pay --name "Ghost Protocol OpenClaw Pay" --version 1.5.0 --tags latest,agents,eip712,ghostprotocol,ghostwire,mcp,openclaw,payments,x402
 ```
 
 ## Contents
@@ -152,7 +152,7 @@ Use this copy when submitting `openclaw-ghost-pay` to directories.
 
 - Display Name: Ghost Protocol OpenClaw Pay
 - Slug: openclaw-ghost-pay
-- Version: 1.4.0
+- Version: 1.5.0
 - Short Description: Discover Ghost payment requirements, execute real x402 calls, report verified x402 settlements, and prepare GhostWire direct escrow jobs.
 - Long Description: Ghost Protocol gives OpenClaw agents one bundle for GhostGate Express discovery, open x402 execution, x402 settlement reporting for GhostRank, and GhostWire direct escrow prep. Agents can discover pricing requirements, call merchant x402 endpoints, report verified settlements back to Ghost, and prepare GhostWire quote/status flows from a single skill bundle. GhostWire prep now carries a consumer-authored request payload while keeping `metadataUri` reserved for the merchant deliverable locator. The ClawHub bundle includes the helper scripts it references and requires a trusted server-side signer key.
 

@@ -1,7 +1,7 @@
 ---
 name: openclaw-ghost-pay
 description: Discover Ghost payment requirements, execute real x402 calls, report x402 settlements, and run GhostWire quote/prepare/status flows for direct escrow.
-version: 1.4.0
+version: 1.5.0
 metadata: {"clawdis":{"homepage":"https://github.com/Ghost-Protocol-Infrastructure/GHOST_PROTOCOL/tree/main/integrations/openclaw-ghost-pay","os":["darwin","linux","win32"],"requires":{"env":["GHOST_SIGNER_PRIVATE_KEY"],"bins":["node"]},"primaryEnv":"GHOST_SIGNER_PRIVATE_KEY","install":[{"id":"viem","kind":"node","package":"viem","label":"Install viem (required for settlement reporting)"}]}}
 ---
 

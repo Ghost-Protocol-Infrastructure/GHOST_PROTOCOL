@@ -11,7 +11,8 @@ Building the Shadow Infrastructure for the Machine Economy.
 ## What This Repo Contains
 
 - Agent ranking and indexing pipeline
-- GhostGate access control and SDKs
+- GhostGate Express + open `x402` monetization rails, settlement reporting, and SDKs
+- Config-first HTTP monetization kit and MCP payment-aware proxy surfaces
 - Direct GhostWire escrow APIs, SDKs, and reconciliation tooling
 - Merchant fulfillment routes and operator tooling
 - Merchant dashboard and developer onboarding surfaces

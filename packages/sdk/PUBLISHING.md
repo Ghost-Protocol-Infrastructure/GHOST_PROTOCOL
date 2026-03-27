@@ -23,8 +23,8 @@ This must match `.github/workflows/publish-node-sdk.yml` exactly.
 1. Tag-based release (recommended):
 
 ```bash
-git tag sdk-v0.3.0
-git push origin sdk-v0.3.0
+git tag sdk-v0.4.0
+git push origin sdk-v0.4.0
 ```
 
 2. Manual run:

@@ -1,7 +1,7 @@
 # GHOST PROTOCOL: PROJECT SPEC (AS-BUILT)
 **Version:** 3.0  
-**Last Updated:** 2026-03-19
-**Status:** Live on Base Mainnet with Postgres-backed indexing, snapshot-only GhostRank runtime reads, a single canonical Score V2 refresh/snapshot workflow, GhostVault V2 pooled credit backing, spend-attributed merchant settlement, GhostGate Express authorization, open x402 settlement reporting, fulfillment (ticket/capture/expiry/support), direct-only GhostWire APIs and reconciliation, rail-aware GhostRank scoring inputs, and hosted settlement/operator automation enabled for configured services.
+**Last Updated:** 2026-03-26
+**Status:** Live on Base Mainnet with Postgres-backed indexing, snapshot-only GhostRank runtime reads, a single canonical Score V2 refresh/snapshot workflow, GhostVault V2 pooled credit backing, spend-attributed merchant settlement, GhostGate Express authorization, open x402 settlement reporting, runtime-aware x402 reporting wrappers, config-first HTTP monetization kit bindings, stateless MCP payment-aware proxy support, fulfillment (ticket/capture/expiry/support), direct-only GhostWire APIs and reconciliation, rail-aware GhostRank scoring inputs, and hosted settlement/operator automation enabled for configured services.
 
 ---
 
@@ -10,7 +10,7 @@ Ghost Protocol is infrastructure for autonomous-agent discovery, monetization, a
 
 It ships as three integrated products:
 1. **GhostRank** (`/rank`): reputation leaderboard and discovery surface.
-2. **GhostGate** (`/dashboard` + SDKs): Express access, open `x402` helpers, and credit settlement rail.
+2. **GhostGate** (`/dashboard` + SDKs): Express access, open `x402`, config-first HTTP monetization, MCP payment-aware proxying, and credit settlement rail.
 3. **GhostWire** (`/api/wire/*` + operator surfaces): direct ERC-8183 escrow rail for higher-value agent commerce.
 
 Public app routes:
@@ -47,6 +47,7 @@ Primary operator/developer docs:
    - Ships read-only MCP server (`scripts/mcp-server.js`) exposing `list_agents`, `get_agent_details`, `get_payment_requirements`, `get_wire_quote`, and `get_wire_job_status`.
    - Exposes hosted MCP HTTP endpoint at `/api/mcp/read-only` for agent runtimes that support JSON-RPC over HTTP.
    - Exposes `POST /api/telemetry/x402/settlements` for merchant-signed `x402` settlement evidence that feeds GhostRank.
+   - Publishes SDK-facing pricing and settlement primitives used by the config-first HTTP monetization kit and MCP proxy bindings.
 3. **Vault layer** (`GhostVault.sol` + `/api/sync-credits`):
    - Accepts ETH deposits.
    - Tracks pooled credit backing, merchant liability, and accrued protocol fees.
@@ -503,9 +504,20 @@ Selection behavior:
 - Canonical gate / telemetry methods:
   - `connect(apiKey?)`
   - `requestX402(...)`
+  - `createSettlementEvidence(...)`
+  - `createX402SettlementReporter(...)`
   - `pulse(...)`
   - `outcome(...)`
   - `startHeartbeat(...)`
+- Canonical x402 wrapper/binding surfaces:
+  - `withGhostX402NextNode(...)`
+  - `withGhostX402Hono(...)`
+  - `withGhostX402Express(...)`
+  - `withGhostX402Fastify(...)`
+- Config-first monetization surfaces:
+  - `defineGhostConfig(...)`
+  - `createGhostHttpMonetizationKit(...)`
+  - `createGhostMcpProxy(...)`
 - Direct GhostWire helpers:
   - `createWireQuote(...)`
   - `prepareWireJob(...)`
@@ -520,6 +532,10 @@ Selection behavior:
 - `requestX402(...)`:
   - is the real standards-native `x402` helper
   - performs the `402 -> payment -> retry` flow automatically in the Node SDK
+- `createSettlementEvidence(...)`:
+  - is the canonical merchant settlement evidence contract shared by manual reporting and automatic wrappers
+- `createX402SettlementReporter(...)`:
+  - provides runtime-aware async reporting with dedupe, retry, and lifecycle events/counters
 - Gate authorization itself is signature + credits driven.
 - `GhostMerchant` extends the fulfillment merchant surface and adds merchant-onboarding helpers:
   - `getGatewayConfig(...)`
@@ -543,10 +559,15 @@ Selection behavior:
 - Canonical access methods:
   - `connect(...)`
   - `request_x402(...)`
+  - `create_settlement_evidence(...)`
+  - `create_x402_settlement_reporter(...)`
   - `report_x402_settlement(...)`
   - `pulse(...)`
   - `outcome(...)`
   - `start_heartbeat(...)`
+- Python x402 wrapper/binding surfaces:
+  - `with_ghost_x402_fastapi(...)`
+  - `with_ghost_x402_flask(...)`
 - Direct GhostWire helpers:
   - `create_wire_quote(...)`
   - `prepare_wire_job(...)`
@@ -562,6 +583,7 @@ Selection behavior:
 - Python `request_x402(...)` is the lower-level helper:
   - first call returns the merchant response, which may be a `402` challenge
   - caller may retry with `payment_header` to complete the flow
+- `create_settlement_evidence(...)` and `create_x402_settlement_reporter(...)` mirror the Node settlement contract and async reporting model for long-lived Python runtimes.
 - Guard decorator still performs signed gate verification for route protection.
 
 ### 8.3 Telemetry Route Parity

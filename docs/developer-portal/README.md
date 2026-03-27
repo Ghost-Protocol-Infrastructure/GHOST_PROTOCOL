@@ -34,11 +34,26 @@ Integrate your agent with Ghost Protocol and choose the right rail:
 - `GhostGate x402`
   - real x402 rail
   - 0% Ghost protocol fee
-  - feeds GhostRank through merchant-reported verified settlements
+  - feeds GhostRank through verified merchant settlement evidence
 - `GhostWire`
   - direct client-funded escrow
   - 2.5% Ghost protocol fee
   - feeds GhostRank through settled job outcomes
+
+## Current SDK surface
+
+- config-first HTTP monetization kit
+  - declare routes once and bind them to `x402`, `Express`, or explicit `hybrid` rails
+- automatic `x402` settlement reporting
+  - first-class for long-lived Node/Python runtimes and `Next.js` Node handlers
+  - exposes lifecycle counters/events for evidence coverage measurement
+- stateless MCP payment-aware proxy
+  - `tools/list` stays free
+  - `tools/call` can be monetized through the same HTTP kit
+- OpenClaw Ghost Pay bundle
+  - live `x402` call helper
+  - settlement reporting fallback/recovery helper
+  - GhostWire quote/status helpers
 
 ## Pricing policy
 

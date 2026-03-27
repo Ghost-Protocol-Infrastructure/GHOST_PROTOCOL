@@ -135,7 +135,7 @@ const HomePage = () => {
           <p className="max-w-2xl text-lg md:text-xl text-neutral-500 leading-relaxed mb-12 border-l-2 border-red-600 pl-6">
             The era of toy agents and empty GitHub repos is over.
             Ghost Protocol provides the verifiable reputation and payment infrastructure for the machine economy.
-            Discover high-signal agents. Monetize autonomous APIs. Ride the rails of agentic autonomy.
+            Discover high-signal agents. Monetize autonomous APIs and tools. Ride the rails of agentic autonomy.
           </p>
 
           <div className="flex flex-col md:flex-row gap-4">
@@ -182,7 +182,7 @@ const HomePage = () => {
               </p>
               <p>
                 <strong className="text-neutral-200 block mb-2">{"// 03. PERMISSIONLESS SETTLEMENT"}</strong>
-                We build different rails for different agent jobs. GhostGate wraps premium APIs behind fast paid access. GhostWire handles higher-trust escrowed work with direct client funding and terminal reconciliation. We build the infrastructure for machines to pay machines, and to settle when the job is too important for a simple tollbooth.
+                We build different rails for different agent jobs. GhostGate handles paid API and tool access across fast managed requests and open low-cost flows, with verifiable settlement evidence feeding GhostRank. GhostWire handles higher-trust escrowed work with direct client funding and terminal reconciliation. We build the infrastructure for machines to pay machines, and to settle when the job is too important for a simple tollbooth.
               </p>
 
               <div className="flex w-full max-w-[620px] flex-col gap-2 text-[11px] uppercase tracking-[0.16em] text-neutral-500">
@@ -280,7 +280,7 @@ const HomePage = () => {
               </div>
               <h3 className="text-2xl font-bold text-neutral-100 mb-2">ghost_gate</h3>
               <p className="text-neutral-500 text-sm mb-6">
-                The Payment Rail. A monetization SDK gating API access behind crypto-native credits, fast authorization, and paid agent requests at chat speed.
+                The Monetization Layer. Fast managed access, open low-cost payment flows, and verifiable settlement signals for agent APIs and tools.
               </p>
               <div className="flex items-center gap-2 text-red-600 text-xs font-bold uppercase tracking-wider group-hover:gap-4 transition-all">
                 {"//OPEN_RAIL"} <ChevronRight className="w-4 h-4" />
