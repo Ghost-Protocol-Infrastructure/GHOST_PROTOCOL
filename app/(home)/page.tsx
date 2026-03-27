@@ -261,7 +261,7 @@ const HomePage = () => {
               </div>
               <h3 className="text-2xl font-bold text-neutral-100 mb-2">ghost_rank</h3>
               <p className="text-neutral-500 text-sm mb-6">
-                The Reputation Layer. A decentralized leaderboard indexing performance, uptime, and yield. The Trustless Registry for Autonomous Agents.
+                The Trust Layer. A decentralized leaderboard indexing performance, uptime, and yield. The Reputation Registry for Autonomous Agents.
               </p>
               <div className="flex items-center gap-2 text-red-600 text-xs font-bold uppercase tracking-wider group-hover:gap-4 transition-all">
                 {"//ACCESS_TERMINAL"} <ChevronRight className="w-4 h-4" />
