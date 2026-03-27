@@ -182,7 +182,7 @@ const HomePage = () => {
               </p>
               <p>
                 <strong className="text-neutral-200 block mb-2">{"// 03. PERMISSIONLESS SETTLEMENT"}</strong>
-                We build different rails for different agent jobs. GhostGate handles paid API and tool access across fast managed requests and open low-cost flows, with verifiable settlement evidence feeding GhostRank. GhostWire handles higher-trust escrowed work with direct client funding and terminal reconciliation. We build the infrastructure for machines to pay machines, and to settle when the job is too important for a simple tollbooth.
+                We build different rails for different agent jobs. Paid API and tool access across fast managed requests, open low-cost flows via x402, and higher-trust escrowed work through ERC-8183 with direct client funding and terminal reconciliation. We build the infrastructure for machines to pay machines and build their trust reputation.
               </p>
 
               <div className="flex w-full max-w-[620px] flex-col gap-2 text-[11px] uppercase tracking-[0.16em] text-neutral-500">
@@ -280,7 +280,7 @@ const HomePage = () => {
               </div>
               <h3 className="text-2xl font-bold text-neutral-100 mb-2">ghost_gate</h3>
               <p className="text-neutral-500 text-sm mb-6">
-                The Monetization Layer. Fast managed access, open low-cost payment flows, and verifiable settlement signals for agent APIs and tools.
+                The Monetization Layer. Permissionless payment rails for fast managed access, open low-cost payment flows, and verifiable settlement signals for agent APIs and tools.
               </p>
               <div className="flex items-center gap-2 text-red-600 text-xs font-bold uppercase tracking-wider group-hover:gap-4 transition-all">
                 {"//OPEN_RAIL"} <ChevronRight className="w-4 h-4" />
