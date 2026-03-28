@@ -13,6 +13,12 @@ import {
   createMerchantGatewayAuthPayload,
   MERCHANT_GATEWAY_AUTH_MAX_AGE_SECONDS,
 } from "@/lib/agent-gateway-auth";
+import {
+  clearCachedAgentOfferingReadAuth,
+  loadCachedAgentOfferingReadAuth,
+  saveCachedAgentOfferingReadAuth,
+  type CachedAgentOfferingReadAuth,
+} from "@/lib/agent-offerings-read-auth";
 
 type AgentOfferingItem = {
   id: string;
@@ -54,16 +60,6 @@ type OfferingFormState = {
   priceHint: string;
   etaHint: string;
   isActive: boolean;
-};
-
-type CachedReadAuth = {
-  agentId: string;
-  ownerAddress: string;
-  actorAddress: string;
-  serviceSlug: string;
-  authPayload: ReturnType<typeof createMerchantGatewayAuthPayload>;
-  authSignature: string;
-  expiresAtMs: number;
 };
 
 const DEFAULT_FORM_STATE: OfferingFormState = {
@@ -186,14 +182,25 @@ export default function AgentOfferingsPanel({
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [pendingToggleId, setPendingToggleId] = useState<string | null>(null);
   const [pendingReorderId, setPendingReorderId] = useState<string | null>(null);
-  const cachedReadAuthRef = useRef<CachedReadAuth | null>(null);
+  const cachedReadAuthRef = useRef<CachedAgentOfferingReadAuth | null>(null);
 
   useEffect(() => {
     setFormState(toInitialFormState(serviceSlug));
     setEditingOfferingId(null);
     setNotice(null);
     cachedReadAuthRef.current = null;
-  }, [serviceSlug, agentId]);
+    if (typeof window !== "undefined" && agentId && ownerAddress && actorAddress && serviceSlug) {
+      const cached = loadCachedAgentOfferingReadAuth(window.sessionStorage, {
+        agentId,
+        ownerAddress,
+        actorAddress,
+        serviceSlug,
+      });
+      if (cached) {
+        cachedReadAuthRef.current = cached;
+      }
+    }
+  }, [actorAddress, ownerAddress, serviceSlug, agentId]);
 
   const buildSignedAuth = useCallback(
     async (options?: { cacheForRead?: boolean; reuseReadAuth?: boolean }) => {
@@ -202,7 +209,16 @@ export default function AgentOfferingsPanel({
       }
 
       if (options?.reuseReadAuth) {
-        const cached = cachedReadAuthRef.current;
+        const cached =
+          cachedReadAuthRef.current ??
+          (typeof window !== "undefined"
+            ? loadCachedAgentOfferingReadAuth(window.sessionStorage, {
+              agentId,
+              ownerAddress,
+              actorAddress,
+              serviceSlug,
+            })
+            : null);
         if (
           cached &&
           cached.agentId === agentId &&
@@ -232,7 +248,7 @@ export default function AgentOfferingsPanel({
       });
 
       if (options?.cacheForRead) {
-        cachedReadAuthRef.current = {
+        const cached: CachedAgentOfferingReadAuth = {
           agentId,
           ownerAddress,
           actorAddress: actorAddress.toLowerCase(),
@@ -241,6 +257,10 @@ export default function AgentOfferingsPanel({
           authSignature,
           expiresAtMs: authPayload.issuedAt * 1000 + (MERCHANT_GATEWAY_AUTH_MAX_AGE_SECONDS - 30) * 1000,
         };
+        cachedReadAuthRef.current = cached;
+        if (typeof window !== "undefined") {
+          saveCachedAgentOfferingReadAuth(window.sessionStorage, cached);
+        }
       }
 
       return {
@@ -295,6 +315,18 @@ export default function AgentOfferingsPanel({
       setIsLoading(false);
     }
   }, [actorAddress, agentId, buildSignedAuth, ownerAddress, serviceSlug]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !agentId || !ownerAddress || !actorAddress || !serviceSlug) return;
+    const cached = cachedReadAuthRef.current;
+    if (cached && cached.expiresAtMs > Date.now()) return;
+    clearCachedAgentOfferingReadAuth(window.sessionStorage, {
+      agentId,
+      ownerAddress,
+      actorAddress,
+      serviceSlug,
+    });
+  }, [actorAddress, agentId, ownerAddress, serviceSlug]);
 
   useEffect(() => {
     void loadOfferings();
