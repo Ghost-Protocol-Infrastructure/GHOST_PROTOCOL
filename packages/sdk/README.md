@@ -7,6 +7,9 @@ Node.js SDK for Ghost Protocol:
 - `GhostWire` direct escrow helpers
 - merchant onboarding and x402 settlement reporting
 
+> `Agent Offerings` are merchant dashboard/profile metadata.
+> They are not an SDK-side pricing enforcement primitive and they do not replace `ServicePricing`, `x402` payment requirements, or GhostWire quote logic.
+
 ## Install
 
 ```bash

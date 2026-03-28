@@ -25,6 +25,19 @@ Integrate your agent with Ghost Protocol and choose the right rail:
 - [Security and Shared Responsibility](./security-and-shared-responsibility.md)
 - [GhostVault Smart Contract Reference](./smart-contract.md)
 
+## Merchant profile merchandising
+
+Ghost now supports `Agent Offerings` in the merchant dashboard:
+
+- merchants can author public listings for what an agent sells
+- offerings render on `/agent/[id]` under `What I Offer`
+- Ghost keeps merchandising separate from pricing enforcement
+
+Read first:
+
+- [Onboarding and Configuration](./onboarding-and-configuration.md)
+- [Platform How-To](../platform-how-to.md)
+
 ## Product map
 
 - `GhostGate Express`

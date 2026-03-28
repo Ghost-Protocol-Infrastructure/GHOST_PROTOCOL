@@ -18,6 +18,7 @@ type VerifyMerchantGatewaySignedWriteInput = {
   authPayload: unknown;
   authSignature: string;
   allowDelegatedSigner?: boolean;
+  consumeNonce?: boolean;
   gatewayConfigId?: string | null;
   nowMs?: number;
 };
@@ -153,16 +154,18 @@ export const verifyMerchantGatewaySignedWrite = async (
     }
   }
 
-  const nonceResult = await consumeMerchantGatewayAuthNonce({
-    signer,
-    action: input.action,
-    agentId: input.agentId,
-    nonce: parsedPayload.nonce,
-    issuedAt: parsedPayload.issuedAt,
-    signature,
-  });
-  if (!nonceResult.ok) {
-    return nonceResult;
+  if (input.consumeNonce !== false) {
+    const nonceResult = await consumeMerchantGatewayAuthNonce({
+      signer,
+      action: input.action,
+      agentId: input.agentId,
+      nonce: parsedPayload.nonce,
+      issuedAt: parsedPayload.issuedAt,
+      signature,
+    });
+    if (!nonceResult.ok) {
+      return nonceResult;
+    }
   }
 
   return { ok: true, authPayload: parsedPayload, signer };

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import Image from "next/image";
 import { prisma } from "@/lib/db";
+import { listAgentOfferings, type SerializedAgentOffering } from "@/lib/agent-offerings";
 import AgentProfileAutoRefresh from "@/components/AgentProfileAutoRefresh";
 import { findActiveSnapshotScoreByAgentId } from "@/lib/leaderboard-snapshot";
 
@@ -90,6 +91,14 @@ const isMissingAgentGatewayConfigTableError = (error: unknown): boolean => {
   return message.includes("AgentGatewayConfig");
 };
 
+const isMissingAgentOfferingTableError = (error: unknown): boolean => {
+  if (typeof error !== "object" || error === null) return false;
+  const code = "code" in error ? (error as { code?: unknown }).code : null;
+  if (code !== "P2021") return false;
+  const message = "message" in error ? String((error as { message?: unknown }).message ?? "") : "";
+  return message.includes("AgentOffering");
+};
+
 const resolveAgentImageUrl = (raw: string | null | undefined): string | null => {
   const image = raw?.trim();
   if (!image) return null;
@@ -159,6 +168,7 @@ export default async function AgentProfilePage({ params }: AgentPageProps) {
   }
 
   let gatewayConfig: AgentSummary["gatewayConfig"] = null;
+  let activeOfferings: SerializedAgentOffering[] = [];
   try {
     const row = await prisma.agentGatewayConfig.findUnique({
       where: { agentId },
@@ -177,6 +187,14 @@ export default async function AgentProfilePage({ params }: AgentPageProps) {
       : null;
   } catch (error) {
     if (!isMissingAgentGatewayConfigTableError(error)) {
+      throw error;
+    }
+  }
+
+  try {
+    activeOfferings = await listAgentOfferings({ agentId, includeInactive: false });
+  } catch (error) {
+    if (!isMissingAgentOfferingTableError(error)) {
       throw error;
     }
   }
@@ -375,6 +393,70 @@ export default async function AgentProfilePage({ params }: AgentPageProps) {
             ) : null}
           </div>
         </section>
+
+        {activeOfferings.length > 0 && (
+          <section className="mt-6 border border-neutral-900 bg-neutral-950 p-6">
+            <div className="mb-4">
+              <h3 className="text-sm uppercase tracking-[0.16em] text-neutral-100 font-bold">What I Offer</h3>
+              <p className="mt-2 text-sm text-neutral-400">
+                Merchant-authored offerings describe what this agent sells, how to request it, and which Ghost rail it
+                runs through.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              {activeOfferings.map((offering) => (
+                <article key={offering.id} className="border border-neutral-800 bg-neutral-900 p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="text-lg uppercase tracking-[0.08em] text-neutral-100 font-bold">{offering.title}</h4>
+                        <span className="border border-neutral-700 bg-neutral-950 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-neutral-400 font-bold">
+                          {offering.rail}
+                        </span>
+                      </div>
+                      <p className="mt-3 text-sm text-neutral-400">{offering.description}</p>
+                    </div>
+                    <div className="border border-neutral-800 bg-neutral-950 px-3 py-3 lg:min-w-[16rem]">
+                      <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-500 font-bold">Price</p>
+                      <p className="mt-2 text-sm text-neutral-200 font-mono">
+                        {offering.canonicalPricing?.primaryDisplay ?? offering.priceHint ?? "Merchant guidance only"}
+                      </p>
+                      {offering.canonicalPricing && offering.priceHint && (
+                        <p className="mt-2 text-[11px] text-neutral-500">Merchant guidance: {offering.priceHint}</p>
+                      )}
+                      {offering.etaHint && (
+                        <>
+                          <p className="mt-3 text-[10px] uppercase tracking-[0.16em] text-neutral-500 font-bold">ETA</p>
+                          <p className="mt-1 text-sm text-neutral-300">{offering.etaHint}</p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    <div className="border border-neutral-800 bg-neutral-950 p-4">
+                      <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-500 font-bold">How to Request</p>
+                      <pre className="mt-3 overflow-x-auto whitespace-pre-wrap border border-neutral-800 bg-neutral-950 px-3 py-3 text-sm text-neutral-200 font-mono">
+                        <code>{offering.consumerCommand}</code>
+                      </pre>
+                    </div>
+                    <div className="border border-neutral-800 bg-neutral-950 p-4">
+                      <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-500 font-bold">
+                        {offering.targetLabel}
+                      </p>
+                      <p className="mt-3 break-all text-sm text-neutral-200 font-mono">{offering.targetRef}</p>
+                      <p className="mt-2 text-xs text-neutral-500">{offering.targetDescription}</p>
+                      <p className="mt-3 text-[11px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
+                        {offering.rail === "GHOSTWIRE" ? "Escrowed via GhostWire" : "Runs via GhostGate"}
+                      </p>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </main>
   );

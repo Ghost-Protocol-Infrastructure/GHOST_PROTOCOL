@@ -7,6 +7,7 @@ export type MerchantGatewayAuthAction =
   | "verify"
   | "delegated_signer_register"
   | "delegated_signer_revoke"
+  | "offerings_manage"
   | "x402_settlement_report";
 
 export type MerchantGatewayAuthPayload = {
@@ -43,6 +44,7 @@ export const normalizeMerchantGatewayAuthPayload = (value: unknown): MerchantGat
     action !== "verify" &&
     action !== "delegated_signer_register" &&
     action !== "delegated_signer_revoke" &&
+    action !== "offerings_manage" &&
     action !== "x402_settlement_report"
   ) {
     return null;

@@ -1,6 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { PrismaClient, Prisma } from "@prisma/client";
-import { bootstrapPostgresEnv, getPrismaClientDatasourceOptions } from "../lib/postgres-env";
+import { bootstrapPostgresEnv } from "../lib/postgres-env";
 
 const DEFAULT_DB_PUSH_RETRY_ATTEMPTS = 4;
 const DEFAULT_DB_PUSH_RETRY_DELAY_MS = 5_000;
@@ -31,8 +30,8 @@ const CONNECT_TIMEOUT_SECONDS = parsePositiveInt(
 );
 const PRISMA_DB_PUSH_COMMAND =
   process.platform === "win32"
-    ? { command: "cmd.exe", args: ["/d", "/s", "/c", "npx prisma db push"] }
-    : { command: "npx", args: ["prisma", "db", "push"] };
+    ? { command: "cmd.exe", args: ["/d", "/s", "/c", "npx prisma db push --skip-generate"] }
+    : { command: "npx", args: ["prisma", "db", "push", "--skip-generate"] };
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
@@ -122,26 +121,56 @@ const runPrismaDbPush = async (): Promise<void> => {
   }
 };
 
-const prisma = new PrismaClient({
-  ...getPrismaClientDatasourceOptions(postgresEnv),
-  log: ["error"],
-});
+const PRISMA_DB_EXECUTE_COMMAND =
+  process.platform === "win32"
+    ? {
+        command: "cmd.exe",
+        args: ["/d", "/s", "/c", "npx prisma db execute --stdin --schema prisma/schema.prisma"],
+      }
+    : { command: "npx", args: ["prisma", "db", "execute", "--stdin", "--schema", "prisma/schema.prisma"] };
+
+const runPrismaDbExecute = (sql: string): string => {
+  const result = spawnSync(PRISMA_DB_EXECUTE_COMMAND.command, PRISMA_DB_EXECUTE_COMMAND.args, {
+    env: process.env,
+    encoding: "utf8",
+    input: sql,
+    stdio: "pipe",
+  });
+
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status !== 0) {
+    const error = new Error("prisma db execute failed.");
+    Object.assign(error, {
+      status: result.status,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    });
+    throw error;
+  }
+
+  return result.stdout ?? "";
+};
 
 const applyPhaseCCustomIndexes = async (): Promise<void> => {
-  const fulfillmentHoldTableCheck = await prisma.$queryRaw<Array<{ relation: string | null }>>(Prisma.sql`
-    SELECT to_regclass('public."FulfillmentHold"')::text AS relation
+  const fulfillmentHoldTableCheck = runPrismaDbExecute(`
+    SELECT to_regclass('public."FulfillmentHold"')::text AS relation;
   `);
 
-  if (!fulfillmentHoldTableCheck[0]?.relation) {
+  if (!/"FulfillmentHold"/.test(fulfillmentHoldTableCheck)) {
     console.log('Custom index step skipped: table "FulfillmentHold" does not exist yet.');
     return;
   }
 
-  // Prisma cannot express this partial unique index; enforce it with raw SQL after db push.
-  await prisma.$executeRawUnsafe(`
+  runPrismaDbExecute(`
     CREATE UNIQUE INDEX IF NOT EXISTS "FulfillmentHold_wallet_service_active_held_idx"
     ON "FulfillmentHold" ("walletAddress", "serviceSlug")
-    WHERE "state" = 'HELD'
+    WHERE "state" = 'HELD';
   `);
 
   console.log('Applied/verified custom partial unique index for "FulfillmentHold" active holds.');
@@ -158,7 +187,4 @@ run()
     console.error("Database migration failed.");
     console.error(error);
     process.exitCode = 1;
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
   });

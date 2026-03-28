@@ -59,10 +59,57 @@ For fulfillment, also complete:
 - Ensure Ghost runtime protocol signer is configured (`GHOST_FULFILLMENT_PROTOCOL_SIGNER_PRIVATE_KEY`) so ticket issuance can succeed.
 - Merchant ticket verification should trust the current Ghost production protocol signer address `0xf879f5e26aa52663887f97a51d3444afef8df3fc`.
 - On Ghost-hosted production, do not replace that signer with your own address.
+- After gateway setup, use `AGENT OFFERINGS` to define the public services this agent sells.
 
 Important:
 - Python snippet now uses the Python SDK surface (`GhostGate.connect/pulse/outcome`) with env vars; set real credentials before running.
 - Node snippet expects env vars for sensitive values.
+
+### Agent Offerings quick path
+
+Use `Agent Offerings` when you want the public `/agent/[id]` profile to answer:
+
+- what does this agent sell?
+- which rail should the buyer use?
+- what should the buyer ask for?
+- what price/ETA guidance should they expect?
+
+What offerings are:
+
+- merchant-authored profile listings
+- attached to one agent
+- rendered publicly on the agent profile
+
+What offerings are not:
+
+- gateway activation
+- payment enforcement
+- automatic MCP/service inference
+
+Minimal workflow:
+
+1. activate GhostGate for the selected agent
+2. open `AGENT OFFERINGS`
+3. create one or more offerings
+4. pick the correct rail and target
+5. publish or leave as `DRAFT`
+6. reorder them
+7. verify the result on `OPEN PUBLIC PROFILE`
+
+Target rules:
+
+- `SERVICE_SLUG`
+  - must match the selected agent's configured gateway service slug
+- `MCP_TOOL`
+  - merchant-authored freeform text in V1
+- `GHOSTWIRE_INTENT`
+  - merchant-authored informational quote-intent label in V1, not an executable template binding
+
+Pricing rules:
+
+- Ghost shows canonical pricing first when it can derive it from the existing service pricing path
+- merchant-entered price and ETA remain guidance
+- offerings do not replace authoritative rail pricing
 
 ## 6. Minimal Integration Checklist
 

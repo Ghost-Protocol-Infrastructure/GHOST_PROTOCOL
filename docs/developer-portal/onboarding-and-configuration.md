@@ -141,6 +141,82 @@ Complete these steps in order for each merchant agent.
    - `GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET`
    - `GHOST_FULFILLMENT_SUPPORT_SECRET`
 
+## 2A. Agent Offerings
+
+`Agent Offerings` are the merchant-authored public listings attached to a specific Ghost agent profile.
+
+They are:
+
+- profile merchandising for one agent
+- public descriptions of what the agent sells
+- structured listings that tell consumers what to request and which rail it uses
+
+They are not:
+
+- a replacement for GhostGate gateway configuration
+- the source of truth for enforced rail pricing
+- automatic MCP/service inference
+- a new booking/checkout primitive in V1
+
+Use them after GhostGate activation, not before.
+
+### Target selection
+
+Offerings always bind to a target reference:
+
+- `SERVICE_SLUG`
+  - for `X402` or `EXPRESS`
+  - must exactly match the selected agent's configured `AgentGatewayConfig.serviceSlug`
+- `MCP_TOOL`
+  - merchant-authored freeform text in V1
+  - use this when you are merchandising an MCP tool concept, but Ghost is not yet binding to a canonical tool registry here
+- `GHOSTWIRE_INTENT`
+  - required target type for `GHOSTWIRE` offerings in V1
+  - merchant-authored freeform text
+  - informational only, not a templated executable binding
+
+### Canonical pricing vs merchant guidance
+
+Offerings do not replace Ghost's pricing enforcement.
+
+Public rendering behavior:
+
+- `SERVICE_SLUG` offerings prefer canonical Ghost pricing when Ghost can derive it from the existing service pricing path
+- merchant-authored `Price Guidance` and `ETA` remain secondary guidance
+- `GHOSTWIRE_INTENT` offerings currently fall back to merchant guidance because GhostWire quote templates are not a canonical pricing source in V1
+
+### Merchant walkthrough
+
+1. Open merchant dashboard for an activated agent.
+2. Go to the `AGENT OFFERINGS` panel.
+3. Click `+ ADD OFFERING`.
+4. Enter:
+   - `Offering Title`
+   - `Description`
+   - `Consumer Command`
+   - `Rail`
+   - `Target Type`
+   - `Target Reference`
+5. Optionally enter:
+   - `Price Guidance`
+   - `ETA`
+   - `Published`
+6. Save the offering.
+7. Reorder with `MOVE UP` / `MOVE DOWN`.
+8. Use `View Public Profile ->` to verify the result on `/agent/[id]`.
+
+V1 behavior notes:
+
+- inactive offerings remain visible in the merchant dashboard with `DRAFT` treatment
+- inactive offerings stay hidden from the public profile
+- public cards show:
+  - title
+  - rail
+  - canonical pricing when available
+  - merchant guidance as secondary context
+  - `How to Request`
+  - target / quote-intent context
+
 Merchant pricing note:
 
 - Treat `Express` as the premium managed lane, not the cheap lane.

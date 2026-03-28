@@ -316,6 +316,42 @@ model Agent {
   scoreInput    AgentScoreInput?
   snapshots     LeaderboardSnapshotRow[]
   gatewayConfig AgentGatewayConfig?
+  offerings     AgentOffering[]
+}
+
+enum AgentOfferingRail {
+  X402
+  EXPRESS
+  GHOSTWIRE
+}
+
+enum AgentOfferingTargetKind {
+  SERVICE_SLUG
+  MCP_TOOL
+  GHOSTWIRE_INTENT
+}
+
+model AgentOffering {
+  id              String                  @id @default(cuid())
+  agentId         String
+  title           String
+  description     String
+  consumerCommand String
+  rail            AgentOfferingRail
+  targetKind      AgentOfferingTargetKind
+  targetRef       String
+  priceHint       String?
+  etaHint         String?
+  isActive        Boolean                 @default(true)
+  sortOrder       Int                     @default(0)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  agent Agent @relation(fields: [agentId], references: [agentId], onDelete: Cascade)
+
+  @@index([agentId, isActive, sortOrder])
+  @@index([agentId, createdAt])
+  @@index([agentId, rail, targetKind, targetRef])
 }
 
 model AgentGatewayConfig {

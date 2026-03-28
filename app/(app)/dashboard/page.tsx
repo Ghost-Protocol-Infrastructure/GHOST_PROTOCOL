@@ -24,6 +24,7 @@ import {
   buildMerchantGatewayAuthMessage,
   createMerchantGatewayAuthPayload,
 } from "@/lib/agent-gateway-auth";
+import AgentOfferingsPanel from "@/components/AgentOfferingsPanel";
 import TerminalHeader from "@/components/TerminalHeader";
 
 const CHAIN_METADATA = {
@@ -2933,6 +2934,16 @@ def my_agent():
                     </div>
                   )}
                 </div>
+
+                <AgentOfferingsPanel
+                  agentId={selectedOwnedAgent?.agentId ?? null}
+                  ownerAddress={selectedOwnedAgent?.owner ?? null}
+                  actorAddress={address}
+                  publicProfileHref={selectedAgentProfileHref ?? null}
+                  serviceSlug={merchantGatewayConfig?.serviceSlug ?? `agent-${selectedOwnedAgent?.agentId ?? "your-agent-id"}`}
+                  gatewayConfigured={Boolean(merchantGatewayConfig?.endpointUrl)}
+                  signMessage={signMessageAsync}
+                />
 
                 <div className="mt-4 border border-neutral-900 bg-neutral-900 p-3">
                   <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Vault Owner (Selected Agent)</p>
