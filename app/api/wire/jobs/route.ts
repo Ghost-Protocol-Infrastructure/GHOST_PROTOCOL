@@ -44,6 +44,8 @@ export async function GET(request: NextRequest) {
   });
   const cursor = parseRequiredString(request.nextUrl.searchParams.get("cursor"));
   const participant = parseAddressString(request.nextUrl.searchParams.get("participant"));
+  const providerAgentId = parseOptionalString(request.nextUrl.searchParams.get("providerAgentId"));
+  const providerServiceSlug = parseOptionalString(request.nextUrl.searchParams.get("providerServiceSlug"));
   const stateRaw = parseRequiredString(request.nextUrl.searchParams.get("state"));
   const state = stateRaw && WIRE_STATES.includes(stateRaw as WireContractState) ? (stateRaw as WireContractState) : null;
 
@@ -59,6 +61,8 @@ export async function GET(request: NextRequest) {
       limit,
       cursor,
       participantAddress: participant,
+      providerAgentId,
+      providerServiceSlug,
       state,
     });
     const items = await Promise.all(

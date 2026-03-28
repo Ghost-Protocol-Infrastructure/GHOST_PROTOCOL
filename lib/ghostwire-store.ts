@@ -951,6 +951,8 @@ export const listWireJobs = async (input: {
   limit: number;
   cursor?: string | null;
   participantAddress?: string | null;
+  providerAgentId?: string | null;
+  providerServiceSlug?: string | null;
   state?: WireContractState | null;
 }): Promise<{
   items: Array<{
@@ -987,19 +989,9 @@ export const listWireJobs = async (input: {
   nextCursor: string | null;
 }> => {
   const safeLimit = Math.max(1, Math.min(input.limit, 100));
+  const where = buildWireJobListWhere(input);
   const jobs = await prisma.wireJob.findMany({
-    where: {
-      ...(input.state ? { publicState: input.state } : {}),
-      ...(input.participantAddress
-        ? {
-            OR: [
-              { clientAddress: input.participantAddress },
-              { providerAddress: input.participantAddress },
-              { evaluatorAddress: input.participantAddress },
-            ],
-          }
-        : {}),
-    },
+    where,
     orderBy: [{ createdAt: "desc" }, { jobId: "desc" }],
     take: safeLimit + 1,
     ...(input.cursor ? { cursor: { jobId: input.cursor }, skip: 1 } : {}),
@@ -1057,6 +1049,51 @@ export const listWireJobs = async (input: {
     })),
     nextCursor: hasNextPage ? page.at(-1)?.jobId ?? null : null,
   };
+};
+
+export const buildWireJobListWhere = (input: {
+  participantAddress?: string | null;
+  providerAgentId?: string | null;
+  providerServiceSlug?: string | null;
+  state?: WireContractState | null;
+}): Prisma.WireJobWhereInput => {
+  const whereClauses: Prisma.WireJobWhereInput[] = [];
+
+  if (input.state) {
+    whereClauses.push({ publicState: input.state });
+  }
+
+  if (input.participantAddress) {
+    whereClauses.push({
+      OR: [
+        { clientAddress: input.participantAddress },
+        { providerAddress: input.participantAddress },
+        { evaluatorAddress: input.participantAddress },
+      ],
+    });
+  }
+
+  const providerAttributionClauses: Prisma.WireJobWhereInput[] = [];
+  if (input.providerAgentId) {
+    providerAttributionClauses.push({ providerAgentId: input.providerAgentId });
+  }
+  if (input.providerServiceSlug) {
+    providerAttributionClauses.push({ providerServiceSlug: input.providerServiceSlug });
+  }
+  if (providerAttributionClauses.length === 1) {
+    whereClauses.push(providerAttributionClauses[0]!);
+  } else if (providerAttributionClauses.length > 1) {
+    whereClauses.push({ OR: providerAttributionClauses });
+  }
+
+  if (whereClauses.length === 0) {
+    return {};
+  }
+  if (whereClauses.length === 1) {
+    return whereClauses[0]!;
+  }
+
+  return { AND: whereClauses };
 };
 
 export const updateWireWebhookOutboxDelivery = async (input: {

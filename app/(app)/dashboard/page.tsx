@@ -925,9 +925,11 @@ function DashboardPageContent() {
   );
 
   const fetchMerchantWireJobs = useCallback(
-    async (participantAddress: string): Promise<WireJobListItem[]> => {
+    async (participantAddress: string, agentId: string): Promise<WireJobListItem[]> => {
       const params = new URLSearchParams({
         participant: participantAddress.toLowerCase(),
+        providerAgentId: agentId,
+        providerServiceSlug: `agent-${agentId}`,
         limit: String(DEFAULT_MERCHANT_WIRE_JOB_LIMIT),
       });
       const response = await fetch(`/api/wire/jobs?${params.toString()}`, {
@@ -1504,7 +1506,7 @@ print("outcome:", outcome)`,
   }, [fetchAgentGatewayDelegatedSigners, selectedOwnedAgentId, showMerchantView]);
 
   useEffect(() => {
-    if (!showMerchantView || !selectedOwnedAgent?.owner) {
+    if (!showMerchantView || !selectedOwnedAgent?.owner || !selectedOwnedAgent?.agentId) {
       setMerchantWireJobs([]);
       setMerchantWireJobsError(null);
       setIsLoadingMerchantWireJobs(false);
@@ -1517,7 +1519,7 @@ print("outcome:", outcome)`,
       setIsLoadingMerchantWireJobs(true);
       setMerchantWireJobsError(null);
       try {
-        const jobs = await fetchMerchantWireJobs(selectedOwnedAgent.owner);
+        const jobs = await fetchMerchantWireJobs(selectedOwnedAgent.owner, selectedOwnedAgent.agentId);
         if (!active) return;
         setMerchantWireJobs(jobs);
       } catch (error) {
@@ -2748,7 +2750,7 @@ def my_agent():
                         GhostWire // Direct Escrow Jobs
                       </p>
                       <p className="mt-1 text-xs text-neutral-600">
-                        Recent GhostWire jobs involving the selected owner address. Clients fund escrow directly; providers still deliver and evaluators still finalize.
+                        Recent GhostWire jobs attributed to the selected agent&apos;s merchant identity. Clients fund escrow directly; providers still deliver and evaluators still finalize.
                       </p>
                       {mostRecentMerchantWireJobAt && (
                         <p className="mt-1 text-[11px] text-neutral-600">
@@ -2805,7 +2807,7 @@ def my_agent():
 
                   {!merchantWireJobsError && !isLoadingMerchantWireJobs && merchantWireJobs.length === 0 && (
                     <p className="mt-4 text-xs text-neutral-600">
-                      No GhostWire jobs recorded yet for the selected owner address.
+                      No GhostWire jobs recorded yet for the selected agent.
                     </p>
                   )}
 
