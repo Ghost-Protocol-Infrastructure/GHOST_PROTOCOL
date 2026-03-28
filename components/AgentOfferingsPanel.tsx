@@ -7,7 +7,7 @@ import {
   type AgentOfferingRailValue,
   type AgentOfferingTargetKindValue,
   type CanonicalOfferingPrice,
-} from "@/lib/agent-offerings";
+} from "@/lib/agent-offerings-shared";
 import {
   buildMerchantGatewayAuthMessage,
   createMerchantGatewayAuthPayload,
