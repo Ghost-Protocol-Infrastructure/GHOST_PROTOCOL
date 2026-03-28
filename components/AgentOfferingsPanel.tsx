@@ -107,6 +107,34 @@ const getTargetHelper = (targetKind: AgentOfferingTargetKindValue, serviceSlug: 
   }
 };
 
+const getPriceGuidancePlaceholder = (rail: AgentOfferingRailValue): string => {
+  switch (rail) {
+    case "EXPRESS":
+      return "Starts at 5 credits";
+    case "X402":
+      return "Charged at the live x402 payment requirement";
+    case "GHOSTWIRE":
+      return "Quoted after scope review";
+    default:
+      return "Add merchant guidance";
+  }
+};
+
+const getPriceGuidanceLabel = (rail: AgentOfferingRailValue): string => (rail === "EXPRESS" ? "Price Guidance" : "Merchant Guidance");
+
+const getPriceGuidanceHelper = (rail: AgentOfferingRailValue): string => {
+  switch (rail) {
+    case "EXPRESS":
+      return "Express can show canonical Ghost credit pricing when service pricing is configured.";
+    case "X402":
+      return "x402 does not use Ghost credit pricing. Add merchant guidance only if it helps the buyer.";
+    case "GHOSTWIRE":
+      return "GhostWire pricing is quote-based in V1. Use guidance text, not a hard canonical price.";
+    default:
+      return "";
+  }
+};
+
 const buildErrorMessage = (error: unknown, fallback: string): string =>
   error instanceof Error && error.message ? error.message : fallback;
 
@@ -122,6 +150,17 @@ const describeRail = (rail: AgentOfferingRailValue): string => {
       return rail;
   }
 };
+
+const getOfferingPricingPrimary = (offering: AgentOfferingItem): string => {
+  if (offering.canonicalPricing) return offering.canonicalPricing.primaryDisplay;
+  if (offering.priceHint) return offering.priceHint;
+  if (offering.rail === "X402") return "See live x402 payment requirement";
+  if (offering.rail === "GHOSTWIRE") return "Quoted per job scope";
+  return "Merchant guidance only";
+};
+
+const getOfferingPricingLabel = (offering: AgentOfferingItem): string =>
+  offering.canonicalPricing ? "Canonical Price" : offering.rail === "EXPRESS" ? "Price Guidance" : "Merchant Guidance";
 
 const toInitialFormState = (serviceSlug: string | null): OfferingFormState => ({
   ...DEFAULT_FORM_STATE,
@@ -609,13 +648,16 @@ export default function AgentOfferingsPanel({
             </p>
           </label>
           <label className="block text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
-            Price Guidance
+            {getPriceGuidanceLabel(formState.rail)}
             <input
               value={formState.priceHint}
               onChange={(event) => setFormState((current) => ({ ...current, priceHint: event.target.value }))}
-              placeholder="Starts at 2 credits"
+              placeholder={getPriceGuidancePlaceholder(formState.rail)}
               className="mt-2 w-full border border-neutral-800 bg-neutral-950 px-3 py-2 text-white outline-none focus:border-red-600 rounded-none"
             />
+            <p className="mt-2 text-[11px] normal-case tracking-normal text-neutral-600">
+              {getPriceGuidanceHelper(formState.rail)}
+            </p>
           </label>
           <label className="block text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
             ETA
@@ -691,8 +733,9 @@ export default function AgentOfferingsPanel({
                 </div>
                 <div className="text-left sm:text-right">
                   <p className="text-[11px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
-                    {offering.canonicalPricing ? offering.canonicalPricing.primaryDisplay : offering.priceHint ?? "Merchant guidance only"}
+                    {getOfferingPricingLabel(offering)}
                   </p>
+                  <p className="mt-1 text-[11px] text-neutral-300">{getOfferingPricingPrimary(offering)}</p>
                   {offering.canonicalPricing && offering.priceHint && (
                     <p className="mt-1 text-[11px] text-neutral-500">Merchant guidance: {offering.priceHint}</p>
                   )}

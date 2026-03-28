@@ -21,6 +21,7 @@ describe("resolveCanonicalOfferingPrice", () => {
     process.env.GHOST_REQUEST_CREDIT_COST = "1";
 
     const price = await resolveCanonicalOfferingPrice({
+      rail: "EXPRESS",
       targetKind: "SERVICE_SLUG",
       targetRef: "agent-18755",
     });
@@ -36,6 +37,7 @@ describe("resolveCanonicalOfferingPrice", () => {
     process.env.GHOST_REQUEST_CREDIT_COST = "3";
 
     const price = await resolveCanonicalOfferingPrice({
+      rail: "EXPRESS",
       targetKind: "SERVICE_SLUG",
       targetRef: "agent-99999",
     });
@@ -43,5 +45,21 @@ describe("resolveCanonicalOfferingPrice", () => {
     assert.ok(price);
     assert.equal(price.credits, "3");
     assert.match(price.primaryDisplay, /3 credits/i);
+  });
+
+  it("does not expose Ghost credit pricing for x402 offerings", async () => {
+    process.env.GHOST_GATE_DB_SERVICE_PRICING_ENABLED = "false";
+    process.env.GHOST_GATE_SERVICE_PRICING_JSON = JSON.stringify({
+      "agent-18755": 7,
+    });
+    process.env.GHOST_REQUEST_CREDIT_COST = "1";
+
+    const price = await resolveCanonicalOfferingPrice({
+      rail: "X402",
+      targetKind: "SERVICE_SLUG",
+      targetRef: "agent-18755",
+    });
+
+    assert.equal(price, null);
   });
 });

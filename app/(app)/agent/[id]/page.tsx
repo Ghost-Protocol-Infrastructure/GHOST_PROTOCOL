@@ -226,6 +226,15 @@ export default async function AgentProfilePage({ params }: AgentPageProps) {
   const merchantSetupHref = `/dashboard?mode=merchant&agentId=${encodeURIComponent(agent.agentId)}&owner=${encodeURIComponent(ownerAddress)}`;
   const agentConsoleHref = `/dashboard?agentId=${encodeURIComponent(agent.agentId)}&owner=${encodeURIComponent(ownerAddress)}`;
   const erc8004ScanHref = buildErc8004ScanHref(agent.agentId);
+  const getOfferingPricingPrimary = (offering: SerializedAgentOffering): string => {
+    if (offering.canonicalPricing) return offering.canonicalPricing.primaryDisplay;
+    if (offering.priceHint) return offering.priceHint;
+    if (offering.rail === "X402") return "See live x402 payment requirement";
+    if (offering.rail === "GHOSTWIRE") return "Quoted per job scope";
+    return "Merchant guidance only";
+  };
+  const getOfferingPricingLabel = (offering: SerializedAgentOffering): string =>
+    offering.canonicalPricing ? "Canonical Price" : offering.rail === "EXPRESS" ? "Price Guidance" : "Merchant Guidance";
 
   return (
     <main className="min-h-screen font-mono text-neutral-400 bg-neutral-950 [background-image:none] max-w-7xl mx-auto border-l border-r border-neutral-900">
@@ -418,9 +427,11 @@ export default async function AgentProfilePage({ params }: AgentPageProps) {
                       <p className="mt-3 text-sm text-neutral-400">{offering.description}</p>
                     </div>
                     <div className="border border-neutral-800 bg-neutral-950 px-3 py-3 lg:min-w-[16rem]">
-                      <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-500 font-bold">Price</p>
+                      <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-500 font-bold">
+                        {getOfferingPricingLabel(offering)}
+                      </p>
                       <p className="mt-2 text-sm text-neutral-200 font-mono">
-                        {offering.canonicalPricing?.primaryDisplay ?? offering.priceHint ?? "Merchant guidance only"}
+                        {getOfferingPricingPrimary(offering)}
                       </p>
                       {offering.canonicalPricing && offering.priceHint && (
                         <p className="mt-2 text-[11px] text-neutral-500">Merchant guidance: {offering.priceHint}</p>

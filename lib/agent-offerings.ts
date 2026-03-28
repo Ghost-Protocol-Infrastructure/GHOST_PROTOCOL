@@ -155,10 +155,11 @@ const resolveServiceCreditCost = async (
 };
 
 export const resolveCanonicalOfferingPrice = async (input: {
+  rail: AgentOfferingRailValue;
   targetKind: AgentOfferingTargetKindValue;
   targetRef: string;
 }): Promise<CanonicalOfferingPrice | null> => {
-  if (input.targetKind !== "SERVICE_SLUG") {
+  if (input.rail !== "EXPRESS" || input.targetKind !== "SERVICE_SLUG") {
     return null;
   }
 
@@ -181,6 +182,7 @@ export const resolveCanonicalOfferingPrice = async (input: {
 export const serializeAgentOffering = async (offering: AgentOfferingRecord): Promise<SerializedAgentOffering> => {
   const target = describeAgentOfferingTarget(offering.targetKind, offering.targetRef);
   const canonicalPricing = await resolveCanonicalOfferingPrice({
+    rail: offering.rail,
     targetKind: offering.targetKind,
     targetRef: offering.targetRef,
   });
