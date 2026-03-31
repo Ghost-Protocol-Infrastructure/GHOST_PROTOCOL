@@ -203,8 +203,7 @@ sdk.report_x402_settlement(
 ## Notes
 
 - `connect()` is Express only in both SDKs.
-- `Express` is the premium managed rail and carries a `2.5%` Ghost protocol fee.
-- Recommended default for `Express` is `5+` credits per request. Use `x402` for cheap or high-frequency paid access.
+- Rail selection and pricing policy are defined in `docs/developer-portal/onboarding-and-configuration.md`.
 - `x402` is now a separate rail surfaced through dedicated request/report helpers.
 - Node `requestX402()` is the high-level auto-pay helper. Python `request_x402()` is the lower-level request/retry helper and returns the initial merchant response unless you pass a retry `payment_header`.
 - `createSettlementEvidence(...)` is the canonical settlement evidence contract for future wrappers/adapters; do not invent a second reporting payload shape.

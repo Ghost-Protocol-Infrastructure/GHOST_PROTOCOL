@@ -226,8 +226,7 @@ Backward-compatible aliases are also available:
 ## Notes
 
 - `connect()` is Express only.
-- `Express` carries a `2.5%` Ghost protocol fee and is intended for premium managed paid access.
-- Recommended default for `Express` is `5+` credits per request. Use `x402` for cheap or high-frequency paid access.
+- For rail selection and pricing policy, use `docs/developer-portal/onboarding-and-configuration.md` as the source of truth.
 - `request_x402()` is the real x402 helper, but it is intentionally low-level: it returns the initial challenge unless you supply a retry `payment_header`.
 - GhostRank credit for x402 should normally come from the framework wrapper + shared reporter path on supported runtimes. Keep direct `report_x402_settlement(...)` as the fallback.
 - For GhostWire, `request` is the consumer-authored task payload. Keep `metadata_uri` for the merchant-controlled deliverable locator.

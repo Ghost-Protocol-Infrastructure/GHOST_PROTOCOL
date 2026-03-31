@@ -70,6 +70,7 @@ Read first:
 
 ## Pricing policy
 
+- Canonical pricing/rail policy lives in [Onboarding and Configuration](./onboarding-and-configuration.md).
 - Use `x402` for low-cost, high-frequency, or commodity paid access.
 - Use `Express` for premium managed paid access. Recommended default: `5+` credits per request.
 - Do not price cheap `1`-credit commodity calls on `Express`; route those to `x402`.

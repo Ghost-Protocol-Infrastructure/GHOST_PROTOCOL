@@ -417,8 +417,7 @@ const prepared = await agent.prepareWireJob({
 ## Notes
 
 - `connect()` is Express only. The old Express x402-compat envelope has been removed.
-- `Express` carries a `2.5%` Ghost protocol fee and is intended for premium managed paid access.
-- Recommended default for `Express` is `5+` credits per request. Use `x402` for cheap or high-frequency paid access.
+- For rail selection and pricing policy, use `docs/developer-portal/onboarding-and-configuration.md` as the source of truth.
 - `requestX402()` is the real standards-native x402 rail and automatically handles the payment retry path.
 - GhostRank credit for x402 should normally come from the SDK auto-reporting wrappers on supported runtimes. Keep `reportX402Settlement(...)` as the manual fallback.
 - For GhostWire, the consumer request belongs in `request`; `metadataUri` is still the merchant-controlled deliverable locator.
