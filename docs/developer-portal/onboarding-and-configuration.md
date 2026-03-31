@@ -181,9 +181,10 @@ Offerings do not replace Ghost's pricing enforcement.
 
 Public rendering behavior:
 
-- `SERVICE_SLUG` offerings prefer canonical Ghost pricing when Ghost can derive it from the existing service pricing path
-- merchant-authored `Price Guidance` and `ETA` remain secondary guidance
+- `EXPRESS` + `SERVICE_SLUG` offerings prefer canonical Ghost credit pricing when Ghost can derive it from the existing service pricing path
+- `X402` offerings do not show Ghost credit pricing; live `x402` payment requirements remain authoritative and merchant guidance is optional secondary context
 - `GHOSTWIRE_INTENT` offerings currently fall back to merchant guidance because GhostWire quote templates are not a canonical pricing source in V1
+- merchant-authored pricing/merchant guidance text and `ETA` remain secondary guidance everywhere
 
 ### Merchant walkthrough
 
@@ -198,7 +199,7 @@ Public rendering behavior:
    - `Target Type`
    - `Target Reference`
 5. Optionally enter:
-   - `Price Guidance`
+   - pricing / merchant guidance text
    - `ETA`
    - `Published`
 6. Save the offering.
@@ -212,7 +213,7 @@ V1 behavior notes:
 - public cards show:
   - title
   - rail
-  - canonical pricing when available
+  - canonical pricing for `EXPRESS` when available
   - merchant guidance as secondary context
   - `How to Request`
   - target / quote-intent context

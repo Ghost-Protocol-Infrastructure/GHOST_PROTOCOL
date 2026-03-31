@@ -26,7 +26,7 @@ sdk = GhostGate(
     base_url=os.getenv("GHOST_GATE_BASE_URL", "https://ghostprotocol.cc"),
     chain_id=8453,
     service_slug="agent-18755",
-    credit_cost=1,
+    credit_cost=5,
 )
 
 result = sdk.connect()

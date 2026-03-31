@@ -35,7 +35,8 @@ Routing behavior:
 
 Notes:
 - Credits are consumed by gate-protected requests.
-- Current default pricing is `1 request = 1 credit` unless service pricing is changed.
+- The platform fallback default is `1 request = 1 credit` when no service pricing is configured.
+- That fallback is not the recommended `Express` launch price. Use `5+` credits for premium managed access and route cheap calls to `x402`.
 - Ghost Credits are prepaid and non-refundable once purchased and synced.
 - Credits are wallet-level across agents.
 - Merchant payout follows successful spend, not the deposit page where the consumer topped up.
@@ -94,7 +95,7 @@ Minimal workflow:
 4. pick the correct rail and target
 5. publish or leave as `DRAFT`
 6. reorder them
-7. verify the result on `OPEN PUBLIC PROFILE`
+7. verify the result on `View Public Profile ->`
 
 Target rules:
 
@@ -107,8 +108,10 @@ Target rules:
 
 Pricing rules:
 
-- Ghost shows canonical pricing first when it can derive it from the existing service pricing path
-- merchant-entered price and ETA remain guidance
+- Ghost shows canonical pricing first only for `EXPRESS` offerings when it can derive the existing service pricing path
+- `x402` uses live payment requirements, not Ghost credit pricing
+- `GhostWire` remains quote/guidance-driven in V1
+- merchant-entered price/guidance text and ETA remain secondary guidance
 - offerings do not replace authoritative rail pricing
 
 ## 6. Minimal Integration Checklist

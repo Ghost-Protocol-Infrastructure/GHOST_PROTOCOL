@@ -46,7 +46,7 @@ const agent = new GhostAgent({
   baseUrl: process.env.GHOST_BASE_URL,
   chainId: 8453,
   serviceSlug: "agent-2212",
-  creditCost: 1,
+  creditCost: 5,
 });
 
 await agent.connect();
@@ -172,7 +172,7 @@ sdk = GhostGate(
     base_url="https://ghostprotocol.cc",
     chain_id=8453,
     service_slug="agent-2212",
-    credit_cost=1,
+    credit_cost=5,
 )
 
 sdk.connect()

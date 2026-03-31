@@ -67,7 +67,7 @@ async function main() {
     privateKey,
     chainId: 8453, // Base
     serviceSlug: "agent-2212",
-    creditCost: 1,
+    creditCost: 5,
   });
 
   const result = await sdk.connect();

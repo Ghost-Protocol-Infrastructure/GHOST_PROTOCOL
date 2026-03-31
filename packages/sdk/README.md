@@ -60,7 +60,7 @@ const agent = new GhostAgent({
   privateKey: process.env.GHOST_SIGNER_PRIVATE_KEY as `0x${string}`,
   baseUrl: process.env.GHOST_BASE_URL,
   serviceSlug: "agent-18755",
-  creditCost: 1,
+  creditCost: 5,
 });
 
 const result = await agent.connect();
