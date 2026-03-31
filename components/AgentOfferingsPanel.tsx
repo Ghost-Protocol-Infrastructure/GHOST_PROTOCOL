@@ -398,9 +398,10 @@ export default function AgentOfferingsPanel({
       if (!response.ok) {
         throw new Error(typeof payload.error === "string" ? payload.error : "Failed to save offering.");
       }
+      const wasActive = formState.isActive;
       await loadOfferings();
       resetForm();
-      setNotice(editingOfferingId ? "Offering updated." : "Offering created.");
+      setNotice(wasActive ? "Offering saved and published." : "Offering saved as draft.");
     } catch (submitError) {
       setError(buildErrorMessage(submitError, "Failed to save offering."));
     } finally {
@@ -490,7 +491,11 @@ export default function AgentOfferingsPanel({
         throw new Error(typeof payload.error === "string" ? payload.error : "Failed to update offering visibility.");
       }
       await loadOfferings();
-      setNotice(offering.isActive ? "Offering moved to draft." : "Offering published.");
+      setNotice(
+        offering.isActive
+          ? "Offering moved to draft. It is now hidden from the public profile."
+          : "Offering published. It is now visible on the public profile.",
+      );
     } catch (toggleError) {
       setError(buildErrorMessage(toggleError, "Failed to update offering visibility."));
     } finally {
@@ -548,9 +553,15 @@ export default function AgentOfferingsPanel({
         <div>
           <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Agent Offerings</p>
           <p className="mt-1 max-w-2xl text-xs text-neutral-600">
-            Define the public services this agent offers. These listings appear on the public agent profile and tell
-            consumers what to request through GhostGate.
+            Optional public listings for the selected agent. Use them after GhostGate is live so buyers can see what
+            to request, which rail to use, and whether the listing is still in draft.
           </p>
+          {actorAddress && (
+            <p className="mt-2 max-w-2xl text-[11px] text-neutral-600">
+              Drafts stay private. This tab may ask for one short-lived owner-wallet signature to load drafts; edit,
+              publish, delete, and reorder actions still ask for a fresh signature.
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           {publicProfileHref && (
@@ -577,10 +588,9 @@ export default function AgentOfferingsPanel({
 
       {!gatewayConfigured && (
         <div className="mt-4 border border-amber-900/40 bg-amber-950/10 px-3 py-3">
-          <p className="text-xs uppercase tracking-[0.16em] text-amber-300 font-bold">GhostGate activation required</p>
+          <p className="text-xs uppercase tracking-[0.16em] text-amber-300 font-bold">GhostGate setup required</p>
           <p className="mt-2 text-xs text-neutral-400">
-            Offerings validate ownership and service targets against the selected agent&apos;s live gateway config. Save
-            gateway config first, then add offerings.
+            Save Gateway first. SERVICE_SLUG offerings validate against the selected agent&apos;s live gateway slug.
           </p>
         </div>
       )}
@@ -588,7 +598,7 @@ export default function AgentOfferingsPanel({
       {!actorAddress && (
         <div className="mt-4 border border-neutral-800 bg-neutral-950 px-3 py-3">
           <p className="text-xs text-neutral-500">
-            Connect the owner wallet to create, edit, publish, delete, or reorder offerings.
+            Connect the owner wallet to load drafts and manage offerings.
           </p>
         </div>
       )}
@@ -596,7 +606,7 @@ export default function AgentOfferingsPanel({
       <div className="mt-4 border border-neutral-800 bg-neutral-950 p-4">
         <div className="flex items-center justify-between gap-3">
           <p className="text-[11px] uppercase tracking-[0.16em] text-neutral-500 font-bold">
-            {editingOfferingId ? "Edit Offering" : "New Offering"}
+            {editingOfferingId ? "Edit Offering" : "New Public Offering"}
           </p>
           {editingOfferingId && currentEditingOffering && (
             <span className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
@@ -718,7 +728,7 @@ export default function AgentOfferingsPanel({
             disabled={!canMutate || isSubmitting}
             className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-300 transition hover:border-neutral-700 hover:text-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isSubmitting ? "Saving..." : editingOfferingId ? "Update Offering" : "Create Offering"}
+            {isSubmitting ? "Saving..." : editingOfferingId ? "Save Changes" : "Save Offering"}
           </button>
           {(editingOfferingId || formState.title || formState.description || formState.consumerCommand) && (
             <button
@@ -726,7 +736,7 @@ export default function AgentOfferingsPanel({
               onClick={resetForm}
               className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-500 transition hover:border-neutral-700 hover:text-neutral-300"
             >
-              Reset
+              {editingOfferingId ? "Cancel Edit" : "Clear Form"}
             </button>
           )}
         </div>
@@ -740,8 +750,8 @@ export default function AgentOfferingsPanel({
       ) : offerings.length === 0 ? (
         <div className="mt-4 border border-neutral-800 bg-neutral-950 p-4">
           <p className="text-xs text-neutral-500">
-            No offerings yet. Add a public listing so consumers can see what this agent sells, how to request it, and
-            which Ghost rail it uses.
+            No public offerings yet. Start with one listing so buyers know what to ask for, which rail to use, and
+            whether the offer is published yet.
           </p>
         </div>
       ) : (

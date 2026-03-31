@@ -6,10 +6,10 @@ This runbook is for merchant operators running fulfillment in local and producti
 
 Before delegated signer setup, ensure gateway config is correct for the target agent:
 
-1. Set `MERCHANT ENDPOINT URL` to merchant base URL.
+1. Set `Merchant Base URL` to the merchant base URL.
    - Example: `https://merchant.example.com`
-2. Set `CANARY PATH` as relative path (recommended): `/canary`
-3. Save config, then verify canary and confirm readiness is `LIVE`.
+2. Set `Canary Path (GET)` as a relative path (recommended): `/ghostgate/canary`
+3. Click `Save Gateway`, then `Verify Gateway`, and confirm `Gateway Status` is `LIVE`.
 
 Canary path behavior:
 - Relative paths are joined to endpoint subpaths (recommended operational mode).

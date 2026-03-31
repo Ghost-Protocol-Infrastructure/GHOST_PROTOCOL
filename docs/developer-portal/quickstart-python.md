@@ -1,6 +1,6 @@
-# 5-Minute Merchant Quickstart (Node.js)
+# 5-Minute Merchant Quickstart (Python)
 
-Use this when you want the shortest path to a live Ghost merchant endpoint.
+Use this when you want the shortest path to a live Ghost merchant endpoint from Python.
 
 This quickstart does four things:
 
@@ -22,19 +22,19 @@ If you already know you want `Express` or `x402`, still do this first. Get the g
 - one Ghost agent you own
 - the owner wallet private key for that agent
 - a public HTTPS base URL for your runtime
-- Node.js `20+`
+- Python `3.10+`
 
 If you are testing locally, put the app behind a tunnel first. `PUBLIC_BASE_URL` cannot be `localhost`.
 
 ## 2. Install
 
 ```bash
-npm install express dotenv @ghostgate/sdk
+pip install ghostgate-sdk fastapi uvicorn
 ```
 
 ## 3. Set environment variables
 
-Create `.env`:
+Create `.env` or export:
 
 ```bash
 GHOST_BASE_URL=https://ghostprotocol.cc
@@ -46,72 +46,67 @@ PORT=8787
 
 Ghost uses the standard agent-specific slug:
 
-- `serviceSlug = agent-<agentId>`
+- `service_slug = agent-<agent_id>`
 - example: `agent-18755`
 
-## 4. Create `server.mjs`
+## 4. Create `app.py`
 
-```js
-import "dotenv/config";
-import express from "express";
-import { GhostMerchant } from "@ghostgate/sdk";
+```python
+import os
 
-const agentId = process.env.AGENT_ID;
-const serviceSlug = `agent-${agentId}`;
-const port = Number(process.env.PORT ?? 8787);
+from fastapi import FastAPI
+from ghostgate import GhostGate
 
-const merchant = new GhostMerchant({
-  baseUrl: process.env.GHOST_BASE_URL ?? "https://ghostprotocol.cc",
-  serviceSlug,
-  ownerPrivateKey: process.env.GHOST_OWNER_PRIVATE_KEY,
-});
+agent_id = os.environ["AGENT_ID"]
+service_slug = f"agent-{agent_id}"
 
-const app = express();
-app.use(express.json());
+gate = GhostGate(
+    base_url=os.getenv("GHOST_BASE_URL", "https://ghostprotocol.cc"),
+    private_key=os.environ["GHOST_OWNER_PRIVATE_KEY"],
+    service_slug=service_slug,
+)
 
-app.get("/ghostgate/canary", merchant.canaryHandler());
+app = FastAPI()
 
-app.post("/ask", async (req, res) => {
-  res.json({
-    ok: true,
-    agentId,
-    received: req.body ?? null,
-    nextStep: "Replace this placeholder route with your real paid handler.",
-  });
-});
 
-app.listen(port, async () => {
-  console.log(`Merchant runtime listening on http://localhost:${port}`);
-  console.log(`Public base URL: ${process.env.PUBLIC_BASE_URL}`);
+@app.get("/ghostgate/canary")
+def ghostgate_canary():
+    return {"ghostgate": "ready", "service": service_slug}
 
-  try {
-    const result = await merchant.activate({
-      agentId,
-      serviceSlug,
-      endpointUrl: process.env.PUBLIC_BASE_URL,
-      canaryPath: "/ghostgate/canary",
-    });
 
-    console.log("GhostGate status:", result.status);
-    console.log("Open the merchant console:", `https://ghostprotocol.cc/dashboard?mode=merchant&agentId=${agentId}`);
-  } catch (error) {
-    console.error("GhostGate activate failed:", error);
-    process.exitCode = 1;
-  }
-});
+@app.post("/ask")
+def ask(payload: dict):
+    return {
+        "ok": True,
+        "agentId": agent_id,
+        "received": payload,
+        "nextStep": "Replace this placeholder route with your real paid handler.",
+    }
+
+
+@app.on_event("startup")
+def activate_ghostgate():
+    result = gate.activate(
+        agent_id=agent_id,
+        service_slug=service_slug,
+        endpoint_url=os.environ["PUBLIC_BASE_URL"],
+        canary_path="/ghostgate/canary",
+    )
+    print("GhostGate status:", result.status)
+    print("Open the merchant console:", f"https://ghostprotocol.cc/dashboard?mode=merchant&agentId={agent_id}")
 ```
 
 ## 5. Run it
 
 ```bash
-node server.mjs
+uvicorn app:app --host 0.0.0.0 --port 8787
 ```
 
 ## 6. What success looks like
 
 You should see:
 
-- `GhostGate status: LIVE` in the server logs
+- `GhostGate status: LIVE` in the startup logs
 - `Gateway Status` = `LIVE` in the merchant dashboard
 - a working canary check under `Verify Gateway`
 
@@ -130,12 +125,12 @@ At that point, Ghost knows where your merchant runtime lives.
 
 ## 8. Common first-run failures
 
-- `ownerPrivateKey does not match indexed owner`
+- `private_key address ... does not match indexed owner`
   - you used the wrong wallet for the selected agent
-- `canary verification did not reach LIVE`
+- canary verification fails
   - `PUBLIC_BASE_URL` is not publicly reachable
   - `/ghostgate/canary` does not return the exact JSON Ghost expects
-- `Service mismatch`
-  - `serviceSlug` must be `agent-<agentId>`
+- `service_slug` mismatch
+  - `service_slug` must be `agent-<agent_id>`
 
 When you need full rail selection, pricing policy, offerings behavior, or settlement details, use [Onboarding and Configuration](./onboarding-and-configuration.md) as the canonical guide.

@@ -6,6 +6,8 @@ Building the Shadow Infrastructure for the Machine Economy.
 
 - Website: `https://ghostprotocol.cc`
 - Developer Portal: [`docs/developer-portal/README.md`](docs/developer-portal/README.md)
+- Node Merchant Quickstart: [`docs/developer-portal/quickstart-node.md`](docs/developer-portal/quickstart-node.md)
+- Python Merchant Quickstart: [`docs/developer-portal/quickstart-python.md`](docs/developer-portal/quickstart-python.md)
 - Fulfillment Operator Runbook: [`docs/fulfillment-operator-runbook.md`](docs/fulfillment-operator-runbook.md)
 
 ## What This Repo Contains

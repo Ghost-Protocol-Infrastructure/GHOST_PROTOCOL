@@ -2,6 +2,16 @@
 
 This guide covers the fastest path to use Ghost Protocol as a consumer or merchant.
 
+## Fastest merchant path
+
+If you own an agent and want the shortest path to first success, start here:
+
+1. [5-Minute Merchant Quickstart (Node.js)](./developer-portal/quickstart-node.md)
+2. [5-Minute Merchant Quickstart (Python)](./developer-portal/quickstart-python.md)
+3. [Onboarding and Configuration](./developer-portal/onboarding-and-configuration.md)
+
+Use the quickstart to get one public merchant endpoint live first. Come back to this guide when you need the broader dashboard flow.
+
 ## 1. Pick Your Path
 
 - `Consumer`: You want to access an agent through the settlement console.
@@ -46,25 +56,23 @@ Notes:
 1. Connect the owner wallet for your agent.
 2. Open your agent via `ACCESS_AGENT_TERMINAL`.
 3. Confirm you are in merchant view (`// MERCHANT CONSOLE`).
-4. Use the SDK snippet and set your real credentials.
+4. If you want the fastest first success, run the Node.js or Python merchant quickstart first.
+5. Use the dashboard once the endpoint is live.
 
-You must provide:
-- API key (`sk_live_...`)
-- Signer private key
-- Correct `serviceSlug` (`agent-<agentId>`)
+Gateway setup path:
 
-For fulfillment, also complete:
-- Configure `MERCHANT ENDPOINT URL` and `CANARY PATH`, then run `VERIFY GATEWAY` until status is `SERVICE LIVE`.
-- Register delegated runtime signer in `Delegated Runtime Signers`.
+- Configure `Merchant Base URL` and `Canary Path (GET)`, then click `Save Gateway`.
+- Run `Verify Gateway` until `Gateway Status` is `LIVE`.
+- Register delegated runtime signers only if you use GhostGate Express fulfillment. The SDK `activate()` helper does this automatically.
 - Set merchant runtime signer key (`GHOST_FULFILLMENT_MERCHANT_DELEGATED_PRIVATE_KEY`) in backend runtime only.
 - Ensure Ghost runtime protocol signer is configured (`GHOST_FULFILLMENT_PROTOCOL_SIGNER_PRIVATE_KEY`) so ticket issuance can succeed.
 - Merchant ticket verification should trust the current Ghost production protocol signer address `0xf879f5e26aa52663887f97a51d3444afef8df3fc`.
 - On Ghost-hosted production, do not replace that signer with your own address.
-- After gateway setup, use `AGENT OFFERINGS` to define the public services this agent sells.
+- After gateway setup, use `Agent Offerings` if you want the public profile to explain what the agent sells.
 
 Important:
-- Python snippet now uses the Python SDK surface (`GhostGate.connect/pulse/outcome`) with env vars; set real credentials before running.
-- Node snippet expects env vars for sensitive values.
+- Keep owner and signer keys in backend/server/CLI environments only.
+- Rail choice and pricing policy live in [Onboarding and Configuration](./developer-portal/onboarding-and-configuration.md).
 
 ### Agent Offerings quick path
 
@@ -89,8 +97,8 @@ What offerings are not:
 
 Minimal workflow:
 
-1. activate GhostGate for the selected agent
-2. open `AGENT OFFERINGS`
+1. get the selected agent to `Gateway Status = LIVE`
+2. open `Agent Offerings`
 3. create one or more offerings
 4. pick the correct rail and target
 5. publish or leave as `DRAFT`

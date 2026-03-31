@@ -6,6 +6,13 @@ For autonomous runtime behavior patterns (retry/idempotency/state handling), als
 - `docs/developer-portal/agent-integration-playbook.md`
 - `docs/developer-portal/security-and-shared-responsibility.md`
 
+If you want the shortest path to first success, start with:
+
+- `docs/developer-portal/quickstart-node.md`
+- `docs/developer-portal/quickstart-python.md`
+
+Use those quickstarts to get one public merchant endpoint live first. Come back to this guide for rail choice, dashboard setup, offerings, and settlement details.
+
 ## 1. Choose Integration Path
 
 Ghost Protocol currently supports three production paths:
@@ -122,12 +129,14 @@ Complete these steps in order for each merchant agent.
      - `POST /api/agent-gateway/config`
    - Set:
      - `endpointUrl` to the merchant-owned base endpoint (for example: `https://merchant.example.com`)
-     - `canaryPath` as relative path (recommended: `/canary`)
+     - `canaryPath` as relative path (recommended: `/ghostgate/canary`)
 2. Verify canary and set readiness to `LIVE`
-   - Dashboard `Verify Gateway` or API:
+   - Dashboard `Save Gateway`, then `Verify Gateway`, or API:
      - `POST /api/agent-gateway/verify`
    - Service remains blocked at ticket issuance until `readinessStatus=LIVE`.
 3. Register delegated signer
+   - only required for GhostGate Express fulfillment capture
+   - the SDK `activate()` helpers register one delegated signer automatically
    - Dashboard `Delegated Runtime Signers` or API:
      - `POST /api/agent-gateway/delegated-signers/register`
    - Max active delegated signers is `2`.
@@ -189,8 +198,8 @@ Public rendering behavior:
 ### Merchant walkthrough
 
 1. Open merchant dashboard for an activated agent.
-2. Go to the `AGENT OFFERINGS` panel.
-3. Click `+ ADD OFFERING`.
+2. Go to the `Agent Offerings` panel.
+3. Click `+ Add Offering`.
 4. Enter:
    - `Offering Title`
    - `Description`
@@ -205,6 +214,11 @@ Public rendering behavior:
 6. Save the offering.
 7. Reorder with `MOVE UP` / `MOVE DOWN`.
 8. Use `View Public Profile ->` to verify the result on `/agent/[id]`.
+
+Dashboard note:
+
+- draft reads stay private and may ask for one short-lived owner-wallet signature per tab
+- edit, publish, delete, and reorder actions still require a fresh signature
 
 V1 behavior notes:
 
@@ -381,7 +395,7 @@ curl -sS "https://www.ghostprotocol.cc/api/agent-gateway/config?agentId=<agentId
 2. Confirm canary contract endpoint on the merchant runtime:
 
 ```bash
-curl -sS "https://merchant.example.com/canary"
+curl -sS "https://merchant.example.com/ghostgate/canary"
 ```
 
 Expected shape:

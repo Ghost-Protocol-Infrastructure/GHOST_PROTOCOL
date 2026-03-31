@@ -259,6 +259,7 @@ const APP_BASE_URL = normalizeBaseUrl(
 const GITHUB_DOCS_BASE_URL = "https://github.com/Ghost-Protocol-Infrastructure/GHOST_PROTOCOL/blob/main/docs/developer-portal";
 const MERCHANT_ONBOARDING_DOC_URL = `${GITHUB_DOCS_BASE_URL}/onboarding-and-configuration.md`;
 const NODE_QUICKSTART_DOC_URL = `${GITHUB_DOCS_BASE_URL}/quickstart-node.md`;
+const PYTHON_QUICKSTART_DOC_URL = `${GITHUB_DOCS_BASE_URL}/quickstart-python.md`;
 const SDK_REFERENCE_DOC_URL = `${GITHUB_DOCS_BASE_URL}/sdk-reference.md`;
 const GHOSTWIRE_DOC_URL = `${GITHUB_DOCS_BASE_URL}/ghostwire.md`;
 const OPENCLAW_DOC_URL = `${GITHUB_DOCS_BASE_URL}/openclaw-ghost-pay.md`;
@@ -371,28 +372,56 @@ function SdkDocsLinks({ mode = "consumer" }: { mode?: "consumer" | "merchant" })
     <div className="mt-5 space-y-3">
       <p className="text-sm text-neutral-500">
         {mode === "merchant"
-          ? "Start with activate() onboarding, then use the GhostWire reference for direct escrow roles, artifacts, and deliverables."
-          : "Use the docs for installation steps and required environment variables (including signer key setup)."}
+          ? "Fastest path: use the Node.js or Python merchant quickstart to get one endpoint live, then use onboarding for rail choice and dashboard setup."
+          : "Use the Node.js or Python quickstart for the fastest first request, then use the SDK reference for the full surface area."}
       </p>
       <div className="flex flex-wrap gap-3">
         {mode === "merchant" ? (
-          <a
-            href={MERCHANT_ONBOARDING_DOC_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
-          >
-            MERCHANT ONBOARDING
-          </a>
+          <>
+            <a
+              href={NODE_QUICKSTART_DOC_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
+            >
+              NODE QUICKSTART
+            </a>
+            <a
+              href={PYTHON_QUICKSTART_DOC_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
+            >
+              PYTHON QUICKSTART
+            </a>
+            <a
+              href={MERCHANT_ONBOARDING_DOC_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
+            >
+              ONBOARDING
+            </a>
+          </>
         ) : (
-          <a
-            href={NODE_QUICKSTART_DOC_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
-          >
-            NODE QUICKSTART
-          </a>
+          <>
+            <a
+              href={NODE_QUICKSTART_DOC_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
+            >
+              NODE QUICKSTART
+            </a>
+            <a
+              href={PYTHON_QUICKSTART_DOC_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
+            >
+              PYTHON QUICKSTART
+            </a>
+          </>
         )}
         <a
           href={SDK_REFERENCE_DOC_URL}
@@ -2285,16 +2314,21 @@ def my_agent():
               <article className="bg-neutral-950 border border-neutral-900 rounded-none p-5">
                 <div className="mb-5 flex items-center gap-3">
                   <Code className="h-5 w-5 text-red-600" />
-                  <h2 className="text-sm uppercase tracking-[0.18em] text-neutral-300 font-bold">YOUR API GATEWAY</h2>
+                  <h2 className="text-sm uppercase tracking-[0.18em] text-neutral-300 font-bold">GHOSTGATE SETUP</h2>
                 </div>
+                <p className="mb-5 max-w-2xl text-xs text-neutral-600">
+                  Fast path: save your public base URL, run Verify Gateway until the canary passes, then register
+                  delegated signers only if you use GhostGate Express fulfillment.
+                </p>
 
                 <div className="border border-neutral-900 bg-neutral-900 p-4">
                   <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
-                    SDK CONTEXT KEY (PREVIEW PLACEHOLDER)
+                    SDK CONTEXT KEY (PREVIEW ONLY)
                   </p>
                   <code className="block break-all text-sm text-neutral-300 font-mono">{merchantApiKey}</code>
                   <p className="mt-2 text-xs text-neutral-600">
-                    Preview only. Ghost Protocol dashboard does not issue SDK keys yet. See SDK docs for setup.
+                    Preview only. The dashboard does not issue SDK keys yet. Set real secrets in your backend or CLI
+                    environment.
                   </p>
                 </div>
 
@@ -2304,7 +2338,7 @@ def my_agent():
                   className="mt-4 inline-flex items-center gap-2 border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-wider text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
                 >
                   <Copy className="h-4 w-4" />
-                  {apiKeyCopyState === "copied" ? "Preview Copied" : "COPY PREVIEW"}
+                  {apiKeyCopyState === "copied" ? "Preview Copied" : "COPY PREVIEW KEY"}
                 </button>
 
                 {apiKeyCopyState === "error" && (
@@ -2314,7 +2348,7 @@ def my_agent():
                 <div className={`mt-5 border p-4 ${merchantGatewayReadinessTone.border} ${merchantGatewayReadinessTone.bg}`}>
                   <div className="flex flex-col gap-3">
                     <div className="flex flex-wrap items-center gap-3">
-                      <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Gateway Readiness</p>
+                      <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Gateway Status</p>
                       <div className="inline-flex items-center gap-2 border border-neutral-800 bg-neutral-950 px-3 py-1.5">
                         <span className={`h-2 w-2 rounded-none ${merchantGatewayReadinessTone.dot}`} />
                         <span className={`text-xs uppercase tracking-[0.16em] font-bold ${merchantGatewayReadinessTone.text}`}>
@@ -2330,7 +2364,7 @@ def my_agent():
 
                     <div className="grid grid-cols-1 gap-3">
                       <label className="block text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
-                        Merchant Endpoint URL
+                        Merchant Base URL
                         <input
                           value={merchantGatewayEndpointUrl}
                           onChange={(event) => setMerchantGatewayEndpointUrl(event.target.value)}
@@ -2350,6 +2384,11 @@ def my_agent():
                       </label>
                     </div>
 
+                    <p className="text-xs text-neutral-600">
+                      Use a public HTTPS base URL. If you are testing locally, expose the runtime with a tunnel before
+                      you run Verify Gateway.
+                    </p>
+
                     <div className="flex flex-wrap gap-3">
                       <button
                         type="button"
@@ -2363,7 +2402,7 @@ def my_agent():
                         }
                         className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {isSavingMerchantGatewayConfig ? "SAVING..." : "SAVE GATEWAY CONFIG"}
+                        {isSavingMerchantGatewayConfig ? "SAVING..." : "SAVE GATEWAY"}
                       </button>
                       <button
                         type="button"
@@ -2383,8 +2422,8 @@ def my_agent():
                     </div>
 
                     <p className="text-xs text-neutral-600">
-                      Canary endpoint: GET <span className="font-mono">{merchantGatewayCanaryPath || DEFAULT_CANARY_PATH}</span> must
-                      return HTTP 200 with exact JSON:{" "}
+                      Verify Gateway checks: GET <span className="font-mono">{merchantGatewayCanaryPath || DEFAULT_CANARY_PATH}</span>{" "}
+                      must return HTTP 200 with exact JSON:{" "}
                       <span className="font-mono">{`{"ghostgate":"ready","service":"${merchantServiceSlug}"}`}</span>
                     </p>
 
@@ -2425,7 +2464,7 @@ def my_agent():
                       </div>
                       {merchantGatewayCanaryHistory.length === 0 ? (
                         <p className="text-xs text-neutral-600">
-                          No canary verification history yet. Run VERIFY GATEWAY to record checks.
+                          No canary checks yet. Save Gateway, then run Verify Gateway to record the first result.
                         </p>
                       ) : (
                         <div className="space-y-2 overflow-y-auto max-h-72 pr-1">
@@ -2469,6 +2508,10 @@ def my_agent():
                           {merchantDelegatedSignerActiveCount}/{merchantDelegatedSignerMaxActive} active
                         </span>
                       </div>
+                      <p className="mb-3 text-xs text-neutral-600">
+                        Only required for GhostGate Express fulfillment capture. If you only use x402, you can skip
+                        this section.
+                      </p>
 
                       <div className="grid grid-cols-1 gap-3">
                         <label className="block text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
@@ -2517,8 +2560,8 @@ def my_agent():
                       </div>
 
                       <p className="mt-3 text-xs text-neutral-600">
-                        Delegated signers are merchant server runtime keys used for fulfillment capture. Keep these keys off the frontend and rotate
-                        by registering a new signer before revoking the old signer.
+                        Delegated signers are backend runtime keys used for fulfillment capture. Keep them off the
+                        frontend and rotate by registering a new signer before revoking the old signer.
                       </p>
                       {merchantDelegatedSignerAtCapacity && (
                         <p className="mt-2 text-xs text-amber-400">
@@ -2537,7 +2580,9 @@ def my_agent():
                           Loading delegated signers...
                         </p>
                       ) : merchantDelegatedSigners.length === 0 ? (
-                        <p className="mt-3 text-xs text-neutral-600">No delegated runtime signers registered yet.</p>
+                        <p className="mt-3 text-xs text-neutral-600">
+                          No delegated runtime signers yet. If you only use x402, you can leave this empty.
+                        </p>
                       ) : (
                         <div className="mt-3 space-y-3">
                           {activeMerchantDelegatedSigners.length > 0 && (
@@ -2657,12 +2702,12 @@ def my_agent():
                       onClick={() => setShowMerchantSdkPreview((current) => !current)}
                       className="inline-flex items-center justify-center border border-neutral-800 px-3 py-1.5 text-[11px] uppercase tracking-[0.16em] text-neutral-300 transition hover:border-neutral-700 hover:text-neutral-100"
                     >
-                      {showMerchantSdkPreview ? "Hide Preview" : "Show Preview"}
+                      {showMerchantSdkPreview ? "Hide Example" : "Show Example"}
                     </button>
                   </div>
                   {!showMerchantSdkPreview && (
                     <p className="mt-3 text-xs text-neutral-600">
-                      Merchant SDK example is collapsed to keep the dashboard compact.
+                      Backend SDK example is collapsed to keep the dashboard compact.
                     </p>
                   )}
                   {showMerchantSdkPreview && (
@@ -3001,13 +3046,13 @@ def my_agent():
                 href={selectedAgentProfileHref}
                 className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:bg-neutral-900 hover:text-neutral-200"
               >
-                OPEN PUBLIC PROFILE
+                VIEW PUBLIC PROFILE -&gt;
               </a>
               <a
                 href={selectedAgentConsumerTerminalHref}
                 className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:bg-neutral-900 hover:text-neutral-200"
               >
-                OPEN CONSUMER TERMINAL
+                VIEW CONSUMER TERMINAL -&gt;
               </a>
               <div className="inline-flex flex-col items-start">
                 <button
