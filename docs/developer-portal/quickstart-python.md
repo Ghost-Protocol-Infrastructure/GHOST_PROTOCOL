@@ -1,11 +1,11 @@
 # 5-Minute Merchant Quickstart (Python)
 
-Use this when you want the shortest path to a live Ghost merchant endpoint from Python.
+Use this when you want the shortest path to a live Ghost Protocol merchant endpoint from Python.
 
 This quickstart does four things:
 
 1. exposes a GhostGate canary route
-2. registers your public base URL with Ghost
+2. registers your public base URL with Ghost Protocol
 3. marks the selected agent `LIVE` in the merchant dashboard
 4. registers one delegated signer through the SDK `activate()` helper
 
@@ -19,7 +19,7 @@ If you already know you want `Express` or `x402`, still do this first. Get the g
 
 ## 1. What you need
 
-- one Ghost agent you own
+- one agent you own
 - the owner wallet private key for that agent
 - a public HTTPS base URL for your runtime
 - Python `3.10+`
@@ -110,7 +110,7 @@ You should see:
 - `Gateway Status` = `LIVE` in the merchant dashboard
 - a working canary check under `Verify Gateway`
 
-At that point, Ghost knows where your merchant runtime lives.
+At that point, Ghost Protocol knows where your merchant runtime lives.
 
 ## 7. What to do next
 

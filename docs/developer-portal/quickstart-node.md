@@ -1,11 +1,11 @@
 # 5-Minute Merchant Quickstart (Node.js)
 
-Use this when you want the shortest path to a live Ghost merchant endpoint.
+Use this when you want the shortest path to a live Ghost Protocol merchant endpoint.
 
 This quickstart does four things:
 
 1. exposes a GhostGate canary route
-2. registers your public base URL with Ghost
+2. registers your public base URL with Ghost Protocol
 3. marks the selected agent `LIVE` in the merchant dashboard
 4. registers one delegated signer through the SDK `activate()` helper
 

@@ -82,7 +82,7 @@ The Python helper is intentionally lower-level. If you do not pass a retry `paym
 
 ## Merchant reporting for GhostRank
 
-Ghost cannot score x402 traffic it cannot observe. If you want GhostRank credit, report verified settlements:
+Ghost Protocol cannot score x402 traffic it cannot observe. If you want GhostRank credit, report verified settlements:
 
 The canonical reporting contract is `SettlementEvidence`:
 
