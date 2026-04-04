@@ -19,7 +19,7 @@ If you already know you want `Express` or `x402`, still do this first. Get the g
 
 ## 1. What you need
 
-- one Ghost agent you own
+- one agent you own
 - the owner wallet private key for that agent
 - a public HTTPS base URL for your runtime
 - Node.js `20+`
@@ -115,7 +115,7 @@ You should see:
 - `Gateway Status` = `LIVE` in the merchant dashboard
 - a working canary check under `Verify Gateway`
 
-At that point, Ghost knows where your merchant runtime lives.
+At that point, Ghost Protocol knows where your merchant runtime lives.
 
 ## 7. What to do next
 
