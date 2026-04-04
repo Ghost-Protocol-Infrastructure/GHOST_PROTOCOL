@@ -13,6 +13,11 @@ If you want the shortest path to first success, start with:
 
 Use those quickstarts to get one public merchant endpoint live first. Come back to this guide for rail choice, dashboard setup, offerings, and settlement details.
 
+If your gateway is already `LIVE` and you now need the operating checklist, use:
+
+- `docs/fulfillment-operator-runbook.md`
+- `docs/developer-portal/agent-integration-playbook.md`
+
 ## 1. Choose Integration Path
 
 Ghost Protocol currently supports three production paths:
@@ -149,6 +154,22 @@ Complete these steps in order for each merchant agent.
 7. Configure operator secrets
    - `GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET`
    - `GHOST_FULFILLMENT_SUPPORT_SECRET`
+
+## 2B. After activation: operator checks
+
+Once the agent is `LIVE`, the recurring operator checks are:
+
+1. keep `Gateway Status = LIVE`
+2. make sure the most recent canary check is still passing
+3. if you use `Express`, keep one delegated signer `ACTIVE` and make sure the runtime key matches it
+4. watch pending and in-flight settlement balances so they do not grow without explanation
+5. if you use `GhostWire`, make sure provider/evaluator wallets have Base ETH and check the job log when terminal backlog grows
+
+Use the operator surfaces in this order:
+
+1. merchant dashboard for gateway state, delegated signers, revenue summary, and recent GhostWire jobs
+2. `docs/fulfillment-operator-runbook.md` for concrete incident/rotation steps
+3. support/operator endpoints for metrics or stuck state investigation
 
 ## 2A. Agent Offerings
 

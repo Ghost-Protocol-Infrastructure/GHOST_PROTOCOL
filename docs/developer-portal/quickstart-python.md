@@ -117,6 +117,8 @@ At that point, Ghost Protocol knows where your merchant runtime lives.
 - want Ghost-managed credits and fulfillment capture:
   - go to [Onboarding and Configuration](./onboarding-and-configuration.md)
   - finish `Delegated Runtime Signers`
+- already live and now operating traffic:
+  - go to [Fulfillment Operator Runbook](../fulfillment-operator-runbook.md)
 - want open low-cost paid access:
   - go to [GhostGate x402](./ghostgate-x402.md)
 - want the public profile to explain what buyers can request:

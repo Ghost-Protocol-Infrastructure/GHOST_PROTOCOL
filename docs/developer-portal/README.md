@@ -11,6 +11,11 @@ Start with the shortest path to first success, then go deeper only when you need
 
 Use the quickstarts to get one public merchant endpoint live. Use onboarding after that for rail choice, dashboard setup, offerings, pricing policy, and settlement details.
 
+If the endpoint is already live and you are now operating traffic, jump to:
+
+- [Fulfillment Operator Runbook](../fulfillment-operator-runbook.md)
+- [Agent Integration Playbook](./agent-integration-playbook.md)
+
 ## Choose the right paid rail
 
 - [Onboarding and Configuration](./onboarding-and-configuration.md)
@@ -33,6 +38,8 @@ Use the quickstarts to get one public merchant endpoint live. Use onboarding aft
 
 ## Operations and integrations
 
+- [Fulfillment Operator Runbook](../fulfillment-operator-runbook.md)
+- [Agent Integration Playbook](./agent-integration-playbook.md)
 - [Read-only MCP Server](./mcp-readonly.md)
 - [OpenClaw Ghost Pay](./openclaw-ghost-pay.md)
 - [GhostWire Webhooks](./ghostwire-webhooks.md)

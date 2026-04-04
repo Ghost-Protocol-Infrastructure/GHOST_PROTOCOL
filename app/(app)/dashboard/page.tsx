@@ -263,6 +263,11 @@ const PYTHON_QUICKSTART_DOC_URL = `${GITHUB_DOCS_BASE_URL}/quickstart-python.md`
 const SDK_REFERENCE_DOC_URL = `${GITHUB_DOCS_BASE_URL}/sdk-reference.md`;
 const GHOSTWIRE_DOC_URL = `${GITHUB_DOCS_BASE_URL}/ghostwire.md`;
 const OPENCLAW_DOC_URL = `${GITHUB_DOCS_BASE_URL}/openclaw-ghost-pay.md`;
+const PLATFORM_HOW_TO_DOC_URL =
+  "https://github.com/Ghost-Protocol-Infrastructure/GHOST_PROTOCOL/blob/main/docs/platform-how-to.md";
+const AGENT_PLAYBOOK_DOC_URL = `${GITHUB_DOCS_BASE_URL}/agent-integration-playbook.md`;
+const FULFILLMENT_RUNBOOK_DOC_URL =
+  "https://github.com/Ghost-Protocol-Infrastructure/GHOST_PROTOCOL/blob/main/docs/fulfillment-operator-runbook.md";
 const SDK_CONTEXT_KEY_PREVIEW_PLACEHOLDER = "sk_live_your_sdk_context_key";
 const SDK_SECURITY_NOTICE =
   "Security Notice: Ghost Gate access is authenticated with Web3 wallet signatures (EIP-712). Configure SDKs with a signer private key in a trusted backend/server/CLI environment only. Never expose private keys in frontend code or commit them to version control.";
@@ -372,8 +377,8 @@ function SdkDocsLinks({ mode = "consumer" }: { mode?: "consumer" | "merchant" })
     <div className="mt-5 space-y-3">
       <p className="text-sm text-neutral-500">
         {mode === "merchant"
-          ? "Fastest path: use the Node.js or Python merchant quickstart to get one endpoint live, then use onboarding for rail choice and dashboard setup."
-          : "Use the Node.js or Python quickstart for the fastest first request, then use the SDK reference for the full surface area."}
+          ? "Fastest path: use the Node.js or Python merchant quickstart to get one endpoint live, then use onboarding and the operator runbook once the agent is active."
+          : "Fastest path: use the platform how-to for deposit + first request, then use the SDK reference when you need the full integration surface."}
       </p>
       <div className="flex flex-wrap gap-3">
         {mode === "merchant" ? (
@@ -402,24 +407,32 @@ function SdkDocsLinks({ mode = "consumer" }: { mode?: "consumer" | "merchant" })
             >
               ONBOARDING
             </a>
+            <a
+              href={FULFILLMENT_RUNBOOK_DOC_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
+            >
+              OPERATOR RUNBOOK
+            </a>
           </>
         ) : (
           <>
             <a
-              href={NODE_QUICKSTART_DOC_URL}
+              href={PLATFORM_HOW_TO_DOC_URL}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
             >
-              NODE QUICKSTART
+              PLATFORM HOW-TO
             </a>
             <a
-              href={PYTHON_QUICKSTART_DOC_URL}
+              href={OPENCLAW_DOC_URL}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
             >
-              PYTHON QUICKSTART
+              OPENCLAW
             </a>
           </>
         )}
@@ -430,6 +443,14 @@ function SdkDocsLinks({ mode = "consumer" }: { mode?: "consumer" | "merchant" })
           className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
         >
           SDK REFERENCE
+        </a>
+        <a
+          href={AGENT_PLAYBOOK_DOC_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center justify-center border border-neutral-800 bg-neutral-950 px-4 py-2 text-xs uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
+        >
+          AGENT PLAYBOOK
         </a>
         <a
           href={GHOSTWIRE_DOC_URL}
@@ -2317,8 +2338,8 @@ def my_agent():
                   <h2 className="text-sm uppercase tracking-[0.18em] text-neutral-300 font-bold">GHOSTGATE SETUP</h2>
                 </div>
                 <p className="mb-5 max-w-2xl text-xs text-neutral-600">
-                  Fast path: save your public base URL, run Verify Gateway until the canary passes, then register
-                  delegated signers only if you use GhostGate Express fulfillment.
+                  Activation order: Save Gateway, run Verify Gateway until the canary passes, then register delegated
+                  signers only if you use GhostGate Express fulfillment.
                 </p>
 
                 <div className="border border-neutral-900 bg-neutral-900 p-4">
@@ -2456,7 +2477,7 @@ def my_agent():
                     <div className="border border-neutral-900 bg-neutral-950/60 p-3">
                       <div className="mb-2 flex items-center justify-between gap-2">
                         <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
-                          Verification History
+                          Gateway Check History
                         </p>
                         <span className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
                           {merchantGatewayCanaryHistory.length} recent
@@ -2744,7 +2765,7 @@ def my_agent():
                       {formattedPendingEarnings}
                     </p>
                     <p className="mt-2 text-xs text-neutral-600">
-                      {merchantSettlementSummary.pending.count} unsettled spend events waiting for allocation.
+                      {merchantSettlementSummary.pending.count} unsettled spend events waiting for Ghost settlement batching and allocation.
                     </p>
                     {merchantSettlementSummary.pending.oldestCreatedAt && (
                       <p className="mt-1 text-[11px] text-neutral-600">
@@ -2758,7 +2779,7 @@ def my_agent():
                       {formattedSubmittedEarnings}
                     </p>
                     <p className="mt-2 text-xs text-neutral-600">
-                      {merchantSettlementSummary.submitted.count} submitted spend events awaiting on-chain confirmation.
+                      {merchantSettlementSummary.submitted.count} submitted spend events awaiting GhostVault confirmation.
                     </p>
                     <p className="mt-1 text-[11px] text-neutral-600">
                       Settlement processes every hour (average).
@@ -2790,13 +2811,33 @@ def my_agent():
                 </div>
 
                 <div className="mt-4 border border-neutral-900 bg-neutral-900 p-4">
+                  <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Operator Checks</p>
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="border border-neutral-800 bg-neutral-950 p-3">
+                      <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">Daily</p>
+                      <p className="mt-2 text-xs text-neutral-500">
+                        Keep `Gateway Status` at `LIVE`, make sure the most recent canary check is passing, and watch for
+                        pending earnings or GhostWire backlog growing without explanation.
+                      </p>
+                    </div>
+                    <div className="border border-neutral-800 bg-neutral-950 p-3">
+                      <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">Before Traffic</p>
+                      <p className="mt-2 text-xs text-neutral-500">
+                        If you use Express, confirm one delegated signer is active and the merchant runtime key matches it.
+                        If you use GhostWire, confirm the provider and evaluator wallets have Base ETH.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 border border-neutral-900 bg-neutral-900 p-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">
-                        GhostWire // Direct Escrow Jobs
+                        GhostWire // Direct Escrow Ops
                       </p>
                       <p className="mt-1 text-xs text-neutral-600">
-                        Recent GhostWire jobs attributed to the selected agent&apos;s merchant identity. Clients fund escrow directly; providers still deliver and evaluators still finalize.
+                        Recent GhostWire jobs attributed to the selected agent&apos;s merchant identity. Use this log when a client reports a stuck escrow, a missing deliverable, or a delayed terminal state.
                       </p>
                       {mostRecentMerchantWireJobAt && (
                         <p className="mt-1 text-[11px] text-neutral-600">
@@ -2840,7 +2881,7 @@ def my_agent():
                       <p className="mt-1 text-lg text-neutral-200 font-mono">{merchantWireJobSummary.terminal}</p>
                     </div>
                     <div className="border border-neutral-800 bg-neutral-950 p-3">
-                      <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">Backlog</p>
+                      <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">Action Needed</p>
                       <p className={`mt-1 text-lg font-mono ${merchantWireJobSummary.backlog > 0 ? "text-amber-300" : "text-neutral-200"}`}>
                         {merchantWireJobSummary.backlog}
                       </p>
@@ -2859,7 +2900,7 @@ def my_agent():
 
                   {merchantWireJobs.length > 0 && !showMerchantWireJobs && (
                     <p className="mt-4 text-xs text-neutral-600">
-                      GhostWire job details are collapsed to keep the merchant console compact.
+                      Open the job log when `Action Needed` is non-zero or a merchant needs to trace a specific job.
                     </p>
                   )}
 
@@ -2924,7 +2965,7 @@ def my_agent():
                                 </div>
                                 <div className="min-w-0 border border-neutral-900 bg-neutral-900 p-3">
                                   <p className="text-[10px] uppercase tracking-[0.16em] text-neutral-600 font-bold">
-                                    Operator
+                                    Workflow Status
                                   </p>
                                   <p className="mt-2 break-all text-[11px] text-neutral-500">
                                     Create {job.operator.createStatus ?? "--"} {"|"} Fund {job.operator.fundStatus ?? "--"}

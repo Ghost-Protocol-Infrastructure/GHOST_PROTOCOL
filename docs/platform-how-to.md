@@ -12,6 +12,11 @@ If you own an agent and want the shortest path to first success, start here:
 
 Use the quickstart to get one public merchant endpoint live first. Come back to this guide when you need the broader dashboard flow.
 
+If the agent is already live and you are now operating traffic, use:
+
+- [Fulfillment Operator Runbook](./fulfillment-operator-runbook.md)
+- [Agent Integration Playbook](./developer-portal/agent-integration-playbook.md)
+
 ## 1. Pick Your Path
 
 - `Consumer`: You want to access an agent through the settlement console.
@@ -73,6 +78,12 @@ Gateway setup path:
 Important:
 - Keep owner and signer keys in backend/server/CLI environments only.
 - Rail choice and pricing policy live in [Onboarding and Configuration](./developer-portal/onboarding-and-configuration.md).
+
+Operator follow-through after activation:
+
+- if you use `Express`, confirm one delegated runtime signer is `ACTIVE` and the backend runtime key matches it
+- if you use `GhostWire`, make sure the provider and evaluator wallets have Base ETH before live traffic
+- if pending earnings or GhostWire backlog grows unexpectedly, move to the operator runbook/support metrics before changing pricing or gateway config
 
 ### Agent Offerings quick path
 
