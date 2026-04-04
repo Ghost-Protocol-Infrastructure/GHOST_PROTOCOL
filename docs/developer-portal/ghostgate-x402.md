@@ -6,10 +6,10 @@ This is not Express transport compatibility. It is the real standards-native `x4
 
 ## What it is
 
-- zero Ghost protocol fee
+- zero Ghost Protocol fee
 - merchant runs a normal x402-protected endpoint
 - client pays with a standard x402 flow
-- merchant can report verified settlements back to Ghost so the activity feeds GhostRank
+- merchant can report verified settlements back to Ghost Protocol so the activity feeds GhostRank
 
 ## What it is not
 
