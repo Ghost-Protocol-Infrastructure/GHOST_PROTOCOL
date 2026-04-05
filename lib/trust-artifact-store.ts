@@ -138,6 +138,7 @@ const assertPortableTrustPayload = (value: Prisma.JsonValue): PortableTrustPaylo
 
 const buildTrustUrl = (agentId: string): string => `/api/agents/${encodeURIComponent(agentId)}/trust`;
 const PORTABLE_TRUST_UPSERT_BATCH_SIZE = 200;
+const PORTABLE_TRUST_DEACTIVATION_BATCH_SIZE = 5000;
 
 const chunk = <TItem>(items: TItem[], size: number): TItem[][] => {
   if (size <= 0) return [items];
@@ -191,20 +192,22 @@ export const materializePortableTrustArtifactsForSnapshot = async (
 
   const agentAddresses = Array.from(new Set(rows.map((row) => row.agentAddress)));
 
-  const deactivatedResult =
-    agentAddresses.length === 0
-      ? { count: 0 }
-      : await db.agentTrustArtifact.updateMany({
-          where: {
-            agentAddress: { in: agentAddresses },
-            schemaVersion: PORTABLE_TRUST_SCHEMA_VERSION,
-            isActive: true,
-            snapshotId: { not: snapshot.id },
-          },
-          data: {
-            isActive: false,
-          },
-        });
+  let deactivated = 0;
+  for (const addressBatch of chunk(agentAddresses, PORTABLE_TRUST_DEACTIVATION_BATCH_SIZE)) {
+    if (addressBatch.length === 0) continue;
+    const deactivatedResult = await db.agentTrustArtifact.updateMany({
+      where: {
+        agentAddress: { in: addressBatch },
+        schemaVersion: PORTABLE_TRUST_SCHEMA_VERSION,
+        isActive: true,
+        snapshotId: { not: snapshot.id },
+      },
+      data: {
+        isActive: false,
+      },
+    });
+    deactivated += deactivatedResult.count;
+  }
 
   let upserted = 0;
   for (const batch of chunk(rows, PORTABLE_TRUST_UPSERT_BATCH_SIZE)) {
@@ -270,7 +273,7 @@ export const materializePortableTrustArtifactsForSnapshot = async (
     snapshotId: snapshot.id,
     processed: rows.length,
     upserted,
-    deactivated: deactivatedResult.count,
+    deactivated,
     skipped: false,
   };
 };
