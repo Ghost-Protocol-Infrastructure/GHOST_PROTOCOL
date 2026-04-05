@@ -137,6 +137,16 @@ const TRUST_POINTER_SELECT = {
 const assertPortableTrustPayload = (value: Prisma.JsonValue): PortableTrustPayload => value as PortableTrustPayload;
 
 const buildTrustUrl = (agentId: string): string => `/api/agents/${encodeURIComponent(agentId)}/trust`;
+const PORTABLE_TRUST_UPSERT_BATCH_SIZE = 200;
+
+const chunk = <TItem>(items: TItem[], size: number): TItem[][] => {
+  if (size <= 0) return [items];
+  const batches: TItem[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    batches.push(items.slice(index, index + size));
+  }
+  return batches;
+};
 
 const isMissingTrustArtifactTableError = (error: unknown): boolean =>
   error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2021";
@@ -179,83 +189,88 @@ export const materializePortableTrustArtifactsForSnapshot = async (
     select: PORTABLE_TRUST_ROW_SELECT,
   });
 
-  let upserted = 0;
-  let deactivated = 0;
+  const agentAddresses = Array.from(new Set(rows.map((row) => row.agentAddress)));
 
-  for (const row of rows) {
-    const payload = normalizePortableTrustPayload(
-      buildPortableTrustPayload({
-        row,
-        snapshot,
-        agent: row.agent,
-        issuerAddress: issuerConfig.issuerAddress,
-        issuedAt,
+  const deactivatedResult =
+    agentAddresses.length === 0
+      ? { count: 0 }
+      : await db.agentTrustArtifact.updateMany({
+          where: {
+            agentAddress: { in: agentAddresses },
+            schemaVersion: PORTABLE_TRUST_SCHEMA_VERSION,
+            isActive: true,
+            snapshotId: { not: snapshot.id },
+          },
+          data: {
+            isActive: false,
+          },
+        });
+
+  let upserted = 0;
+  for (const batch of chunk(rows, PORTABLE_TRUST_UPSERT_BATCH_SIZE)) {
+    await Promise.all(
+      batch.map(async (row) => {
+        const payload = normalizePortableTrustPayload(
+          buildPortableTrustPayload({
+            row,
+            snapshot,
+            agent: row.agent,
+            issuerAddress: issuerConfig.issuerAddress,
+            issuedAt,
+          }),
+        );
+        const verification = await signPortableTrustPayload({
+          payload,
+          privateKey: issuerConfig.privateKey,
+        });
+
+        await db.agentTrustArtifact.upsert({
+          where: {
+            snapshotId_agentAddress_schemaVersion: {
+              snapshotId: snapshot.id,
+              agentAddress: row.agentAddress,
+              schemaVersion: PORTABLE_TRUST_SCHEMA_VERSION,
+            },
+          },
+          update: {
+            agentId: row.agentId,
+            evidenceClass: payload.trust.evidenceClass,
+            artifactHash: verification.artifactHash,
+            hashAlgorithm: payload.issuer.hashAlgorithm,
+            signatureScheme: payload.issuer.signatureScheme,
+            issuerAddress: payload.issuer.address,
+            issuedAt,
+            payload: payload as unknown as Prisma.InputJsonValue,
+            signature: verification.signature,
+            isActive: true,
+          },
+          create: {
+            agentAddress: row.agentAddress,
+            agentId: row.agentId,
+            snapshotId: snapshot.id,
+            schemaVersion: PORTABLE_TRUST_SCHEMA_VERSION,
+            evidenceClass: payload.trust.evidenceClass,
+            artifactHash: verification.artifactHash,
+            hashAlgorithm: payload.issuer.hashAlgorithm,
+            signatureScheme: payload.issuer.signatureScheme,
+            issuerAddress: payload.issuer.address,
+            issuedAt,
+            payload: payload as unknown as Prisma.InputJsonValue,
+            signature: verification.signature,
+            isActive: true,
+          },
+        });
       }),
     );
-    const verification = await signPortableTrustPayload({
-      payload,
-      privateKey: issuerConfig.privateKey,
-    });
 
-    const deactivatedResult = await db.agentTrustArtifact.updateMany({
-      where: {
-        agentAddress: row.agentAddress,
-        schemaVersion: PORTABLE_TRUST_SCHEMA_VERSION,
-        isActive: true,
-        snapshotId: { not: snapshot.id },
-      },
-      data: {
-        isActive: false,
-      },
-    });
-
-    deactivated += deactivatedResult.count;
-
-    await db.agentTrustArtifact.upsert({
-      where: {
-        snapshotId_agentAddress_schemaVersion: {
-          snapshotId: snapshot.id,
-          agentAddress: row.agentAddress,
-          schemaVersion: PORTABLE_TRUST_SCHEMA_VERSION,
-        },
-      },
-      update: {
-        agentId: row.agentId,
-        evidenceClass: payload.trust.evidenceClass,
-        artifactHash: verification.artifactHash,
-        hashAlgorithm: payload.issuer.hashAlgorithm,
-        signatureScheme: payload.issuer.signatureScheme,
-        issuerAddress: payload.issuer.address,
-        issuedAt,
-        payload: payload as unknown as Prisma.InputJsonValue,
-        signature: verification.signature,
-        isActive: true,
-      },
-      create: {
-        agentAddress: row.agentAddress,
-        agentId: row.agentId,
-        snapshotId: snapshot.id,
-        schemaVersion: PORTABLE_TRUST_SCHEMA_VERSION,
-        evidenceClass: payload.trust.evidenceClass,
-        artifactHash: verification.artifactHash,
-        hashAlgorithm: payload.issuer.hashAlgorithm,
-        signatureScheme: payload.issuer.signatureScheme,
-        issuerAddress: payload.issuer.address,
-        issuedAt,
-        payload: payload as unknown as Prisma.InputJsonValue,
-        signature: verification.signature,
-        isActive: true,
-      },
-    });
-
-    upserted += 1;
+    upserted += batch.length;
   }
 
   return {
     snapshotId: snapshot.id,
     processed: rows.length,
     upserted,
-    deactivated,
+    deactivated: deactivatedResult.count,
     skipped: false,
   };
 };

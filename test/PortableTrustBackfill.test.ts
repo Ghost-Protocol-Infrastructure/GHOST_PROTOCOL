@@ -95,8 +95,11 @@ test("portable trust backfill is idempotent for an already-active snapshot", asy
       updateMany: async ({ where, data }: any) => {
         let count = 0;
         for (const artifact of artifacts) {
+          const addressMatches = Array.isArray(where.agentAddress?.in)
+            ? where.agentAddress.in.includes(artifact.agentAddress)
+            : artifact.agentAddress === where.agentAddress;
           if (
-            artifact.agentAddress === where.agentAddress &&
+            addressMatches &&
             artifact.schemaVersion === where.schemaVersion &&
             artifact.isActive === true &&
             artifact.snapshotId !== where.snapshotId.not
