@@ -343,6 +343,7 @@ const HomePage = () => {
             <div className="flex flex-col gap-3">
               <span className="text-neutral-500 font-bold mb-1">Links</span>
               <a href="https://x.com/ghostprotoinfra?s=21&t=DTmOC6wgBREeCQeyz6wQRg" target="_blank" rel="noreferrer" className="hover:text-red-500 transition-colors">Twitter_X</a>
+              <a href="https://t.me/+NM9ihF82WntlYTJh" target="_blank" rel="noreferrer" className="hover:text-red-500 transition-colors">TELEGRAM</a>
               <a href="https://github.com/Ghost-Protocol-Infrastructure" target="_blank" rel="noreferrer" className="hover:text-red-500 transition-colors">Github</a>
             </div>
           </div>
