@@ -3,6 +3,7 @@ import type { Prisma as PrismaTypes } from "@prisma/client";
 import { createPublicClient, fallback, http } from "viem";
 import { base } from "viem/chains";
 import { prisma } from "@/lib/db";
+import { listActivePortableTrustPointersByAgentId } from "@/lib/trust-artifact-store";
 
 export const runtime = "nodejs";
 
@@ -357,6 +358,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const syncMetadata = await resolveSyncMetadata(indexerState?.lastSyncedBlock);
   const activatedAgents = await activatedAgentsPromise;
   const gatewayReadinessByAgentId = await resolveGatewayReadinessByAgentIds(rows.map((row) => row.agentId));
+  const trustPointersByAgentId = await listActivePortableTrustPointersByAgentId(rows.map((row) => row.agentId));
 
   return NextResponse.json(
     {
@@ -373,6 +375,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       lastSyncedAt: syncMetadata.lastSyncedAt,
       agents: rows.map((row) => {
         const normalizedAgentId = row.agentId.toLowerCase();
+        const trustPointer = trustPointersByAgentId.get(normalizedAgentId) ?? {
+          available: false,
+          evidenceClass: null,
+          issuedAt: null,
+          trustUrl: null,
+        };
         const usageAuthorizedCount7d = Math.max(0, Math.trunc(row.usageAuthorizedCount7d ?? 0));
         const txMetricSource =
           normalizeTxMetricSource(row.metricSource) ??
@@ -446,6 +454,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           uptime: row.uptime,
           volume: row.volume.toString(),
           score: row.score,
+          trustArtifactAvailable: trustPointer.available,
+          trustEvidenceClass: trustPointer.evidenceClass,
+          trustIssuedAt: trustPointer.issuedAt,
+          trustUrl: trustPointer.trustUrl,
           gatewayReadinessStatus: gatewayReadinessByAgentId.get(normalizedAgentId)?.readinessStatus ?? "UNCONFIGURED",
           gatewayLastCanaryCheckedAt: gatewayReadinessByAgentId.get(normalizedAgentId)?.lastCanaryCheckedAt ?? null,
           gatewayLastCanaryPassedAt: gatewayReadinessByAgentId.get(normalizedAgentId)?.lastCanaryPassedAt ?? null,

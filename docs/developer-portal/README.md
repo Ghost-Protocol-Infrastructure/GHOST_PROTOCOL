@@ -31,10 +31,17 @@ If the endpoint is already live and you are now operating traffic, jump to:
 
 - [SDK Reference (Node + Python)](./sdk-reference.md)
 - [API Reference](./api-reference.md)
+- [GhostRank Scoring](./ghostrank-scoring.md)
 - [Architecture](./architecture.md)
 - [Errors and Security](./errors-and-security.md)
 - [Security and Shared Responsibility](./security-and-shared-responsibility.md)
 - [GhostVault Smart Contract Reference](./smart-contract.md)
+
+Portable Trust lives on top of GhostRank:
+
+- GhostRank remains the scoring substrate
+- Portable Trust is the signed export surface for `/api/agents/[id]/trust`
+- public `/agent/[id]` profiles link to `View Trust JSON` when an active artifact exists
 
 ## Operations and integrations
 

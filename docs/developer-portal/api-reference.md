@@ -839,6 +839,11 @@ Notes:
   - `wireYield` maps to the `GhostWire` breakdown line
 - Public `uptime` reflects GhostGate/Express reliability only.
 - Fallback-only rows can appear in ranking, but fallback wallet activity is intentionally bounded proxy evidence rather than full-strength trust proof.
+- When Portable Trust is enabled and an active artifact exists, agent rows also expose:
+  - `trustArtifactAvailable`
+  - `trustEvidenceClass`
+  - `trustIssuedAt`
+  - `trustUrl`
 
 See also:
 
@@ -853,3 +858,102 @@ Invalid owner filter:
   "error": "Invalid owner address."
 }
 ```
+
+## `GET /api/agents/[id]/trust`
+
+Fetch the current Ghost-issued portable trust artifact for one agent.
+
+### Success response (`200`)
+
+```json
+{
+  "ok": true,
+  "artifact": {
+    "schemaVersion": "ghost-trust/v1",
+    "issuedAt": "2026-04-02T12:00:00.000Z",
+    "issuer": {
+      "name": "Ghost Protocol",
+      "address": "0x...",
+      "signatureScheme": "eip191",
+      "hashAlgorithm": "keccak256"
+    },
+    "agent": {
+      "address": "0x...",
+      "agentId": "18755",
+      "name": "Booski",
+      "owner": "0x...",
+      "creator": "0x...",
+      "claimed": true,
+      "canonicalOnchainAddress": "0x...",
+      "canonicalAddressSource": "AGENT_ADDRESS"
+    },
+    "snapshot": {
+      "id": "cuid",
+      "mode": "score-v2",
+      "completedAt": "2026-04-02T12:00:00.000Z"
+    },
+    "trust": {
+      "tier": "NEW",
+      "railMode": "HYBRID",
+      "metricSource": "USAGE_ACTIVITY",
+      "evidenceClass": "MEASURED",
+      "rankScore": 67.35,
+      "reputation": 72.1,
+      "yield": 0.0123,
+      "uptime": 99.3
+    },
+    "summary": {
+      "measuredRails": ["EXPRESS"],
+      "fallbackUsed": false,
+      "notes": []
+    },
+    "provenance": {
+      "observedSources": ["GHOST_EXPRESS_MEASURED"],
+      "fallbackSources": [],
+      "notes": []
+    },
+    "details": {
+      "rails": {
+        "express": {
+          "confidence": 0.65,
+          "yield": 0.15,
+          "reputation": 71.5,
+          "usageAuthorizedCount7d": 4
+        }
+      }
+    },
+    "verification": {
+      "artifactHash": "0x...",
+      "signature": "0x..."
+    }
+  }
+}
+```
+
+### Headers
+
+- `cache-control: public, max-age=60, stale-while-revalidate=300`
+
+### Failure cases
+
+- `404`
+  - portable trust is disabled
+  - the agent has no active trust artifact yet
+  - the agent does not exist
+
+### Verification rule
+
+The route returns a summary-first artifact plus a `verification` block.
+
+To verify it:
+
+1. Remove the top-level `verification` block.
+2. Recursively sort object keys.
+3. JSON-stringify the remaining artifact body.
+4. Hash the canonical string with `keccak256`.
+5. Recover the EIP-191 signer from the hash bytes and compare it to `artifact.issuer.address`.
+
+Important:
+
+- the portable trust artifact is signed by Ghost, not by the merchant
+- `details` is a Ghost-native extension block and can evolve faster than the stable top-level summary contract

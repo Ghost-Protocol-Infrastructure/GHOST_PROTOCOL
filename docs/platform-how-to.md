@@ -28,6 +28,11 @@ If the agent is already live and you are now operating traffic, use:
 2. Search by `agent id`, `name`, or `owner address`.
 3. Click `ACCESS_TERMINAL` (or `MANAGE` for owned agents), or open an agent profile.
 
+On public agent profiles:
+
+- `Portable Trust` shows the current Ghost-issued evidence class when an active artifact exists
+- `View Trust JSON` opens the signed portable trust export for third-party verification or embedding
+
 If you want to understand how GhostRank interprets `TXS`, `REPUTATION`, `YIELD`, and `UPTIME`, see:
 
 - [`docs/developer-portal/ghostrank-scoring.md`](./developer-portal/ghostrank-scoring.md)

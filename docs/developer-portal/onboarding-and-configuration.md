@@ -405,6 +405,22 @@ GhostWire is customer-native:
 |---|---|---|---|
 | `NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID` | Dashboard wallet connectivity (`app/providers.tsx`) | Yes for wallet-connect UX | If unset, RainbowKit/Reown falls back to a placeholder project id and wallet-connect flows will degrade. Set a real project id in local and production before launch. |
 
+### 4.7 Portable Trust rollout
+
+| Variable | Used by | Required | Notes |
+|---|---|---|---|
+| `PORTABLE_TRUST_ENABLED` | Snapshot issuance + `GET /api/agents/[id]/trust` | Yes (to enable the feature) | When `false`, Ghost skips artifact generation and the public trust route stays unavailable. |
+| `GHOST_TRUST_ISSUER_PRIVATE_KEY` | Portable trust signing and backfill materialization | Yes (when enabled for issuance) | Ghost-controlled issuer key used for EIP-191 signing. Trust issuance failures must not block GhostRank snapshot activation. Public trust reads use stored artifacts and do not require this key in the read tier. |
+| `GHOST_TRUST_ISSUER_ADDRESS` | Portable trust verification metadata | Optional | If set, it must match the configured issuer private key. Otherwise Ghost derives the issuer address from the key during issuance. Stored artifacts continue to expose the issuer address for public verification. |
+
+Rollout note:
+
+- apply the Prisma migration in the target environment before enabling the feature
+- set `PORTABLE_TRUST_ENABLED=true`
+- set `GHOST_TRUST_ISSUER_PRIVATE_KEY` and optionally `GHOST_TRUST_ISSUER_ADDRESS` in the issuance environment
+- run `npm run backfill:portable-trust` once after enabling the feature so the current active snapshot immediately has trust artifacts
+- verify `GET /api/agents/[id]/trust` returns the active `ghost-trust/v1` artifact for an agent on the current active snapshot
+
 ## 5. Production Readiness Checks
 
 1. Confirm gateway config and readiness:

@@ -52,6 +52,13 @@ enum AgentRailMode {
   UNPROVEN
 }
 
+enum TrustEvidenceClass {
+  MEASURED
+  MIXED
+  FALLBACK_ONLY
+  UNPROVEN
+}
+
 enum CreditLedgerDirection {
   CREDIT
   DEBIT
@@ -317,6 +324,7 @@ model Agent {
   snapshots     LeaderboardSnapshotRow[]
   gatewayConfig AgentGatewayConfig?
   offerings     AgentOffering[]
+  trustArtifacts AgentTrustArtifact[]
 }
 
 enum AgentOfferingRail {
@@ -646,7 +654,8 @@ model LeaderboardSnapshot {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
-  rows LeaderboardSnapshotRow[]
+  rows           LeaderboardSnapshotRow[]
+  trustArtifacts AgentTrustArtifact[]
 
   @@index([isActive, status])
   @@index([completedAt])
@@ -716,6 +725,33 @@ model LeaderboardSnapshotRow {
   @@index([snapshotId, owner])
   @@index([snapshotId, txCount])
   @@index([snapshotId, metricSource])
+}
+
+model AgentTrustArtifact {
+  id              String             @id @default(cuid())
+  agentAddress    String
+  agentId         String
+  snapshotId      String
+  schemaVersion   String             @default("ghost-trust/v1")
+  evidenceClass   TrustEvidenceClass @default(UNPROVEN)
+  artifactHash    String
+  hashAlgorithm   String             @default("keccak256")
+  signatureScheme String             @default("eip191")
+  issuerAddress   String
+  issuedAt        DateTime           @default(now())
+  payload         Json
+  signature       String
+  isActive        Boolean            @default(true)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  agent    Agent               @relation(fields: [agentAddress], references: [address], onDelete: Cascade)
+  snapshot LeaderboardSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@unique([snapshotId, agentAddress, schemaVersion])
+  @@index([agentId, isActive, issuedAt])
+  @@index([snapshotId, isActive])
+  @@index([artifactHash])
 }
 
 model X402SettlementEvent {

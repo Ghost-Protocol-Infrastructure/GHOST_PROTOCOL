@@ -43,6 +43,16 @@ export const hasAttributedWireEvidence = ({
   hasPositiveAtomicMetric(wireSettledPrincipalValue) ||
   hasPositiveAtomicMetric(wireSettledProviderEarningsValue);
 
+export const hasAttributedExpressEvidence = ({
+  expressYieldValue,
+  usageAuthorizedCount7dValue,
+}: {
+  expressYieldValue?: number | null;
+  usageAuthorizedCount7dValue?: number | null;
+}): boolean =>
+  hasPositiveMetric(expressYieldValue) ||
+  hasPositiveCount(usageAuthorizedCount7dValue);
+
 export const hasAttributedX402Evidence = ({
   x402YieldValue,
   x402QualifiedCount,

@@ -12,6 +12,44 @@ Operationally:
 - GhostRank runtime is served from the active leaderboard snapshot
 - Score V2 is the single canonical scoring pipeline
 
+## Portable Trust
+
+Portable Trust is Ghost's signed export layer on top of GhostRank.
+
+It is:
+
+- a Ghost-issued JSON trust artifact
+- generated from the active GhostRank snapshot
+- exposed at `GET /api/agents/[id]/trust`
+- linked from the public `/agent/[id]` profile through `View Trust JSON`
+
+It is not:
+
+- a separate scoring engine
+- a merchant-authored badge
+- a KYA identity passport
+
+GhostRank remains the trust substrate. Portable Trust is the signed, portable packaging of that substrate for third-party consumers.
+
+## Portable Trust evidence classes
+
+Portable Trust labels each artifact with one of four evidence classes:
+
+- `MEASURED`
+  - Ghost observed meaningful commercial evidence on one or more supported rails
+- `MIXED`
+  - Ghost observed measured rail evidence, but the row also materially relies on fallback discovery signals
+- `FALLBACK_ONLY`
+  - Ghost did not observe measured rail evidence, and the row is primarily fallback-driven
+- `UNPROVEN`
+  - Ghost has little to no meaningful measured evidence for that row in the active snapshot
+
+This is the key honesty rule:
+
+- measured Ghost evidence is stronger than discovery proxies
+- fallback signals can still help discovery
+- fallback signals are not presented as full-strength proof of agent quality
+
 ## What GhostRank measures
 
 GhostRank combines:

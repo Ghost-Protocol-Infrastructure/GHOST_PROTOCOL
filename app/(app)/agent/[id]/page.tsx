@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { listAgentOfferings, type SerializedAgentOffering } from "@/lib/agent-offerings";
 import AgentProfileAutoRefresh from "@/components/AgentProfileAutoRefresh";
 import { findActiveSnapshotScoreByAgentId } from "@/lib/leaderboard-snapshot";
+import { loadPortableTrustProfileSummaryByAgentId } from "@/lib/trust-artifact-store";
 
 export const dynamic = "force-dynamic";
 
@@ -169,6 +170,7 @@ export default async function AgentProfilePage({ params }: AgentPageProps) {
 
   let gatewayConfig: AgentSummary["gatewayConfig"] = null;
   let activeOfferings: SerializedAgentOffering[] = [];
+  const portableTrustSummary = await loadPortableTrustProfileSummaryByAgentId(agentId);
   try {
     const row = await prisma.agentGatewayConfig.findUnique({
       where: { agentId },
@@ -226,6 +228,7 @@ export default async function AgentProfilePage({ params }: AgentPageProps) {
   const merchantSetupHref = `/dashboard?mode=merchant&agentId=${encodeURIComponent(agent.agentId)}&owner=${encodeURIComponent(ownerAddress)}`;
   const agentConsoleHref = `/dashboard?agentId=${encodeURIComponent(agent.agentId)}&owner=${encodeURIComponent(ownerAddress)}`;
   const erc8004ScanHref = buildErc8004ScanHref(agent.agentId);
+  const portableTrustIssuedAt = portableTrustSummary ? new Date(portableTrustSummary.issuedAt) : null;
   const getOfferingPricingPrimary = (offering: SerializedAgentOffering): string => {
     if (offering.canonicalPricing) return offering.canonicalPricing.primaryDisplay;
     if (offering.priceHint) return offering.priceHint;
@@ -379,6 +382,39 @@ export default async function AgentProfilePage({ params }: AgentPageProps) {
             <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Agent ID</p>
             <code className="block break-all text-lg text-neutral-200 font-mono">{agent.agentId}</code>
           </div>
+          {portableTrustSummary ? (
+            <div className="mt-3 border border-neutral-800 bg-neutral-900 p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="mb-2 text-xs uppercase tracking-[0.16em] text-neutral-500 font-bold">Portable Trust</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex border border-neutral-700 bg-neutral-950 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-neutral-300 font-bold">
+                      {portableTrustSummary.evidenceClass}
+                    </span>
+                    {portableTrustSummary.measuredRails.map((rail) => (
+                      <span
+                        key={rail}
+                        className="inline-flex border border-emerald-800/60 bg-emerald-950/20 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-emerald-300 font-bold"
+                      >
+                        {rail}
+                      </span>
+                    ))}
+                  </div>
+                  {portableTrustIssuedAt ? (
+                    <p className="mt-2 text-xs text-neutral-500">
+                      Issued {portableTrustIssuedAt.toLocaleString()} ({formatRelativeTimeFromDate(portableTrustIssuedAt)})
+                    </p>
+                  ) : null}
+                </div>
+                <Link
+                  href={portableTrustSummary.trustUrl}
+                  className="inline-flex items-center border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs uppercase tracking-[0.12em] text-neutral-300 transition hover:border-red-600 hover:text-red-500 font-bold"
+                >
+                  View Trust JSON
+                </Link>
+              </div>
+            </div>
+          ) : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {isGatewayLive ? (
               <Link

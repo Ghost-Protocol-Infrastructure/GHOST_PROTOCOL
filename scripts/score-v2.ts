@@ -40,6 +40,7 @@ import {
 } from "../lib/x402-score-rollup";
 import { resolveScoreV2RunMode } from "../lib/score-v2-run-mode";
 import { X402_SCORE_WINDOW_DAYS } from "../lib/x402-reporting";
+import { materializePortableTrustArtifactsForSnapshot } from "../lib/trust-artifact-store";
 
 type AgentIndexMode = "erc8004" | "olas";
 type ScoreTxSource = "agent" | "owner" | "creator";
@@ -1608,6 +1609,21 @@ const writeSnapshot = async (
   }
 };
 
+const issuePortableTrustArtifactsBestEffort = async (snapshotId: string): Promise<void> => {
+  try {
+    const result = await materializePortableTrustArtifactsForSnapshot({ snapshotId });
+    if (result.skipped) {
+      console.log(`portable trust skipped: snapshot=${snapshotId}, feature_flag=off.`);
+      return;
+    }
+    console.log(
+      `portable trust materialized: snapshot=${snapshotId}, processed=${result.processed}, upserted=${result.upserted}, deactivated=${result.deactivated}.`,
+    );
+  } catch (error) {
+    console.error(`portable trust issuance failed for snapshot ${snapshotId}:`, error);
+  }
+};
+
 const ingestScoreInputs = async (): Promise<{
   totalAgents: number;
   changedInputs: number;
@@ -1914,6 +1930,7 @@ const runSnapshotRanking = async (): Promise<{
       gateSybilSignals,
     );
   const snapshotId = await writeSnapshot(rows, maxTxCount, maxClaimedYield);
+  await issuePortableTrustArtifactsBestEffort(snapshotId);
 
   return {
     snapshotId,
