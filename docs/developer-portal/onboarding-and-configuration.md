@@ -15,7 +15,7 @@ Use those quickstarts to get one public merchant endpoint live first. Come back 
 
 If your gateway is already `LIVE` and you now need the operating checklist, use:
 
-- `docs/fulfillment-operator-runbook.md`
+- `docs/developer-portal/fulfillment-operator-runbook.md`
 - `docs/developer-portal/agent-integration-playbook.md`
 
 ## 1. Choose Integration Path
@@ -168,7 +168,7 @@ Once the agent is `LIVE`, the recurring operator checks are:
 Use the operator surfaces in this order:
 
 1. merchant dashboard for gateway state, delegated signers, revenue summary, and recent GhostWire jobs
-2. `docs/fulfillment-operator-runbook.md` for concrete incident/rotation steps
+2. `docs/developer-portal/fulfillment-operator-runbook.md` for concrete incident/rotation steps
 3. support/operator endpoints for metrics or stuck state investigation
 
 ## 2A. Agent Offerings

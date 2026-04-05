@@ -10,7 +10,7 @@ Building the Shadow Infrastructure for the Machine Economy.
 - Node Merchant Quickstart: [`docs/developer-portal/quickstart-node.md`](docs/developer-portal/quickstart-node.md)
 - Python Merchant Quickstart: [`docs/developer-portal/quickstart-python.md`](docs/developer-portal/quickstart-python.md)
 - Onboarding and Configuration: [`docs/developer-portal/onboarding-and-configuration.md`](docs/developer-portal/onboarding-and-configuration.md)
-- Fulfillment Operator Runbook: [`docs/fulfillment-operator-runbook.md`](docs/fulfillment-operator-runbook.md)
+- Fulfillment Operator Runbook: [`docs/developer-portal/fulfillment-operator-runbook.md`](docs/developer-portal/fulfillment-operator-runbook.md)
 
 ## What This Repo Contains
 
@@ -34,7 +34,7 @@ If you want to use Ghost Protocol, start here:
 4. Need rail choice, pricing policy, offerings, and settlement details:
    - [`docs/developer-portal/onboarding-and-configuration.md`](docs/developer-portal/onboarding-and-configuration.md)
 5. Already live and operating traffic:
-   - [`docs/fulfillment-operator-runbook.md`](docs/fulfillment-operator-runbook.md)
+   - [`docs/developer-portal/fulfillment-operator-runbook.md`](docs/developer-portal/fulfillment-operator-runbook.md)
 
 ## Local Development
 

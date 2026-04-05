@@ -267,7 +267,7 @@ const PLATFORM_HOW_TO_DOC_URL =
   "https://github.com/Ghost-Protocol-Infrastructure/GHOST_PROTOCOL/blob/main/docs/platform-how-to.md";
 const AGENT_PLAYBOOK_DOC_URL = `${GITHUB_DOCS_BASE_URL}/agent-integration-playbook.md`;
 const FULFILLMENT_RUNBOOK_DOC_URL =
-  "https://github.com/Ghost-Protocol-Infrastructure/GHOST_PROTOCOL/blob/main/docs/fulfillment-operator-runbook.md";
+  `${GITHUB_DOCS_BASE_URL}/fulfillment-operator-runbook.md`;
 const SDK_CONTEXT_KEY_PREVIEW_PLACEHOLDER = "sk_live_your_sdk_context_key";
 const SDK_SECURITY_NOTICE =
   "Security Notice: Ghost Gate access is authenticated with Web3 wallet signatures (EIP-712). Configure SDKs with a signer private key in a trusted backend/server/CLI environment only. Never expose private keys in frontend code or commit them to version control.";

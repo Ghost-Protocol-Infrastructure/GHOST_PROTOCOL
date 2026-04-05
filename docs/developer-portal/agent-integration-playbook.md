@@ -1,23 +1,23 @@
-# Agent Integration Playbook (Agent-First)
+# Fulfillment Integration Playbook
 
-This guide is optimized for teams building autonomous agents that must reliably transact through Ghost Protocol.
+This guide is optimized for teams building runtimes and integrations that must reliably transact through Ghost Protocol.
 
 Use this with:
 - `docs/developer-portal/onboarding-and-configuration.md`
-- `docs/fulfillment-operator-runbook.md`
+- `docs/developer-portal/fulfillment-operator-runbook.md`
 
-## 1. Agent Roles In Ghost Protocol
+## 1. Integration Roles In Ghost Protocol
 
-### Consumer agent
+### Consumer runtime
 
-Consumer agents request fulfillment tickets and execute merchant-bound requests.
+Consumer runtimes request fulfillment tickets and execute merchant-bound requests on behalf of a buyer.
 
 Primary path:
 1. `POST /api/fulfillment/ticket`
 2. Call merchant endpoint with fulfillment ticket headers
 3. Read capture outcome from merchant response payload
 
-### Merchant runtime agent
+### Merchant runtime
 
 Merchant runtimes verify ticket envelopes, execute task logic, and capture completion.
 
@@ -26,15 +26,15 @@ Primary path:
 2. Execute task handler
 3. Finalize with `POST /api/fulfillment/capture` via `captureCompletion(...)`
 
-### Support agent (ops)
+### Support operator tooling
 
-Support agents inspect timeline and aggregates for diagnosis:
+Support tooling inspects timeline and aggregates for diagnosis:
 - `GET /api/fulfillment/support/ticket`
 - `GET /api/fulfillment/support/metrics`
 
-## 2. Agent Capability Contract
+## 2. Integration Capability Contract
 
-Any agent integration should satisfy these capabilities:
+Any fulfillment integration should satisfy these capabilities:
 
 1. Store and use runtime secrets safely.
 2. Generate unique nonces for signed auth payloads.
@@ -53,7 +53,7 @@ Minimum identity/log fields:
 
 ## 3. Recommended Runtime Patterns
 
-## Consumer agent execution pattern
+## Consumer runtime execution pattern
 
 Use `GhostFulfillmentConsumer.execute(...)` for most flows.
 
@@ -72,7 +72,7 @@ const run = await consumer.execute({
   path: "/ask",
   query: { mode: "consumer" },
   cost: 1,
-  body: { prompt: "agent task request" },
+  body: { prompt: "merchant task request" },
 });
 
 if (!run.ticket.ok) {
@@ -117,7 +117,7 @@ const capture = await merchant.captureCompletion({
 
 Treat fulfillment errors by class:
 
-| HTTP / `errorCode` | Class | Agent action |
+| HTTP / `errorCode` | Class | Integration action |
 |---|---|---|
 | `429 RATE_LIMITED` | Retryable | Retry only after `Retry-After` with backoff. |
 | `500` route/internal errors | Retryable (bounded) | Retry with bounded attempts and jitter. Escalate if persistent. |
@@ -134,7 +134,7 @@ Recommended retry caps:
 - `429`: max `2` deferred retries
 - no automatic retries for `402/403/409 terminal/423`
 
-## 5. Idempotency Rules Agents Must Respect
+## 5. Idempotency Rules Integrations Must Respect
 
 1. Replaying capture with same `ticketId` and same `deliveryProofId` is expected to return:
    - `200` + `captureDisposition: IDEMPOTENT_REPLAY`
@@ -143,11 +143,11 @@ Recommended retry caps:
 3. Reusing ticket auth nonce in ticket issuance returns:
    - `409 REPLAY`
 
-Agent implementation implication:
+Integration implication:
 - Persist `deliveryProofId` until terminal capture outcome is confirmed.
 - Persist `clientRequestId` and ticket request nonce for correlation.
 
-## 6. Observability Contract For Agent Operators
+## 6. Observability Contract For Operators
 
 Every lifecycle should emit structured logs/events:
 
@@ -166,9 +166,9 @@ Attach these dimensions:
 - `captureDisposition`
 - `latencyMs`
 
-## 7. Agent-Ready Support Automation
+## 7. Support Automation
 
-Support agent examples:
+Support tooling examples:
 
 ```bash
 curl -sS -H "Authorization: Bearer $GHOST_FULFILLMENT_SUPPORT_SECRET" \
@@ -179,9 +179,9 @@ curl -sS -H "Authorization: Bearer $GHOST_FULFILLMENT_SUPPORT_SECRET" \
 ```
 
 Use ticket timeline for single-incident debugging.
-Use metrics for agent fleet health checks and alert routing.
+Use metrics for fleet health checks and alert routing.
 
-## 8. Agent Launch Checklist
+## 8. Integration Launch Checklist
 
 1. Gateway config saved and canary verified (`LIVE`).
 2. Delegated signer registered and active.
@@ -189,7 +189,7 @@ Use metrics for agent fleet health checks and alert routing.
 4. Protocol signer key configured in ticket runtime.
 5. Authoritative pricing exists for service slug.
 6. Retry policy implemented by status/errorCode class.
-7. Correlation IDs persisted in agent logs.
+7. Correlation IDs persisted in runtime logs.
 8. Support secrets configured for incident tooling.
 9. Gateway/API negative-path checks passing:
    - `npm run test:fulfillment:api:negatives`

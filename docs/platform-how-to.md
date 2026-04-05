@@ -14,7 +14,7 @@ Use the quickstart to get one public merchant endpoint live first. Come back to 
 
 If the agent is already live and you are now operating traffic, use:
 
-- [Fulfillment Operator Runbook](./fulfillment-operator-runbook.md)
+- [Fulfillment Operator Runbook](./developer-portal/fulfillment-operator-runbook.md)
 - [Agent Integration Playbook](./developer-portal/agent-integration-playbook.md)
 
 ## 1. Pick Your Path
