@@ -39,9 +39,15 @@ If the endpoint is already live and you are now operating traffic, jump to:
 
 Portable Trust lives on top of GhostRank:
 
+- Portable Trust is live in production
 - GhostRank remains the scoring substrate
 - Portable Trust is the signed export surface for `/api/agents/[id]/trust`
 - public `/agent/[id]` profiles link to `View Trust JSON` when an active artifact exists
+- evidence classes:
+  - `MEASURED`
+  - `MIXED`
+  - `FALLBACK_ONLY`
+  - `UNPROVEN`
 
 ## Operations and integrations
 
