@@ -1,6 +1,6 @@
 {
   "name": "@ghostgate/sdk",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Ghost Protocol Node.js SDK for GhostGate Express, open x402, telemetry, fulfillment, and direct GhostWire escrow.",
   "author": "Ghost Protocol",
   "license": "MIT",
