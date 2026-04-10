@@ -138,7 +138,7 @@ GhostGate(
     chain_id: int = 8453,
     base_url: str = "https://ghostprotocol.cc",
     service_slug: str = "connect",
-    credit_cost: int = 1,
+    credit_cost: int = 5,
     timeout_seconds: float = 10.0,
 )
 ```
@@ -152,6 +152,7 @@ Core methods:
 - `outcome(...)`
 - `start_heartbeat(...)`
 - `activate(...)`
+- For GhostGate Express, `credit_cost` has a canonical default and minimum of `5`.
 - `create_wire_quote(...)`
 - `prepare_wire_job(...)`
 - `record_wire_artifacts(...)`

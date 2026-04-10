@@ -1163,7 +1163,8 @@ class GhostGate:
 
     DEFAULT_BASE_URL = "https://ghostprotocol.cc"
     DEFAULT_SERVICE_SLUG = "connect"
-    DEFAULT_CREDIT_COST = 1
+    DEFAULT_CREDIT_COST = 5
+    MIN_EXPRESS_CREDIT_COST = 5
     DEFAULT_TIMEOUT_SECONDS = 10.0
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 60.0
     DEFAULT_X402_SCHEME = "exact"
@@ -1943,14 +1944,13 @@ class GhostGate:
         method: str = "GET",
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Decorator that verifies paid access via the GhostGate gateway."""
-        if cost <= 0:
-            raise ValueError("cost must be greater than 0")
+        resolved_cost = self._normalize_credit_cost(cost)
         resolved_service = self._normalize_optional_string(service) or self.service_slug
 
         def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
             @wraps(func)
             def wrapper(*args: Any, **kwargs: Any) -> Any:
-                if not self._verify_access(service=resolved_service, cost=cost, method=method):
+                if not self._verify_access(service=resolved_service, cost=resolved_cost, method=method):
                     return "Payment Required"
 
                 result = func(*args, **kwargs)
@@ -2216,7 +2216,9 @@ class GhostGate:
     @staticmethod
     def _normalize_credit_cost(value: int) -> int:
         if not isinstance(value, int) or value <= 0:
-            raise ValueError("credit_cost must be an integer greater than 0.")
+            raise ValueError("credit_cost must be a positive integer.")
+        if value < GhostGate.MIN_EXPRESS_CREDIT_COST:
+            raise ValueError(f"credit_cost must be at least {GhostGate.MIN_EXPRESS_CREDIT_COST} for GhostGate Express.")
         return value
 
     @staticmethod

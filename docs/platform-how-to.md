@@ -55,8 +55,8 @@ Routing behavior:
 
 Notes:
 - Credits are consumed by gate-protected requests.
-- The platform fallback default is `1 request = 1 credit` when no service pricing is configured.
-- That fallback is not the recommended `Express` launch price. Use `5+` credits for premium managed access and route cheap calls to `x402`.
+- The platform fallback default for GhostGate Express is `5` credits when no higher service pricing is configured.
+- GhostGate Express also enforces `5` credits as the canonical minimum. Route cheaper calls to `x402`.
 - Ghost Credits are prepaid and non-refundable once purchased and synced.
 - Credits are wallet-level across agents.
 - Merchant payout follows successful spend, not the deposit page where the consumer topped up.

@@ -1214,7 +1214,7 @@ const sdk = new GhostAgent({
   privateKey,
   chainId: ${PREFERRED_CHAIN_ID}, // ${PREFERRED_CHAIN_NAME}
   serviceSlug: "${consumerServiceSlug}",
-  creditCost: 1,
+  creditCost: 5,
 });
 
 const result = await sdk.connect();
@@ -1233,7 +1233,7 @@ sdk = GhostGate(
     base_url=os.getenv("GHOST_GATE_BASE_URL", "${APP_BASE_URL}"),
     chain_id=${PREFERRED_CHAIN_ID},  # ${PREFERRED_CHAIN_NAME}
     service_slug="${consumerServiceSlug}",
-    credit_cost=1,
+    credit_cost=5,
 )
 
 result = sdk.connect()
@@ -2055,7 +2055,7 @@ gate = GhostGate(
     chain_id=${PREFERRED_CHAIN_ID},  # ${PREFERRED_CHAIN_NAME}
     base_url=os.getenv("GHOST_GATE_BASE_URL", "${APP_BASE_URL}"),
     service_slug="${merchantServiceSlug}",
-    credit_cost=1,
+    credit_cost=5,
 )
 
 # Agent ID: ${selectedOwnedAgent?.agentId ?? "YOUR_AGENT_ID"}
@@ -2067,7 +2067,7 @@ heartbeat = gate.start_heartbeat(
 )
 
 @app.route('/ask', methods=['POST'])
-@gate.guard(cost=1, service="${merchantServiceSlug}", method="POST")
+@gate.guard(cost=5, service="${merchantServiceSlug}", method="POST")
 def my_agent():
     return jsonify({"ok": True})`,
     [selectedOwnedAgent, merchantServiceSlug],
@@ -3413,7 +3413,7 @@ def my_agent():
                       {APP_BASE_URL}/api/gate/{consumerServiceSlug}
                     </span>
                     <span className="text-neutral-300 font-mono">
-                      Example shown: 1 request = 1 credit.
+                      Example shown: Express uses a 5-credit minimum.
                     </span>
                   </p>
                 </div>

@@ -277,7 +277,7 @@ Sync metadata notes:
 - `Express`
   - `2.5%` Ghost protocol fee
   - premium managed paid-access rail
-  - recommended default: `5+` credits per request
+  - canonical default and minimum: `5` credits per request
   - cheap commodity calls should prefer `x402` instead of `Express`
 - `GhostWire`
   - `2.5%` Ghost protocol fee on successful completion only
@@ -335,7 +335,10 @@ In order:
 1. request header override (if `GHOST_GATE_ALLOW_CLIENT_COST_OVERRIDE=true`)
 2. DB service pricing (`ServicePricing`) when `GHOST_GATE_DB_SERVICE_PRICING_ENABLED=true`
 3. env JSON map (`GHOST_GATE_SERVICE_PRICING_JSON`)
-4. default (`GHOST_REQUEST_CREDIT_COST`, fallback `1`)
+4. default (`GHOST_REQUEST_CREDIT_COST`, fallback `5`)
+
+GhostGate Express applies a canonical minimum of `5` credits across DB/env/default pricing inputs and request-scoped override inputs.
+Remaining tracked `1`-credit values are intentionally limited to low-level fulfillment regression fixtures and negative-path tests that verify underpriced requests are rejected; they are not supported Express pricing defaults or merchant-facing examples.
 
 Gate request IDs are server-derived from `service:signer:nonce`; client `x-ghost-request-id` overrides are not used.
 
@@ -554,7 +557,7 @@ Selection behavior:
   - `chain_id: int = 8453`
   - `base_url: str = "https://ghostprotocol.cc"`
   - `service_slug: str = "connect"`
-  - `credit_cost: int = 1`
+  - `credit_cost: int = 5`
   - `timeout_seconds: float = 10.0`
 - Canonical access methods:
   - `connect(...)`
@@ -740,7 +743,7 @@ File: `.github/workflows/settlement-operator.yml`
 ## 10. Current Constraints and Intentional Gaps
 1. MegaETH is present in UI as WIP, not fully operational data path.
 2. Pulse/outcome telemetry ingestion into scoring is not yet a production scoring signal.
-3. Service pricing defaults to 1 credit unless DB/env pricing is explicitly enabled.
+3. GhostGate Express pricing defaults to 5 credits and enforces a 5-credit minimum unless a higher DB/env price is configured.
 4. Receipt signing is optional and only active when `GHOST_GATE_RECEIPT_SIGNING_SECRET` is configured.
 5. Merchant fulfillment is not auto-enabled for all agents; each agent still requires gateway config, successful canary verification (`LIVE`), delegated signer registration, and runtime secret binding.
 6. Open `x402` is live as its own rail, but GhostRank visibility depends on merchant-side settlement reporting. Unreported off-platform `x402` traffic is intentionally invisible to scoring.

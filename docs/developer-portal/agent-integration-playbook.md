@@ -71,7 +71,7 @@ const run = await consumer.execute({
   method: "POST",
   path: "/ask",
   query: { mode: "consumer" },
-  cost: 1,
+  cost: 5,
   body: { prompt: "merchant task request" },
 });
 

@@ -115,7 +115,7 @@ Operationally this means high-activity merchants should see little or no change 
 Fulfillment introduces a bounded hold/capture lifecycle for direct merchant calls:
 
 1. Consumer requests ticket (`/api/fulfillment/ticket`)
-   - Checks `LIVE` readiness and authoritative pricing.
+   - Checks `LIVE` readiness and resolves authoritative pricing (DB/env/default with the Express floor).
    - Reserves credits: `available -= cost`, `held += cost`.
    - Creates `FulfillmentHold(state=HELD)` and returns signed ticket.
 2. Merchant verifies ticket bindings and executes request.

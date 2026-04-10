@@ -306,7 +306,7 @@ const createGateAttempt =
             timestamp: payload.timestamp.toString(),
             nonce: payload.nonce,
           }),
-          "x-ghost-credit-cost": "1",
+          "x-ghost-credit-cost": "5",
           ...(shouldSendBody ? { "content-type": "application/json" } : {}),
         },
         ...(shouldSendBody ? { body: JSON.stringify(input.body) } : {}),
@@ -348,7 +348,7 @@ const createE2eAttempt =
         method: input.method,
         path: input.path,
         body: input.body,
-        cost: 1,
+        cost: 5,
         clientRequestId: `bench-e2e-${randomUUID()}`,
       });
 

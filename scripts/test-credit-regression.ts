@@ -11,9 +11,11 @@ process.env.GHOST_CREDIT_LEDGER_ENABLED = "true";
 process.env.GHOST_GATE_NONCE_STORE_ENABLED = "true";
 process.env.GHOST_GATE_ENFORCE_NONCE_UNIQUENESS = "true";
 process.env.GHOST_GATE_ALLOW_CLIENT_COST_OVERRIDE = "false";
-process.env.GHOST_REQUEST_CREDIT_COST = "1";
+process.env.GHOST_REQUEST_CREDIT_COST = "5";
 process.env.GHOST_GATE_ENFORCE_LIVE_GATEWAY_READINESS = "true";
 process.env.GHOST_SETTLEMENT_ROLLUP_MIN_FEE_WEI = "1";
+const EXPRESS_COST = 5n;
+const EXPRESS_COST_NUMBER = Number(EXPRESS_COST);
 const DOMAIN = {
   name: "GhostGate",
   version: "1",
@@ -107,7 +109,7 @@ const run = async (): Promise<void> => {
       const signerKey = signer.toLowerCase();
       cleanupWallets.add(signerKey);
 
-      await updateUserCredits(signer, 3n);
+      await updateUserCredits(signer, EXPRESS_COST + 2n);
 
       const agentId = `${Date.now()}01`;
       const service = `agent-${agentId}`;
@@ -153,7 +155,7 @@ const run = async (): Promise<void> => {
       const gateDebitCount = await prisma.creditLedger.count({
         where: { walletAddress: signerKey, reason: "gate_debit" },
       });
-      const expectedAmounts = calculateSettlementAmounts({ grossCredits: 1n });
+      const expectedAmounts = calculateSettlementAmounts({ grossCredits: EXPRESS_COST });
       const earnings = await prisma.merchantEarning.findMany({
         where: { walletAddress: signerKey, serviceSlug: service, sourceType: "GATE_DEBIT" },
         orderBy: { createdAt: "asc" },
@@ -184,7 +186,10 @@ const run = async (): Promise<void> => {
         earnings[0]?.sourceId === `${signerKey}:${recordedRequestId}`,
         `Expected gate sourceId ${signerKey}:${recordedRequestId}, got ${earnings[0]?.sourceId ?? "missing"}`,
       );
-      assert(earnings[0]?.grossCredits === 1, `Expected grossCredits 1, got ${String(earnings[0]?.grossCredits)}`);
+      assert(
+        earnings[0]?.grossCredits === EXPRESS_COST_NUMBER,
+        `Expected grossCredits ${EXPRESS_COST_NUMBER}, got ${String(earnings[0]?.grossCredits)}`,
+      );
       assert(
         earnings[0]?.grossWei === expectedAmounts.grossWei,
         `Expected grossWei ${expectedAmounts.grossWei}, got ${String(earnings[0]?.grossWei)}`,
@@ -205,7 +210,7 @@ const run = async (): Promise<void> => {
       const signerKey = signer.toLowerCase();
       cleanupWallets.add(signerKey);
 
-      await updateUserCredits(signer, 3n);
+      await updateUserCredits(signer, EXPRESS_COST + 2n);
 
       const agentId = `${Date.now()}02`;
       const service = `agent-${agentId}`;
@@ -246,12 +251,15 @@ const run = async (): Promise<void> => {
       });
 
       assert(res.status === 200, `Expected cost test status 200, got ${res.status}`);
-      assert(res.body?.cost === "1", `Expected cost '1', got ${String(res.body?.cost)}`);
+      assert(res.body?.cost === EXPRESS_COST.toString(), `Expected cost '${EXPRESS_COST}', got ${String(res.body?.cost)}`);
       assert(
         res.body?.costSource === "default",
         `Expected costSource 'default', got ${String(res.body?.costSource)}`,
       );
-      assert(latestDebit?.amount === 1, `Expected ledger debit amount 1, got ${String(latestDebit?.amount)}`);
+      assert(
+        latestDebit?.amount === EXPRESS_COST_NUMBER,
+        `Expected ledger debit amount ${EXPRESS_COST_NUMBER}, got ${String(latestDebit?.amount)}`,
+      );
       assert(latestDebit?.direction === "DEBIT", `Expected debit direction DEBIT, got ${String(latestDebit?.direction)}`);
       assert(earnings === 1, `Expected one merchant earning for cost flow, got ${earnings}`);
     }
@@ -307,7 +315,7 @@ const run = async (): Promise<void> => {
       const signerKey = signer.toLowerCase();
       cleanupWallets.add(signerKey);
 
-      await updateUserCredits(signer, 2n);
+      await updateUserCredits(signer, EXPRESS_COST * 3n);
 
       const agentId = `${Date.now()}04`;
       const service = `agent-${agentId}`;
@@ -317,7 +325,7 @@ const run = async (): Promise<void> => {
 
       const requestId = `reg-rollback-${Date.now()}`;
       const settlementId = buildGateSettlementId({ walletAddress: signer, requestId });
-      const amounts = calculateSettlementAmounts({ grossCredits: 1n });
+      const amounts = calculateSettlementAmounts({ grossCredits: EXPRESS_COST });
       await prisma.merchantEarning.create({
         data: {
           settlementId,
@@ -327,7 +335,7 @@ const run = async (): Promise<void> => {
           serviceSlug: service,
           sourceType: "GATE_DEBIT",
           sourceId: `${signerKey}:${requestId}`,
-          grossCredits: 1,
+          grossCredits: EXPRESS_COST_NUMBER,
           grossWei: amounts.grossWei,
           feeWei: amounts.feeWei,
           netWei: amounts.netWei,
@@ -398,7 +406,7 @@ const run = async (): Promise<void> => {
           signature,
           payloadJson,
           requestId: `rollup-request-${index}-${Date.now()}`,
-          requestScopedCost: "1",
+          requestScopedCost: EXPRESS_COST.toString(),
         });
         assert(response.status === 200, `Expected rollup setup gate call ${index} to return 200, got ${response.status}`);
       }
@@ -428,9 +436,19 @@ const run = async (): Promise<void> => {
       assert(rollups.length === 1, `Expected one persisted rollup, got ${rollups.length}`);
       assert(rollups[0]?.status === "PENDING", `Expected rollup to remain PENDING, got ${rollups[0]?.status ?? "missing"}`);
       assert(rollups[0]?.earningCount === 3, `Expected rollup earningCount 3, got ${String(rollups[0]?.earningCount)}`);
-      assert(rollups[0]?.grossWei === 30_000_000_000_000n, `Expected rollup grossWei 30000000000000, got ${String(rollups[0]?.grossWei)}`);
-      assert(rollups[0]?.feeWei === 750_000_000_000n, `Expected rollup feeWei 750000000000, got ${String(rollups[0]?.feeWei)}`);
-      assert(rollups[0]?.netWei === 29_250_000_000_000n, `Expected rollup netWei 29250000000000, got ${String(rollups[0]?.netWei)}`);
+      const singleSettlementAmounts = calculateSettlementAmounts({ grossCredits: EXPRESS_COST });
+      assert(
+        rollups[0]?.grossWei === singleSettlementAmounts.grossWei * 3n,
+        `Expected rollup grossWei ${String(singleSettlementAmounts.grossWei * 3n)}, got ${String(rollups[0]?.grossWei)}`,
+      );
+      assert(
+        rollups[0]?.feeWei === singleSettlementAmounts.feeWei * 3n,
+        `Expected rollup feeWei ${String(singleSettlementAmounts.feeWei * 3n)}, got ${String(rollups[0]?.feeWei)}`,
+      );
+      assert(
+        rollups[0]?.netWei === singleSettlementAmounts.netWei * 3n,
+        `Expected rollup netWei ${String(singleSettlementAmounts.netWei * 3n)}, got ${String(rollups[0]?.netWei)}`,
+      );
       assert(attachedEarnings.length === 3, `Expected three earnings attached to the rollup, got ${attachedEarnings.length}`);
       assert(
         new Set(attachedEarnings.map((row) => row.settlementRollupId)).size === 1,
@@ -447,9 +465,9 @@ const run = async (): Promise<void> => {
       const serviceSlug = `agent-${agentId}`;
       cleanupAgentIds.add(agentId);
       await createLiveGatewayConfig(prisma, { agentId, serviceSlug, ownerAddress: merchantOwnerAddress });
-      await updateUserCredits(walletAddress as `0x${string}`, 1n);
+      await updateUserCredits(walletAddress as `0x${string}`, EXPRESS_COST);
 
-      const amounts = calculateSettlementAmounts({ grossCredits: 1n });
+      const amounts = calculateSettlementAmounts({ grossCredits: EXPRESS_COST });
       const earningIds: string[] = [];
       for (let index = 0; index < 2; index += 1) {
         const requestId = `requeue-request-${index}-${Date.now()}`;
@@ -463,7 +481,7 @@ const run = async (): Promise<void> => {
             serviceSlug,
             sourceType: "GATE_DEBIT",
             sourceId: `${walletAddress}:${requestId}`,
-            grossCredits: 1,
+          grossCredits: EXPRESS_COST_NUMBER,
             grossWei: amounts.grossWei,
             feeWei: amounts.feeWei,
             netWei: amounts.netWei,

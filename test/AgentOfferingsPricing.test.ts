@@ -31,7 +31,7 @@ describe("resolveCanonicalOfferingPrice", () => {
     assert.match(price.primaryDisplay, /7 credits/i);
   });
 
-  it("falls back to the default request cost when no explicit service pricing exists", async () => {
+  it("floors the default request cost to the Express minimum when no explicit service pricing exists", async () => {
     process.env.GHOST_GATE_DB_SERVICE_PRICING_ENABLED = "false";
     process.env.GHOST_GATE_SERVICE_PRICING_JSON = JSON.stringify({});
     process.env.GHOST_REQUEST_CREDIT_COST = "3";
@@ -43,8 +43,26 @@ describe("resolveCanonicalOfferingPrice", () => {
     });
 
     assert.ok(price);
-    assert.equal(price.credits, "3");
-    assert.match(price.primaryDisplay, /3 credits/i);
+    assert.equal(price.credits, "5");
+    assert.match(price.primaryDisplay, /5 credits/i);
+  });
+
+  it("floors env service pricing below the Express minimum", async () => {
+    process.env.GHOST_GATE_DB_SERVICE_PRICING_ENABLED = "false";
+    process.env.GHOST_GATE_SERVICE_PRICING_JSON = JSON.stringify({
+      "agent-18755": 4,
+    });
+    process.env.GHOST_REQUEST_CREDIT_COST = "5";
+
+    const price = await resolveCanonicalOfferingPrice({
+      rail: "EXPRESS",
+      targetKind: "SERVICE_SLUG",
+      targetRef: "agent-18755",
+    });
+
+    assert.ok(price);
+    assert.equal(price.credits, "5");
+    assert.match(price.primaryDisplay, /5 credits/i);
   });
 
   it("does not expose Ghost credit pricing for x402 offerings", async () => {

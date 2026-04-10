@@ -857,7 +857,8 @@ export type WireCompletionWaitOptions = {
 const DEFAULT_BASE_URL = "https://ghostprotocol.cc";
 const DEFAULT_CHAIN_ID = 8453;
 const DEFAULT_SERVICE_SLUG = "connect";
-const DEFAULT_CREDIT_COST = 1;
+const DEFAULT_CREDIT_COST = 5;
+const MIN_EXPRESS_CREDIT_COST = 5;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 60_000;
 const DEFAULT_X402_SCHEME = "exact";
 const DEFAULT_X402_ASSET = "USDC";
@@ -2186,7 +2187,11 @@ const normalizeGhostHttpCreditCost = (value: number | null | undefined): number 
   if (!Number.isFinite(value) || value <= 0) {
     throw new Error("ghost.config express.creditCost must be a positive integer when provided.");
   }
-  return Math.trunc(value);
+  const normalized = Math.trunc(value);
+  if (normalized < MIN_EXPRESS_CREDIT_COST) {
+    throw new Error(`ghost.config express.creditCost must be at least ${MIN_EXPRESS_CREDIT_COST} credits.`);
+  }
+  return normalized;
 };
 
 const resolveGhostHttpMonetizationSelection = (
@@ -3443,7 +3448,7 @@ export class GhostAgent {
     this.telemetryServiceSlug = normalizedServiceSlug;
     this.serviceSlug = normalizedServiceSlug ?? DEFAULT_SERVICE_SLUG;
     this.creditCost = Number.isFinite(config.creditCost) && (config.creditCost ?? 0) > 0
-      ? Math.trunc(config.creditCost as number)
+      ? Math.max(MIN_EXPRESS_CREDIT_COST, Math.trunc(config.creditCost as number))
       : DEFAULT_CREDIT_COST;
   }
 

@@ -42,8 +42,8 @@ Use the rails intentionally:
 2. `Express`
    - `2.5%` Ghost protocol fee
    - best for premium managed paid access through GhostGate
-   - recommended default: `5+` credits per request
-   - do not use Express for cheap `1`-credit commodity calls; route those to `x402`
+   - canonical default and minimum: `5` credits per request
+   - do not use Express for commodity calls below `5` credits; route those to `x402`
 3. `GhostWire`
    - `2.5%` Ghost protocol fee on successful completion only
    - best for higher-value asynchronous work where escrow matters more than latency
@@ -106,6 +106,7 @@ MVP recommendation:
 Enforcement note:
 
 - `express.creditCost` is part of the fulfillment binding, not just display metadata
+- Ghost enforces a minimum `Express` price of `5` credits even when service pricing falls back to env/default values
 - a managed request only passes when the fulfillment ticket cost matches the configured route cost
 
 ## 1D. MCP proxy
@@ -148,7 +149,8 @@ Complete these steps in order for each merchant agent.
 4. Bind delegated signer private key in merchant runtime
    - Set `GHOST_FULFILLMENT_MERCHANT_DELEGATED_PRIVATE_KEY`.
 5. Configure authoritative pricing
-   - Ensure `ServicePricing` exists and is active for `serviceSlug`.
+   - GhostGate Express falls back to a canonical `5`-credit default/minimum when no higher service pricing is configured.
+   - Configure `ServicePricing` (or the env pricing map) only when you need an Express price above that floor.
 6. Configure protocol signer in gateway runtime
    - Set `GHOST_FULFILLMENT_PROTOCOL_SIGNER_PRIVATE_KEY`.
 7. Configure operator secrets
@@ -256,7 +258,7 @@ V1 behavior notes:
 Merchant pricing note:
 
 - Treat `Express` as the premium managed lane, not the cheap lane.
-- Recommended launch default for Express is at least `5` credits per request.
+- GhostGate Express now uses `5` credits as the canonical default and minimum.
 - If the service is meant to be ultra-cheap or bursty, prefer `x402` instead of forcing it through Express.
 
 x402 reporting note:

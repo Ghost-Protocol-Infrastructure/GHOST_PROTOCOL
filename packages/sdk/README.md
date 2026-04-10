@@ -296,6 +296,8 @@ export const POST = kit.withNextNode(
 
 For `Express` routes in `ghost.config`, `express.creditCost` is not cosmetic metadata. It is enforced as part of fulfillment ticket verification alongside `serviceSlug`, `method`, `path`, `query`, and `body`.
 
+GhostGate Express uses a `5`-credit default floor. `express.creditCost` must be at least `5`, and lower env/default pricing inputs are raised to that minimum before Ghost publishes canonical pricing.
+
 ## MCP payment-aware proxy
 
 `createGhostMcpProxy()` is the stateless MCP-over-HTTP/SSE layer built on top of the HTTP monetization kit.

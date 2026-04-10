@@ -1,7 +1,8 @@
 import { formatEther } from "viem";
 import { GHOST_CREDIT_PRICE_WEI } from "@/lib/constants";
-import { getServiceCreditCost, prisma } from "@/lib/db";
+import { prisma } from "@/lib/db";
 import { verifyMerchantGatewaySignedWrite } from "@/lib/agent-gateway-auth-server";
+import { resolveGhostExpressServiceCost } from "@/lib/ghost-express-pricing";
 import {
   AGENT_OFFERING_RAILS,
   AGENT_OFFERING_TARGET_KINDS,
@@ -92,68 +93,6 @@ const formatEstimatedEthLabel = (credits: bigint): string => {
   return `${formatEther(estimatedWei)} ETH`;
 };
 
-const getDefaultRequestCreditCost = (): bigint => {
-  const raw = process.env.GHOST_REQUEST_CREDIT_COST?.trim();
-  if (raw && /^\d+$/.test(raw)) {
-    const parsed = BigInt(raw);
-    if (parsed > 0n) return parsed;
-  }
-  return 1n;
-};
-
-const isDbServicePricingEnabled = (): boolean =>
-  process.env.GHOST_GATE_DB_SERVICE_PRICING_ENABLED?.trim() === "true";
-
-const getEnvServicePricing = (): Map<string, bigint> => {
-  const raw = process.env.GHOST_GATE_SERVICE_PRICING_JSON?.trim();
-  const pricing = new Map<string, bigint>();
-  if (!raw) return pricing;
-
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    for (const [service, value] of Object.entries(parsed)) {
-      if (typeof service !== "string") continue;
-      const slug = service.trim();
-      if (!slug) continue;
-
-      if (typeof value === "number" && Number.isInteger(value) && value > 0) {
-        pricing.set(slug, BigInt(value));
-        continue;
-      }
-
-      if (typeof value === "string" && /^\d+$/.test(value) && value !== "0") {
-        pricing.set(slug, BigInt(value));
-      }
-    }
-  } catch {
-    // Ignore malformed config and fall back to default pricing.
-  }
-
-  return pricing;
-};
-
-const resolveServiceCreditCost = async (
-  service: string,
-): Promise<{ cost: bigint; source: "db" | "env" | "default" }> => {
-  if (isDbServicePricingEnabled()) {
-    try {
-      const dbServiceCost = await getServiceCreditCost(service);
-      if (dbServiceCost != null) {
-        return { cost: dbServiceCost, source: "db" };
-      }
-    } catch {
-      // Continue through env/default when DB pricing lookup fails.
-    }
-  }
-
-  const envServiceCost = getEnvServicePricing().get(service);
-  if (envServiceCost != null) {
-    return { cost: envServiceCost, source: "env" };
-  }
-
-  return { cost: getDefaultRequestCreditCost(), source: "default" };
-};
-
 export const resolveCanonicalOfferingPrice = async (input: {
   rail: AgentOfferingRailValue;
   targetKind: AgentOfferingTargetKindValue;
@@ -163,7 +102,7 @@ export const resolveCanonicalOfferingPrice = async (input: {
     return null;
   }
 
-  const { cost: creditCost } = await resolveServiceCreditCost(input.targetRef);
+  const { cost: creditCost } = await resolveGhostExpressServiceCost(input.targetRef);
 
   const estimatedEthWei = creditCost * GHOST_CREDIT_PRICE_WEI;
   const creditsLabel = formatCreditLabel(creditCost);

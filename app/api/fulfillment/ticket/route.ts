@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { privateKeyToAccount } from "viem/accounts";
 import { recoverTypedDataAddress, verifyTypedData, type Address } from "viem";
-import { createFulfillmentHold, getServiceCreditCost, prisma } from "@/lib/db";
+import { createFulfillmentHold, prisma } from "@/lib/db";
 import {
   buildFulfillmentTicketEnvelope,
   buildFulfillmentTicketRequestAuthTypedData,
@@ -22,6 +22,7 @@ import {
 } from "@/lib/fulfillment-types";
 import { consumeFulfillmentRateLimit } from "@/lib/fulfillment-rate-limit";
 import { extractFulfillmentErrorCode, observeFulfillmentResponseEvent } from "@/lib/fulfillment-observability";
+import { resolveGhostExpressServiceCost } from "@/lib/ghost-express-pricing";
 
 export const runtime = "nodejs";
 
@@ -398,17 +399,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const authoritativeCost = await getServiceCreditCost(parsed.serviceSlug);
-  if (authoritativeCost == null) {
-    return ticketResponse(
-      {
-        code: 409,
-        error: "Authoritative service pricing is not configured.",
-        errorCode: "SERVICE_PRICING_UNAVAILABLE",
-      },
-      409,
-    );
-  }
+  const { cost: authoritativeCost } = await resolveGhostExpressServiceCost(parsed.serviceSlug);
 
   if (authoritativeCost !== requestedCost) {
     return ticketResponse(

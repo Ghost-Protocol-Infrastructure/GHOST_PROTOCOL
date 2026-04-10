@@ -418,6 +418,31 @@ describe("Task 8 HTTP monetization kit", () => {
     assert.equal(kit.resolveRoute({ routeId: "dual", rail: "express" }).rail, "express");
   });
 
+  it("rejects express route pricing below the five-credit minimum", () => {
+    assert.throws(
+      () =>
+        defineGhostConfig({
+          version: 1,
+          service: {
+            agentId: "123",
+            serviceSlug: "agent-123",
+            endpointUrl: "https://merchant.test",
+          },
+          routes: {
+            managed: {
+              method: "POST",
+              path: "/managed",
+              rail: "express",
+              express: {
+                creditCost: 4,
+              },
+            },
+          },
+        }),
+      /at least 5 credits/i,
+    );
+  });
+
   it("wraps a Hono binding through the monetization kit", async () => {
     setupMerchantFetchMock();
     const merchant = createMerchant();

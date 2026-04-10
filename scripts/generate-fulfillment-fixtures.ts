@@ -131,7 +131,7 @@ const main = async (): Promise<void> => {
     path: "/ask",
     queryHash,
     bodyHash,
-    cost: "1",
+    cost: "5",
     issuedAt: "1730000000",
     expiresAt: "1730000060",
   });
@@ -154,7 +154,7 @@ const main = async (): Promise<void> => {
     path: "/ask",
     queryHash: ticketMessage.queryHash,
     bodyHash: ticketMessage.bodyHash,
-    cost: 1,
+    cost: 5,
     issuedAt: "1730000000",
     nonce: "ticket-req-nonce-001",
   });

@@ -1,51 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GHOST_CREDIT_PRICE_WEI, GHOST_PREFERRED_CHAIN_ID } from "@/lib/constants";
-import { getServiceCreditCost } from "@/lib/db";
+import {
+  getGhostExpressDefaultRequestCost,
+  isGhostExpressClientCostOverrideEnabled,
+  isGhostExpressDbServicePricingEnabled,
+  getGhostExpressEnvServicePricing,
+  resolveGhostExpressServiceCost,
+} from "@/lib/ghost-express-pricing";
 import { buildX402Metadata } from "@/lib/x402-interop";
 
 export const runtime = "nodejs";
 
 type CostSource = "db" | "env" | "default";
-
-const DEFAULT_REQUEST_COST = (() => {
-  const raw = process.env.GHOST_REQUEST_CREDIT_COST?.trim();
-  if (raw && /^\d+$/.test(raw)) {
-    const parsed = BigInt(raw);
-    if (parsed > 0n) return parsed;
-  }
-  return 1n;
-})();
-
-const ALLOW_CLIENT_COST_OVERRIDE = process.env.GHOST_GATE_ALLOW_CLIENT_COST_OVERRIDE?.trim() === "true";
-const ENABLE_DB_SERVICE_PRICING = process.env.GHOST_GATE_DB_SERVICE_PRICING_ENABLED?.trim() === "true";
-
-const ENV_SERVICE_PRICING = (() => {
-  const raw = process.env.GHOST_GATE_SERVICE_PRICING_JSON?.trim();
-  const pricing = new Map<string, bigint>();
-  if (!raw) return pricing;
-
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    for (const [service, value] of Object.entries(parsed)) {
-      if (typeof service !== "string") continue;
-      const slug = service.trim();
-      if (!slug) continue;
-
-      if (typeof value === "number" && Number.isInteger(value) && value > 0) {
-        pricing.set(slug, BigInt(value));
-        continue;
-      }
-
-      if (typeof value === "string" && /^\d+$/.test(value) && value !== "0") {
-        pricing.set(slug, BigInt(value));
-      }
-    }
-  } catch {
-    // Ignore malformed pricing JSON and fall back to defaults.
-  }
-
-  return pricing;
-})();
 
 const json = (body: unknown, status = 200): NextResponse =>
   NextResponse.json(body, {
@@ -62,26 +28,6 @@ const parseServiceSlug = (request: NextRequest): string | null => {
   return trimmed.length > 0 ? trimmed : "";
 };
 
-const resolveServiceCost = async (service: string): Promise<{ cost: bigint; source: CostSource }> => {
-  if (ENABLE_DB_SERVICE_PRICING) {
-    try {
-      const dbServiceCost = await getServiceCreditCost(service);
-      if (dbServiceCost != null) {
-        return { cost: dbServiceCost, source: "db" };
-      }
-    } catch {
-      // Continue through env/default when DB pricing lookup fails.
-    }
-  }
-
-  const envServiceCost = ENV_SERVICE_PRICING.get(service);
-  if (envServiceCost != null) {
-    return { cost: envServiceCost, source: "env" };
-  }
-
-  return { cost: DEFAULT_REQUEST_COST, source: "default" };
-};
-
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const service = parseServiceSlug(request);
   if (service === "") {
@@ -95,9 +41,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
 
   const servicePricing = service
-    ? await resolveServiceCost(service)
+    ? ((await resolveGhostExpressServiceCost(service)) as { cost: bigint; source: CostSource })
     : {
-        cost: DEFAULT_REQUEST_COST,
+        cost: getGhostExpressDefaultRequestCost(),
         source: "default" as CostSource,
       };
 
@@ -109,10 +55,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     preferredChainId: GHOST_PREFERRED_CHAIN_ID,
     x402: buildX402Metadata(),
     gate: {
-      defaultRequestCreditCost: DEFAULT_REQUEST_COST.toString(),
-      allowClientCostOverride: ALLOW_CLIENT_COST_OVERRIDE,
-      dbServicePricingEnabled: ENABLE_DB_SERVICE_PRICING,
-      envServicePricingCount: ENV_SERVICE_PRICING.size,
+      defaultRequestCreditCost: getGhostExpressDefaultRequestCost().toString(),
+      allowClientCostOverride: isGhostExpressClientCostOverrideEnabled(),
+      dbServicePricingEnabled: isGhostExpressDbServicePricingEnabled(),
+      envServicePricingCount: getGhostExpressEnvServicePricing().size,
     },
     service: service
       ? {

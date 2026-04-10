@@ -7,13 +7,17 @@ import {
 } from "viem";
 import {
   consumeUserCreditsForGate,
-  getServiceCreditCost,
   getUserCredits,
   logGateAccessEvent,
   prisma,
 } from "@/lib/db";
 import { GHOST_PREFERRED_CHAIN_ID } from "@/lib/constants";
 import { consumeFulfillmentRateLimit } from "@/lib/fulfillment-rate-limit";
+import {
+  isGhostExpressClientCostOverrideEnabled,
+  resolveGhostExpressHeaderOverrideCost,
+  resolveGhostExpressServiceCost,
+} from "@/lib/ghost-express-pricing";
 
 export const runtime = "nodejs";
 
@@ -49,49 +53,12 @@ interface RouteContext {
   params: { slug?: string[] } | Promise<{ slug?: string[] }>;
 }
 
-const DEFAULT_REQUEST_COST = (() => {
-  const raw = process.env.GHOST_REQUEST_CREDIT_COST?.trim();
-  if (raw && /^\d+$/.test(raw)) {
-    const parsed = BigInt(raw);
-    if (parsed > 0n) return parsed;
-  }
-  return 1n;
-})();
-
-const ALLOW_CLIENT_COST_OVERRIDE = process.env.GHOST_GATE_ALLOW_CLIENT_COST_OVERRIDE?.trim() === "true";
 const NONCE_STORE_ENABLED = (process.env.GHOST_GATE_NONCE_STORE_ENABLED?.trim() ?? "true") !== "false";
 const ENFORCE_NONCE_UNIQUENESS = (process.env.GHOST_GATE_ENFORCE_NONCE_UNIQUENESS?.trim() ?? "true") !== "false";
-const ENABLE_DB_SERVICE_PRICING = process.env.GHOST_GATE_DB_SERVICE_PRICING_ENABLED?.trim() === "true";
 const RECEIPT_SIGNING_SECRET = process.env.GHOST_GATE_RECEIPT_SIGNING_SECRET?.trim() ?? "";
 const ENFORCE_LIVE_GATEWAY_READINESS = process.env.GHOST_GATE_ENFORCE_LIVE_GATEWAY_READINESS?.trim() === "true";
 const ENFORCE_LIVE_GATEWAY_READINESS_AGENT_ONLY =
   (process.env.GHOST_GATE_ENFORCE_LIVE_GATEWAY_READINESS_AGENT_ONLY?.trim() ?? "") !== "false";
-
-const ENV_SERVICE_PRICING = (() => {
-  const raw = process.env.GHOST_GATE_SERVICE_PRICING_JSON?.trim();
-  const pricing = new Map<string, bigint>();
-  if (!raw) return pricing;
-
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    for (const [service, value] of Object.entries(parsed)) {
-      if (typeof service !== "string") continue;
-
-      if (typeof value === "number" && Number.isInteger(value) && value > 0) {
-        pricing.set(service, BigInt(value));
-        continue;
-      }
-
-      if (typeof value === "string" && /^\d+$/.test(value) && value !== "0") {
-        pricing.set(service, BigInt(value));
-      }
-    }
-  } catch {
-    // Ignore malformed config and fall back to default pricing.
-  }
-
-  return pricing;
-})();
 
 const json = (body: unknown, status = 200, extraHeaders?: Record<string, string>): NextResponse =>
   NextResponse.json(body, {
@@ -148,37 +115,16 @@ const isReplayWindowValid = (timestamp: bigint): boolean => {
   return now - timestamp <= REPLAY_WINDOW_SECONDS;
 };
 
-const parseCreditCost = (value: string | null): bigint | null => {
-  if (!value) return null;
-  const trimmed = value.trim();
-  if (!/^\d+$/.test(trimmed)) return null;
-  const parsed = BigInt(trimmed);
-  if (parsed <= 0n) return null;
-  return parsed;
-};
-
 const resolveRequestCost = async (
   request: NextRequest,
   service: string,
 ): Promise<{ cost: bigint; source: "header" | "db" | "env" | "default" }> => {
-  const requestScopedCost = parseCreditCost(request.headers.get("x-ghost-credit-cost"));
-  if (ALLOW_CLIENT_COST_OVERRIDE && requestScopedCost != null) {
+  const requestScopedCost = resolveGhostExpressHeaderOverrideCost(request.headers.get("x-ghost-credit-cost"));
+  if (isGhostExpressClientCostOverrideEnabled() && requestScopedCost != null) {
     return { cost: requestScopedCost, source: "header" };
   }
 
-  if (ENABLE_DB_SERVICE_PRICING) {
-    const dbServiceCost = await getServiceCreditCost(service);
-    if (dbServiceCost != null) {
-      return { cost: dbServiceCost, source: "db" };
-    }
-  }
-
-  const envServiceCost = ENV_SERVICE_PRICING.get(service);
-  if (envServiceCost != null) {
-    return { cost: envServiceCost, source: "env" };
-  }
-
-  return { cost: DEFAULT_REQUEST_COST, source: "default" };
+  return resolveGhostExpressServiceCost(service);
 };
 
 const buildRequestId = (service: string, signer: Address, nonce: string): string => {

@@ -23,7 +23,7 @@ Rail pricing policy:
 - `x402`: `0%` Ghost protocol fee
 - `Express`: `2.5%` Ghost protocol fee and intended for premium managed paid access
 - `GhostWire`: `2.5%` Ghost protocol fee on successful completion only
-- recommended default for `Express`: `5+` credits per request
+- canonical default and minimum for `Express`: `5` credits per request
 - use `x402` instead of `Express` for cheap or high-frequency commodity calls
 
 ## Machine-readable protocol artifacts
@@ -196,7 +196,6 @@ Returns:
 ### Common errors
 
 - `423 SERVICE_NOT_LIVE`
-- `409 SERVICE_PRICING_UNAVAILABLE`
 - `400 COST_MISMATCH`
 - `402 INSUFFICIENT_CREDITS`
 - `409 HOLD_CAP_EXCEEDED`
@@ -534,6 +533,7 @@ Notes:
 
 - `x-ghost-credit-cost` is ignored unless `GHOST_GATE_ALLOW_CLIENT_COST_OVERRIDE=true` in runtime env.
 - Server may resolve cost from DB service pricing, env pricing map, or default cost.
+- GhostGate Express floors all resolved/requested costs to a minimum of `5` credits.
 - `requestId` is server-derived from `service:signer:nonce`; client `x-ghost-request-id` override is not used.
 - `/api/gate/[service]` is Express only. The real open `x402` rail runs directly against the merchant endpoint instead.
 
@@ -543,7 +543,7 @@ Notes:
 curl -X POST "https://ghostprotocol.cc/api/gate/agent-2212" \
   -H "x-ghost-sig: 0xSIGNATURE" \
   -H "x-ghost-payload: {\"service\":\"agent-2212\",\"timestamp\":\"1739722000\",\"nonce\":\"f4f06e31b6f54d1ca6b13e9d8f16b66c\"}" \
-  -H "x-ghost-credit-cost: 1" \
+  -H "x-ghost-credit-cost: 5" \
   -H "accept: application/json"
 ```
 
@@ -555,8 +555,8 @@ curl -X POST "https://ghostprotocol.cc/api/gate/agent-2212" \
   "code": 200,
   "service": "agent-2212",
   "signer": "0xabc123...def456",
-  "cost": "1",
-  "remainingCredits": "99",
+  "cost": "5",
+  "remainingCredits": "95",
   "nonceAccepted": true,
   "requestId": "agent-2212:0xabc...:nonce",
   "receipt": null,
