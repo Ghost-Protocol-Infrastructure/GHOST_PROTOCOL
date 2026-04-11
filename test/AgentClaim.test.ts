@@ -34,6 +34,25 @@ test("completed attributed GhostWire jobs with zero yield still count as proof",
   );
 });
 
+test("measured Express usage counts as proof even before yield settles", () => {
+  assert.equal(
+    isClaimedAgent({
+      status: "active",
+      tier: "NEW",
+      yieldValue: 0,
+      uptimeValue: 0,
+      usageAuthorizedCount7dValue: 12,
+      wireYieldValue: 0,
+      wireCompletedCount: 0,
+      wireRejectedCount: 0,
+      wireExpiredCount: 0,
+      wireSettledPrincipalValue: 0n,
+      wireSettledProviderEarningsValue: 0n,
+    }),
+    true,
+  );
+});
+
 test("agents without status, tier, express, or wire proof remain unclaimed", () => {
   assert.equal(
     isClaimedAgent({
@@ -41,6 +60,7 @@ test("agents without status, tier, express, or wire proof remain unclaimed", () 
       tier: "NEW",
       yieldValue: 0,
       uptimeValue: 0,
+      usageAuthorizedCount7dValue: 0,
       wireYieldValue: 0,
       wireCompletedCount: 0,
       wireRejectedCount: 0,

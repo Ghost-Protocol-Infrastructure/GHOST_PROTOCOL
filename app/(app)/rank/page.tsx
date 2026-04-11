@@ -394,6 +394,10 @@ const buildLeadsFromApi = (agents: ApiAgent[]): ProcessedLead[] => {
       tier: agent.tier,
       yieldValue: rawExpressYield,
       uptimeValue: rawUptime,
+      usageAuthorizedCount7dValue:
+        typeof agent.usageAuthorizedCount7d === "number" && Number.isFinite(agent.usageAuthorizedCount7d)
+          ? Math.max(0, Math.trunc(agent.usageAuthorizedCount7d))
+          : 0,
       wireYieldValue: rawWireYield,
     });
     const rankScore =

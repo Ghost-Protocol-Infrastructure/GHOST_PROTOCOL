@@ -310,6 +310,7 @@ export const buildPortableTrustPayload = (input: {
     tier: input.row.tier,
     yieldValue: input.row.yield,
     uptimeValue: input.row.uptime,
+    usageAuthorizedCount7dValue: input.row.usageAuthorizedCount7d,
     x402YieldValue: input.row.x402Yield,
     x402QualifiedCount: input.row.x402QualifiedCount30d,
     x402UniqueCounterpartiesCount: input.row.x402UniqueCounterparties30d,

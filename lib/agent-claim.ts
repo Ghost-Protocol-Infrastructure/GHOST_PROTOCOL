@@ -74,6 +74,7 @@ export const isClaimedAgent = ({
   tier,
   yieldValue,
   uptimeValue,
+  usageAuthorizedCount7dValue,
   x402YieldValue,
   x402QualifiedCount,
   x402UniqueCounterpartiesCount,
@@ -89,6 +90,7 @@ export const isClaimedAgent = ({
   tier?: string | null;
   yieldValue?: number | null;
   uptimeValue?: number | null;
+  usageAuthorizedCount7dValue?: number | null;
   x402YieldValue?: number | null;
   x402QualifiedCount?: number | null;
   x402UniqueCounterpartiesCount?: number | null;
@@ -104,6 +106,10 @@ export const isClaimedAgent = ({
   tierIndicatesClaimed(tier) ||
   hasPositiveMetric(yieldValue) ||
   hasPositiveMetric(uptimeValue) ||
+  hasAttributedExpressEvidence({
+    expressYieldValue: yieldValue,
+    usageAuthorizedCount7dValue,
+  }) ||
   hasAttributedX402Evidence({
     x402YieldValue,
     x402QualifiedCount,

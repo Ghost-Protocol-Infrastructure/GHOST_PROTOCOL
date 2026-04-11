@@ -12,7 +12,7 @@ import {
 import {
   hasAttributedWireEvidence,
   hasAttributedX402Evidence,
-  statusIndicatesClaimed,
+  isClaimedAgent,
 } from "../lib/agent-claim";
 import { prisma } from "../lib/db";
 import {
@@ -759,6 +759,41 @@ const hasSourceDelta = (
   );
 };
 
+const deriveScoreInputClaimState = (input: {
+  status: string | null | undefined;
+  tier?: string | null;
+  yieldValue?: number | null;
+  uptimeValue?: number | null;
+  usageAuthorizedCount7dValue?: number | null;
+  x402YieldValue?: number | null;
+  x402QualifiedCount?: number | null;
+  x402UniqueCounterpartiesCount?: number | null;
+  x402NetVolumeValue?: bigint | number | null;
+  wireYieldValue?: number | null;
+  wireCompletedCount?: number | null;
+  wireRejectedCount?: number | null;
+  wireExpiredCount?: number | null;
+  wireSettledPrincipalValue?: bigint | number | null;
+  wireSettledProviderEarningsValue?: bigint | number | null;
+}): boolean =>
+  isClaimedAgent({
+    status: input.status,
+    tier: input.tier,
+    yieldValue: input.yieldValue,
+    uptimeValue: input.uptimeValue,
+    usageAuthorizedCount7dValue: input.usageAuthorizedCount7dValue,
+    x402YieldValue: input.x402YieldValue,
+    x402QualifiedCount: input.x402QualifiedCount,
+    x402UniqueCounterpartiesCount: input.x402UniqueCounterpartiesCount,
+    x402NetVolumeValue: input.x402NetVolumeValue,
+    wireYieldValue: input.wireYieldValue,
+    wireCompletedCount: input.wireCompletedCount,
+    wireRejectedCount: input.wireRejectedCount,
+    wireExpiredCount: input.wireExpiredCount,
+    wireSettledPrincipalValue: input.wireSettledPrincipalValue,
+    wireSettledProviderEarningsValue: input.wireSettledProviderEarningsValue,
+  });
+
 const chunkArray = <T>(items: T[], size: number): T[][] => {
   if (size <= 0) return [items];
   const chunks: T[][] = [];
@@ -1180,8 +1215,26 @@ const buildSnapshotRows = (
   }
   const uniqueSignerCounts = preparedInputs.map((item) => Math.max(0, item.gateSignal.uniqueSignerCount));
   const maxUniqueSignerCount = uniqueSignerCounts.length > 0 ? Math.max(...uniqueSignerCounts) : 0;
-  const canUseX402Metrics = (input: ScoreInputRow): boolean =>
+  const hasMeasuredClaim = (input: ScoreInputRow): boolean =>
     input.isClaimed ||
+    deriveScoreInputClaimState({
+      status: input.status,
+      yieldValue: input.yield,
+      uptimeValue: input.uptime,
+      usageAuthorizedCount7dValue: input.usageAuthorizedCount7d,
+      x402YieldValue: input.x402Yield,
+      x402QualifiedCount: input.x402QualifiedCount30d,
+      x402UniqueCounterpartiesCount: input.x402UniqueCounterparties30d,
+      x402NetVolumeValue: input.x402NetVolume30d,
+      wireYieldValue: input.wireYield,
+      wireCompletedCount: input.wireCompletedCount30d,
+      wireRejectedCount: input.wireRejectedCount30d,
+      wireExpiredCount: input.wireExpiredCount30d,
+      wireSettledPrincipalValue: input.wireSettledPrincipal30d,
+      wireSettledProviderEarningsValue: input.wireSettledProviderEarnings30d,
+    });
+  const canUseX402Metrics = (input: ScoreInputRow): boolean =>
+    hasMeasuredClaim(input) ||
     hasAttributedX402Evidence({
       x402YieldValue: input.x402Yield,
       x402QualifiedCount: input.x402QualifiedCount30d,
@@ -1189,7 +1242,7 @@ const buildSnapshotRows = (
       x402NetVolumeValue: input.x402NetVolume30d,
     });
   const canUseWireMetrics = (input: ScoreInputRow): boolean =>
-    input.isClaimed ||
+    hasMeasuredClaim(input) ||
     hasAttributedWireEvidence({
       wireYieldValue: input.wireYield,
       wireCompletedCount: input.wireCompletedCount30d,
@@ -1199,7 +1252,7 @@ const buildSnapshotRows = (
       wireSettledProviderEarningsValue: input.wireSettledProviderEarnings30d,
     });
   const claimedExpressYields = inputs
-    .map((input) => (input.isClaimed ? Math.max(0, input.expressYield) : 0))
+    .map((input) => (hasMeasuredClaim(input) ? Math.max(0, input.expressYield) : 0))
     .filter((value) => value > 0);
   const maxClaimedExpressYield = claimedExpressYields.length > 0 ? Math.max(...claimedExpressYields) : 0;
   const maxClaimedX402NetVolume = inputs.reduce(
@@ -1247,12 +1300,13 @@ const buildSnapshotRows = (
     const velocityNorm = roundToTwo(
       txVolumeNorm * normalizedTxSignalWeight + uniqueSignerNorm * normalizedUniqueSignalWeight,
     );
+    const effectiveIsClaimed = hasMeasuredClaim(input);
     const canUseX402Evidence = canUseX402Metrics(input);
     const canUseWireEvidence = canUseWireMetrics(input);
-    const expressYieldValue = input.isClaimed ? Math.max(0, input.expressYield) : 0;
+    const expressYieldValue = effectiveIsClaimed ? Math.max(0, input.expressYield) : 0;
     const x402YieldValue = canUseX402Evidence ? Math.max(0, input.x402Yield) : 0;
     const wireYieldValue = canUseWireEvidence ? Math.max(0, input.wireYield) : 0;
-    const uptime = input.isClaimed ? clamp(input.uptime, 0, 100) : 0;
+    const uptime = effectiveIsClaimed ? clamp(input.uptime, 0, 100) : 0;
     const x402QualifiedCount = canUseX402Evidence ? Math.max(0, input.x402QualifiedCount30d) : 0;
     const x402UniqueCounterparties = canUseX402Evidence ? Math.max(0, input.x402UniqueCounterparties30d) : 0;
     const x402RepeatCounterparties = canUseX402Evidence ? Math.max(0, input.x402RepeatCounterparties30d) : 0;
@@ -1288,7 +1342,7 @@ const buildSnapshotRows = (
           depthConfidence,
         })
       : 0;
-    const expressConfidence = input.isClaimed
+    const expressConfidence = effectiveIsClaimed
       ? computeExpressConfidence({
           usageAuthorizedCount7d: prepared.usageAuthorizedCount7d,
           uptime,
@@ -1311,7 +1365,7 @@ const buildSnapshotRows = (
     }
 
     const hasAttributedRailEvidence = canUseX402Evidence || canUseWireEvidence;
-    const railScore = input.isClaimed || hasAttributedRailEvidence
+    const railScore = effectiveIsClaimed || hasAttributedRailEvidence
       ? scoreAgentRailAware({
           velocity: velocityNorm,
           antiWashPenalty,
@@ -1347,17 +1401,17 @@ const buildSnapshotRows = (
       : null;
     const baselineReputation = roundToTwo(Math.min(velocityNorm, UNCLAIMED_REPUTATION_CAP));
     const baselineRankScore = roundToTwo(clamp(baselineReputation * 0.7 + velocityNorm * 0.3 - antiWashPenalty, 0, 100));
-    const reputation = input.isClaimed
+    const reputation = effectiveIsClaimed
       ? railScore?.reputation ?? 0
       : hasAttributedRailEvidence
         ? Math.max(baselineReputation, railScore?.reputation ?? 0)
         : baselineReputation;
-    const rankScore = input.isClaimed
+    const rankScore = effectiveIsClaimed
       ? railScore?.rankScore ?? 0
       : hasAttributedRailEvidence
         ? Math.max(baselineRankScore, railScore?.rankScore ?? 0)
         : baselineRankScore;
-    const tier = resolveScoreV2Tier(txCount, input.isClaimed, prepared.metricSource);
+    const tier = resolveScoreV2Tier(txCount, effectiveIsClaimed, prepared.metricSource);
     const yieldValue = expressYieldValue + x402YieldValue + wireYieldValue;
 
     return {
@@ -1732,6 +1786,7 @@ const ingestScoreInputs = async (): Promise<{
     const txSourceAddress = resolvedSource?.sourceAddressLower ?? null;
     const txSourceKind = toAgentTxSourceKind(resolvedSource?.sourceKind ?? null);
     const { canonicalOnchainAddress, canonicalAddressSource } = resolveCanonicalOnchainAddress(agent);
+    const existing = existingByAddress.get(agent.address);
     if (resolvedSource) {
       sourceResolutionCounts[resolvedSource.sourceKind] += 1;
     } else {
@@ -1740,8 +1795,22 @@ const ingestScoreInputs = async (): Promise<{
         unresolvedAgentIdSamples.push(agent.agentId);
       }
     }
-    const isClaimed = statusIndicatesClaimed(agent.status);
-    const existing = existingByAddress.get(agent.address);
+    const isClaimed = deriveScoreInputClaimState({
+      status: agent.status,
+      yieldValue: Math.max(0, agent.yield ?? 0),
+      uptimeValue: clamp(agent.uptime ?? 0, 0, 100),
+      usageAuthorizedCount7dValue: Math.max(0, existing?.usageAuthorizedCount7d ?? 0),
+      x402YieldValue: Math.max(0, existing?.x402Yield ?? 0),
+      x402QualifiedCount: Math.max(0, existing?.x402QualifiedCount30d ?? 0),
+      x402UniqueCounterpartiesCount: Math.max(0, existing?.x402UniqueCounterparties30d ?? 0),
+      x402NetVolumeValue: existing?.x402NetVolume30d ?? 0n,
+      wireYieldValue: Math.max(0, existing?.wireYield ?? 0),
+      wireCompletedCount: Math.max(0, existing?.wireCompletedCount30d ?? 0),
+      wireRejectedCount: Math.max(0, existing?.wireRejectedCount30d ?? 0),
+      wireExpiredCount: Math.max(0, existing?.wireExpiredCount30d ?? 0),
+      wireSettledPrincipalValue: existing?.wireSettledPrincipal30d ?? 0n,
+      wireSettledProviderEarningsValue: existing?.wireSettledProviderEarnings30d ?? 0n,
+    });
     const hasDelta = hasSourceDelta(
       agent,
       existing,
