@@ -198,6 +198,7 @@ export const degradeStaleAgentGatewayConfigs = async (options?: {
   now?: Date;
   staleAfterMs?: number;
   onlyAgentId?: string | null;
+  excludeAgentIds?: string[];
   dryRun?: boolean;
 }): Promise<{
   staleAfterMs: number;
@@ -208,10 +209,18 @@ export const degradeStaleAgentGatewayConfigs = async (options?: {
   const staleAfterMs = options?.staleAfterMs ?? getAgentGatewayLiveStaleAfterMs();
   const staleCutoffAt = getGatewayReadinessStaleCutoff(options?.now ?? new Date(), staleAfterMs);
 
+  const andClauses: Prisma.AgentGatewayConfigWhereInput[] = [];
+  if (options?.onlyAgentId) {
+    andClauses.push({ agentId: options.onlyAgentId });
+  }
+  if (options?.excludeAgentIds && options.excludeAgentIds.length > 0) {
+    andClauses.push({ agentId: { notIn: options.excludeAgentIds } });
+  }
+
   const where: Prisma.AgentGatewayConfigWhereInput = {
     readinessStatus: "LIVE",
-    ...(options?.onlyAgentId ? { agentId: options.onlyAgentId } : {}),
     OR: [{ lastCanaryPassedAt: null }, { lastCanaryPassedAt: { lt: staleCutoffAt } }],
+    ...(andClauses.length > 0 ? { AND: andClauses } : {}),
   };
 
   const matched = await prisma.agentGatewayConfig.count({ where });

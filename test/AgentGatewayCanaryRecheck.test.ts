@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { describe, it } from "node:test";
 import {
   buildTargetedAgentGatewayRecheckWhere,
+  getSelectedLiveAgentIdsForStaleSweep,
   shouldRunAgentGatewayStaleSweep,
 } from "../app/api/agent-gateway/recheck/route";
 import {
   computeAgentGatewaySchedulerStaleAfterMs,
   splitAgentGatewayRecheckLimit,
 } from "../lib/agent-gateway-canary";
+
+const readText = async (relativePath: string): Promise<string> =>
+  readFile(new URL(`../${relativePath}`, import.meta.url), "utf8");
 
 describe("agent gateway recheck scheduling", () => {
   it("extends the stale window when the live fleet requires multiple scheduled runs", () => {
@@ -73,5 +78,30 @@ describe("agent gateway recheck scheduling", () => {
       agentId: "18755",
       readinessStatus: { in: ["DEGRADED"] },
     });
+  });
+
+  it("protects only the selected live batch from stale demotion", () => {
+    assert.deepEqual(
+      getSelectedLiveAgentIdsForStaleSweep([
+        { agentId: "live-1", readinessStatus: "LIVE" },
+        { agentId: "degraded-1", readinessStatus: "DEGRADED" },
+        { agentId: "live-2", readinessStatus: "LIVE" },
+      ]),
+      ["live-1", "live-2"],
+    );
+  });
+
+  it("runs stale demotion after live selection and excludes selected live agent ids", async () => {
+    const source = await readText("app/api/agent-gateway/recheck/route.ts");
+
+    assert.match(source, /const selectedLiveAgentIds = getSelectedLiveAgentIdsForStaleSweep\(liveConfigs\);/);
+    assert.match(source, /excludeAgentIds: selectedLiveAgentIds/);
+
+    const liveSelectionIndex = source.indexOf("const selectedLiveAgentIds = getSelectedLiveAgentIdsForStaleSweep(liveConfigs);");
+    const staleSweepIndex = source.indexOf("const staleSweep = shouldRunStaleSweep");
+
+    assert.notEqual(liveSelectionIndex, -1);
+    assert.notEqual(staleSweepIndex, -1);
+    assert.ok(liveSelectionIndex < staleSweepIndex);
   });
 });

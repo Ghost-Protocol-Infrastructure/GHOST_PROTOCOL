@@ -78,6 +78,13 @@ export const buildTargetedAgentGatewayRecheckWhere = (
   },
 });
 
+export const getSelectedLiveAgentIdsForStaleSweep = (
+  configs: ReadonlyArray<{
+    agentId: string;
+    readinessStatus: "LIVE" | "DEGRADED" | "CONFIGURED" | "UNCONFIGURED";
+  }>,
+): string[] => configs.filter((config) => config.readinessStatus === "LIVE").map((config) => config.agentId);
+
 const normalizeCronSecret = (value: string | undefined): string | null => {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
@@ -171,20 +178,15 @@ async function handle(request: NextRequest): Promise<NextResponse> {
       degradedLimit = Math.min(limit, degradedCount);
     }
 
-    const staleSweep = shouldRunStaleSweep
-      ? await degradeStaleAgentGatewayConfigs({
-          onlyAgentId,
-          staleAfterMs,
-          dryRun,
-        })
-      : {
-          staleAfterMs,
-          staleCutoffAt: new Date(Date.now() - staleAfterMs),
-          matched: 0,
-          degraded: 0,
-        };
-
-    let configs: Array<{
+    let liveConfigs: Array<{
+      id: string;
+      agentId: string;
+      serviceSlug: string;
+      endpointUrl: string;
+      canaryPath: string;
+      readinessStatus: "LIVE" | "DEGRADED" | "CONFIGURED" | "UNCONFIGURED";
+    }> = [];
+    let degradedConfigs: Array<{
       id: string;
       agentId: string;
       serviceSlug: string;
@@ -194,56 +196,80 @@ async function handle(request: NextRequest): Promise<NextResponse> {
     }> = [];
 
     if (onlyAgentId) {
-      configs = await prisma.agentGatewayConfig.findMany({
+      const targetedConfigs = await prisma.agentGatewayConfig.findMany({
         where: buildTargetedAgentGatewayRecheckWhere(onlyAgentId, statuses),
         orderBy: canRecheckLive ? liveRecheckOrderBy : degradedRecheckOrderBy,
         take: 1,
         select: gatewayConfigSelect,
       });
-      liveCount = configs.filter((config) => config.readinessStatus === "LIVE").length;
-      degradedCount = configs.filter((config) => config.readinessStatus === "DEGRADED").length;
-      liveLimit = liveCount;
-      degradedLimit = degradedCount;
+      liveConfigs = targetedConfigs.filter((config) => config.readinessStatus === "LIVE");
+      degradedConfigs = targetedConfigs.filter((config) => config.readinessStatus === "DEGRADED");
+      liveCount = liveConfigs.length;
+      degradedCount = degradedConfigs.length;
+      liveLimit = liveConfigs.length;
+      degradedLimit = degradedConfigs.length;
     } else if (statuses.length === 1 && statuses[0] === "LIVE") {
-      configs = await prisma.agentGatewayConfig.findMany({
+      liveConfigs = await prisma.agentGatewayConfig.findMany({
         where: { readinessStatus: "LIVE" },
         orderBy: liveRecheckOrderBy,
         take: limit,
         select: gatewayConfigSelect,
       });
-      liveLimit = configs.length;
+      liveLimit = liveConfigs.length;
     } else if (statuses.length === 1 && statuses[0] === "DEGRADED") {
-      configs = await prisma.agentGatewayConfig.findMany({
-        where: { readinessStatus: "DEGRADED" },
-        orderBy: degradedRecheckOrderBy,
-        take: limit,
-        select: gatewayConfigSelect,
-      });
-      degradedLimit = configs.length;
+      degradedConfigs = [];
     } else {
-      const [liveConfigs, degradedConfigs] = await Promise.all([
+      liveConfigs =
         liveLimit > 0
-          ? prisma.agentGatewayConfig.findMany({
+          ? await prisma.agentGatewayConfig.findMany({
               where: { readinessStatus: "LIVE" },
               orderBy: liveRecheckOrderBy,
               take: liveLimit,
               select: gatewayConfigSelect,
             })
-          : Promise.resolve([]),
-        degradedLimit > 0
-          ? prisma.agentGatewayConfig.findMany({
-              where: { readinessStatus: "DEGRADED" },
-              orderBy: degradedRecheckOrderBy,
-              take: degradedLimit,
-              select: gatewayConfigSelect,
-            })
-          : Promise.resolve([]),
-      ]);
-
-      configs = [...liveConfigs, ...degradedConfigs];
+          : [];
       liveLimit = liveConfigs.length;
-      degradedLimit = degradedConfigs.length;
     }
+
+    const selectedLiveAgentIds = getSelectedLiveAgentIdsForStaleSweep(liveConfigs);
+
+    const staleSweep = shouldRunStaleSweep
+      ? await degradeStaleAgentGatewayConfigs({
+          onlyAgentId,
+          staleAfterMs,
+          excludeAgentIds: selectedLiveAgentIds,
+          dryRun,
+        })
+      : {
+          staleAfterMs,
+          staleCutoffAt: new Date(Date.now() - staleAfterMs),
+          matched: 0,
+          degraded: 0,
+        };
+
+    if (!onlyAgentId) {
+      if (statuses.length === 1 && statuses[0] === "DEGRADED") {
+        degradedConfigs = await prisma.agentGatewayConfig.findMany({
+          where: { readinessStatus: "DEGRADED" },
+          orderBy: degradedRecheckOrderBy,
+          take: limit,
+          select: gatewayConfigSelect,
+        });
+        degradedLimit = degradedConfigs.length;
+      } else if (degradedLimit > 0) {
+        degradedConfigs = await prisma.agentGatewayConfig.findMany({
+          where: { readinessStatus: "DEGRADED" },
+          orderBy: degradedRecheckOrderBy,
+          take: degradedLimit,
+          select: gatewayConfigSelect,
+        });
+        degradedLimit = degradedConfigs.length;
+      } else {
+        degradedConfigs = [];
+      }
+    }
+
+    const configs = [...liveConfigs, ...degradedConfigs];
 
     if (dryRun) {
       return json(
