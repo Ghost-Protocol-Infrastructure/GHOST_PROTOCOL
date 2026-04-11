@@ -9,9 +9,14 @@ on:
         default: "https://www.ghostprotocol.cc"
         type: string
       limit:
-        description: "Max gateway configs to process"
+        description: "Max LIVE gateway configs to process"
         required: false
-        default: "50"
+        default: "100"
+        type: string
+      degraded_limit:
+        description: "Max DEGRADED gateway configs to retry"
+        required: false
+        default: "20"
         type: string
       dry_run:
         description: "Run selection/stale sweep without canary fetches"
@@ -41,6 +46,7 @@ jobs:
           RECHECK_SECRET: ${{ secrets.GHOST_AGENT_GATEWAY_RECHECK_SECRET }}
           BASE_URL_INPUT: ${{ github.event.inputs.base_url }}
           LIMIT_INPUT: ${{ github.event.inputs.limit }}
+          DEGRADED_LIMIT_INPUT: ${{ github.event.inputs.degraded_limit }}
           DRY_RUN_INPUT: ${{ github.event.inputs.dry_run }}
         run: |
           set -euo pipefail
@@ -55,24 +61,37 @@ jobs:
           if [ "${base_url}" = "https://ghostprotocol.cc" ]; then
             base_url="https://www.ghostprotocol.cc"
           fi
-          limit="${LIMIT_INPUT:-50}"
+          live_limit="${LIMIT_INPUT:-100}"
+          degraded_limit="${DEGRADED_LIMIT_INPUT:-20}"
           dry_run="${DRY_RUN_INPUT:-false}"
 
-          url="${base_url}/api/agent-gateway/recheck?limit=${limit}"
+          call_recheck() {
+            local label="$1"
+            local url="$2"
+            local output_file="$3"
+
+            echo "Calling ${label}: ${url}"
+            local http_code
+            http_code="$(curl -sS -o "${output_file}" -w '%{http_code}' \
+              -H "Authorization: Bearer ${RECHECK_SECRET}" \
+              -H "Accept: application/json" \
+              "${url}")"
+
+            cat "${output_file}"
+            echo
+
+            if [ "${http_code}" != "200" ]; then
+              echo "${label} failed with HTTP ${http_code}" >&2
+              exit 1
+            fi
+          }
+
+          live_url="${base_url}/api/agent-gateway/recheck?statuses=LIVE&limit=${live_limit}"
+          degraded_url="${base_url}/api/agent-gateway/recheck?statuses=DEGRADED&limit=${degraded_limit}"
           if [ "${dry_run}" = "true" ]; then
-            url="${url}&dryRun=1"
+            live_url="${live_url}&dryRun=1"
+            degraded_url="${degraded_url}&dryRun=1"
           fi
 
-          echo "Calling ${url}"
-          http_code="$(curl -sS -o response.json -w '%{http_code}' \
-            -H "Authorization: Bearer ${RECHECK_SECRET}" \
-            -H "Accept: application/json" \
-            "${url}")"
-
-          cat response.json
-          echo
-
-          if [ "${http_code}" != "200" ]; then
-            echo "Gateway recheck endpoint failed with HTTP ${http_code}" >&2
-            exit 1
-          fi
+          call_recheck "LIVE gateway recheck" "${live_url}" "response-live.json"
+          call_recheck "DEGRADED gateway retry" "${degraded_url}" "response-degraded.json"

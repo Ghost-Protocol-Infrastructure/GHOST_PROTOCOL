@@ -30,6 +30,15 @@ export type AgentGatewayCanaryRunResult = {
 const DEFAULT_GATEWAY_LIVE_STALE_AFTER_MS = 60 * 60 * 1000;
 const MIN_GATEWAY_LIVE_STALE_AFTER_MS = 5 * 60 * 1000;
 const MAX_GATEWAY_LIVE_STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
+const DEFAULT_AGENT_GATEWAY_RECHECK_INTERVAL_MS = 30 * 60 * 1000;
+const MIN_AGENT_GATEWAY_RECHECK_INTERVAL_MS = 5 * 60 * 1000;
+const MAX_AGENT_GATEWAY_RECHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_AGENT_GATEWAY_RECHECK_STALE_BUFFER_RUNS = 2;
+const MIN_AGENT_GATEWAY_RECHECK_STALE_BUFFER_RUNS = 0;
+const MAX_AGENT_GATEWAY_RECHECK_STALE_BUFFER_RUNS = 12;
+const DEFAULT_AGENT_GATEWAY_RECHECK_DEGRADED_RESERVE_RATIO = 0.2;
+const MIN_AGENT_GATEWAY_RECHECK_DEGRADED_RESERVE_RATIO = 0;
+const MAX_AGENT_GATEWAY_RECHECK_DEGRADED_RESERVE_RATIO = 0.5;
 
 const getErrorMessage = (error: unknown): string => {
   if (error instanceof Error) return error.message;
@@ -45,6 +54,27 @@ const parsePositiveMsEnv = (
   const trimmed = rawValue?.trim();
   if (!trimmed || !/^\d+$/.test(trimmed)) return fallback;
   const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+};
+
+const parsePositiveIntEnv = (
+  rawValue: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+): number => {
+  const trimmed = rawValue?.trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) return fallback;
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+};
+
+const parseRatioEnv = (rawValue: string | undefined, fallback: number, min: number, max: number): number => {
+  const trimmed = rawValue?.trim();
+  if (!trimmed) return fallback;
+  const parsed = Number.parseFloat(trimmed);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max, Math.max(min, parsed));
 };
@@ -67,6 +97,92 @@ export const getAgentGatewayLiveStaleAfterMs = (): number =>
     MIN_GATEWAY_LIVE_STALE_AFTER_MS,
     MAX_GATEWAY_LIVE_STALE_AFTER_MS,
   );
+
+export const getAgentGatewayRecheckIntervalMs = (): number =>
+  parsePositiveMsEnv(
+    process.env.GHOST_AGENT_GATEWAY_RECHECK_INTERVAL_MS,
+    DEFAULT_AGENT_GATEWAY_RECHECK_INTERVAL_MS,
+    MIN_AGENT_GATEWAY_RECHECK_INTERVAL_MS,
+    MAX_AGENT_GATEWAY_RECHECK_INTERVAL_MS,
+  );
+
+export const getAgentGatewayRecheckStaleBufferRuns = (): number =>
+  parsePositiveIntEnv(
+    process.env.GHOST_AGENT_GATEWAY_RECHECK_STALE_BUFFER_RUNS,
+    DEFAULT_AGENT_GATEWAY_RECHECK_STALE_BUFFER_RUNS,
+    MIN_AGENT_GATEWAY_RECHECK_STALE_BUFFER_RUNS,
+    MAX_AGENT_GATEWAY_RECHECK_STALE_BUFFER_RUNS,
+  );
+
+export const getAgentGatewayRecheckDegradedReserveRatio = (): number =>
+  parseRatioEnv(
+    process.env.GHOST_AGENT_GATEWAY_RECHECK_DEGRADED_RESERVE_RATIO,
+    DEFAULT_AGENT_GATEWAY_RECHECK_DEGRADED_RESERVE_RATIO,
+    MIN_AGENT_GATEWAY_RECHECK_DEGRADED_RESERVE_RATIO,
+    MAX_AGENT_GATEWAY_RECHECK_DEGRADED_RESERVE_RATIO,
+  );
+
+export const computeAgentGatewaySchedulerStaleAfterMs = (input: {
+  configuredStaleAfterMs: number;
+  liveConfigCount: number;
+  liveRecheckLimit: number;
+  recheckIntervalMs?: number;
+  staleBufferRuns?: number;
+}): number => {
+  const configuredStaleAfterMs = Math.min(
+    MAX_GATEWAY_LIVE_STALE_AFTER_MS,
+    Math.max(MIN_GATEWAY_LIVE_STALE_AFTER_MS, input.configuredStaleAfterMs),
+  );
+
+  const liveConfigCount = Math.max(0, Math.floor(input.liveConfigCount));
+  const liveRecheckLimit = Math.max(0, Math.floor(input.liveRecheckLimit));
+  if (liveConfigCount === 0 || liveRecheckLimit === 0) {
+    return configuredStaleAfterMs;
+  }
+
+  const recheckIntervalMs = Math.min(
+    MAX_AGENT_GATEWAY_RECHECK_INTERVAL_MS,
+    Math.max(MIN_AGENT_GATEWAY_RECHECK_INTERVAL_MS, input.recheckIntervalMs ?? getAgentGatewayRecheckIntervalMs()),
+  );
+  const staleBufferRuns = Math.min(
+    MAX_AGENT_GATEWAY_RECHECK_STALE_BUFFER_RUNS,
+    Math.max(
+      MIN_AGENT_GATEWAY_RECHECK_STALE_BUFFER_RUNS,
+      Math.floor(input.staleBufferRuns ?? getAgentGatewayRecheckStaleBufferRuns()),
+    ),
+  );
+  const cyclesNeeded = Math.max(1, Math.ceil(liveConfigCount / liveRecheckLimit));
+  const schedulerFloor = (cyclesNeeded + staleBufferRuns) * recheckIntervalMs;
+
+  return Math.min(MAX_GATEWAY_LIVE_STALE_AFTER_MS, Math.max(configuredStaleAfterMs, schedulerFloor));
+};
+
+export const splitAgentGatewayRecheckLimit = (input: {
+  limit: number;
+  liveCount: number;
+  degradedCount: number;
+  degradedReserveRatio?: number;
+}): {
+  liveLimit: number;
+  degradedLimit: number;
+} => {
+  const limit = Math.max(1, Math.floor(input.limit));
+  const liveCount = Math.max(0, Math.floor(input.liveCount));
+  const degradedCount = Math.max(0, Math.floor(input.degradedCount));
+  const degradedReserveRatio = Math.min(
+    MAX_AGENT_GATEWAY_RECHECK_DEGRADED_RESERVE_RATIO,
+    Math.max(
+      MIN_AGENT_GATEWAY_RECHECK_DEGRADED_RESERVE_RATIO,
+      input.degradedReserveRatio ?? getAgentGatewayRecheckDegradedReserveRatio(),
+    ),
+  );
+
+  const reservedDegraded = liveCount >= limit ? 0 : Math.min(degradedCount, Math.floor(limit * degradedReserveRatio));
+  const liveLimit = Math.min(liveCount, limit - reservedDegraded);
+  const degradedLimit = Math.min(degradedCount, limit - liveLimit);
+
+  return { liveLimit, degradedLimit };
+};
 
 export const buildGatewayReadinessStaleReason = (staleAfterMs: number): string => {
   const staleMinutes = Math.round(staleAfterMs / 60000);
