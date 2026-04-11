@@ -1,11 +1,11 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { useAccount } from "wagmi";
-import { Bot, Copy, Crown } from "lucide-react";
+import { Bot, Copy, Crown, SlidersHorizontal } from "lucide-react";
 import TerminalHeader from "@/components/TerminalHeader";
 import { isClaimedAgent } from "@/lib/agent-claim";
 
@@ -15,6 +15,9 @@ type SyncHealth = "live" | "stale" | "offline" | "unknown";
 type GatewayReadinessStatus = "UNCONFIGURED" | "CONFIGURED" | "LIVE" | "DEGRADED";
 type TxMetricSource = "AGENT_ONCHAIN" | "USAGE_ACTIVITY_7D" | "OWNER_FALLBACK" | "CREATOR_FALLBACK" | "UNRESOLVED";
 type CanonicalAddressSource = "OLAS_AGENT" | "ERC8004_RESOLVED" | "MANUAL_OVERRIDE" | "AGENT_ADDRESS" | "NONE";
+type RankSortValue = "rank" | "volume";
+type RailFilterValue = "EXPRESS" | "X402" | "WIRE" | "HYBRID" | "UNPROVEN";
+type TrustFilterValue = "available" | "missing";
 const STALE_SYNC_THRESHOLD_SECONDS = 3 * 60 * 60;
 const LEADERBOARD_REFRESH_INTERVAL_MS = 15_000;
 
@@ -483,6 +486,53 @@ const tierClassName: Record<LeadTier, string> = {
 const PAGE_SIZE = 250;
 const SEARCH_DEBOUNCE_MS = 300;
 const CREDIT_PRICE_WEI_FALLBACK = "10000000000000";
+const RAIL_FILTER_VALUES: RailFilterValue[] = ["EXPRESS", "X402", "WIRE", "HYBRID", "UNPROVEN"];
+const READINESS_FILTER_VALUES: GatewayReadinessStatus[] = ["LIVE", "DEGRADED", "CONFIGURED", "UNCONFIGURED"];
+const TRUST_FILTER_VALUES: TrustFilterValue[] = ["available", "missing"];
+
+const parseRankPage = (rawPage: string | null): number => {
+  if (!rawPage) return 1;
+  const parsed = Number.parseInt(rawPage, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 1;
+  return parsed;
+};
+
+const normalizeRankSort = (rawSort: string | null): RankSortValue => (rawSort === "volume" ? "volume" : "rank");
+
+const parseMultiValueParam = <T extends string>(
+  rawValue: string | null,
+  allowedValues: readonly T[],
+  normalize: (value: string) => string,
+): T[] => {
+  if (!rawValue) return [];
+  const normalized = rawValue.trim();
+  if (!normalized) return [];
+
+  const allowed = new Set<string>(allowedValues);
+  const deduped = new Set<T>();
+  for (const token of normalized.split(",")) {
+    const cleaned = normalize(token);
+    if (!cleaned || !allowed.has(cleaned)) continue;
+    deduped.add(cleaned as T);
+  }
+  return Array.from(deduped);
+};
+
+const parseRailFilters = (rawValue: string | null): RailFilterValue[] =>
+  parseMultiValueParam(rawValue, RAIL_FILTER_VALUES, (value) => value.trim().toUpperCase());
+
+const parseReadinessFilters = (rawValue: string | null): GatewayReadinessStatus[] =>
+  parseMultiValueParam(rawValue, READINESS_FILTER_VALUES, (value) => value.trim().toUpperCase());
+
+const parseTrustFilter = (rawValue: string | null): TrustFilterValue | null => {
+  const normalized = rawValue?.trim().toLowerCase();
+  if (normalized === "available" || normalized === "missing") {
+    return normalized;
+  }
+  return null;
+};
+
+const encodeMultiValueParam = (values: string[]): string | null => (values.length > 0 ? values.join(",") : null);
 
 const formatWeiToEth = (rawWei: string): string => {
   try {
@@ -497,40 +547,93 @@ const formatWeiToEth = (rawWei: string): string => {
   }
 };
 
-export default function Home() {
+function RankPage() {
   const [network, setNetwork] = useState<Network>("BASE");
   const [searchInput, setSearchInput] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
   const [pageInput, setPageInput] = useState("1");
   const [copiedOwner, setCopiedOwner] = useState<string | null>(null);
   const [baseLeads, setBaseLeads] = useState<ProcessedLead[]>([]);
   const [totalAgentsCount, setTotalAgentsCount] = useState<number>(0);
   const [activatedAgentsCount, setActivatedAgentsCount] = useState<number>(0);
   const [filteredAgentsCount, setFilteredAgentsCount] = useState<number>(0);
-  const [currentPage, setCurrentPage] = useState<number>(1);
   const [totalPages, setTotalPages] = useState<number>(1);
   const [lastSyncedBlock, setLastSyncedBlock] = useState<string | null>(null);
   const [syncHealth, setSyncHealth] = useState<SyncHealth>("unknown");
   const [isLoadingLeads, setIsLoadingLeads] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [brokenAvatars, setBrokenAvatars] = useState<Set<string>>(new Set());
+  const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState<boolean>(false);
   const { address: userAddress } = useAccount();
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const networkSelectValue = network === "BASE" ? "base" : "megaeth";
   const creditPriceWei = process.env.NEXT_PUBLIC_GHOST_CREDIT_PRICE_WEI?.trim() || CREDIT_PRICE_WEI_FALLBACK;
   const creditPriceEth = formatWeiToEth(creditPriceWei);
+  const currentPage = parseRankPage(searchParams.get("page"));
+  const ownerFilter = searchParams.get("owner")?.trim().toLowerCase() ?? "";
+  const searchQuery = searchParams.get("q")?.trim() || ownerFilter;
+  const selectedRails = useMemo(() => parseRailFilters(searchParams.get("rail")), [searchParams]);
+  const selectedReadinesses = useMemo(() => parseReadinessFilters(searchParams.get("readiness")), [searchParams]);
+  const trustFilter = useMemo(() => parseTrustFilter(searchParams.get("trust")), [searchParams]);
+  const sortValue = normalizeRankSort(searchParams.get("sort"));
+  const hasActiveFilters =
+    searchQuery.length > 0 ||
+    selectedRails.length > 0 ||
+    selectedReadinesses.length > 0 ||
+    trustFilter !== null;
+  const activeFilterCount = selectedRails.length + selectedReadinesses.length + (trustFilter ? 1 : 0);
+
+  const replaceRankParams = (
+    updates: Record<string, string | null>,
+    options?: { resetPage?: boolean },
+  ) => {
+    const params = new URLSearchParams(searchParams.toString());
+
+    for (const [key, value] of Object.entries(updates)) {
+      if (!value) {
+        params.delete(key);
+      } else {
+        params.set(key, value);
+      }
+    }
+
+    if (options?.resetPage) {
+      params.delete("page");
+    }
+
+    const nextQuery = params.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+  };
+
+  useEffect(() => {
+    setSearchInput(searchQuery);
+  }, [searchQuery]);
 
   useEffect(() => {
     const debounceHandle = window.setTimeout(() => {
       const normalized = searchInput.trim();
-      setSearchQuery((previous) => (previous === normalized ? previous : normalized));
-      setCurrentPage(1);
+      if (normalized === searchQuery) return;
+      const params = new URLSearchParams(searchParams.toString());
+      if (normalized) {
+        params.set("q", normalized);
+      } else {
+        params.delete("q");
+      }
+      if (normalized && isHexAddress(normalized)) {
+        params.set("owner", normalized.toLowerCase());
+      } else {
+        params.delete("owner");
+      }
+      params.delete("page");
+      const nextQuery = params.toString();
+      router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
     }, SEARCH_DEBOUNCE_MS);
 
     return () => {
       window.clearTimeout(debounceHandle);
     };
-  }, [searchInput]);
+  }, [pathname, router, searchInput, searchQuery, searchParams]);
 
   useEffect(() => {
     let isActive = true;
@@ -546,9 +649,21 @@ export default function Home() {
         });
         if (searchQuery) {
           params.set("q", searchQuery);
-          if (isHexAddress(searchQuery)) {
-            params.set("owner", searchQuery.toLowerCase());
-          }
+        }
+        if (ownerFilter) {
+          params.set("owner", ownerFilter);
+        }
+        if (selectedRails.length > 0) {
+          params.set("rail", encodeMultiValueParam(selectedRails) ?? "");
+        }
+        if (selectedReadinesses.length > 0) {
+          params.set("readiness", encodeMultiValueParam(selectedReadinesses) ?? "");
+        }
+        if (trustFilter) {
+          params.set("trust", trustFilter);
+        }
+        if (sortValue === "volume") {
+          params.set("sort", "volume");
         }
 
         const response = await fetch(`/api/agents?${params.toString()}`, {
@@ -583,7 +698,14 @@ export default function Home() {
 
         if (!isActive) return;
         if (currentPage > resolvedTotalPages) {
-          setCurrentPage(resolvedTotalPages);
+          const params = new URLSearchParams(searchParams.toString());
+          if (resolvedTotalPages <= 1) {
+            params.delete("page");
+          } else {
+            params.set("page", resolvedTotalPages.toString());
+          }
+          const nextQuery = params.toString();
+          router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
           return;
         }
         const parsedSyncAgeSeconds = parseSyncAgeSeconds(payload.syncAgeSeconds);
@@ -630,7 +752,7 @@ export default function Home() {
       window.clearInterval(refreshHandle);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [currentPage, searchQuery]);
+  }, [currentPage, ownerFilter, pathname, router, searchParams, searchQuery, selectedRails, selectedReadinesses, sortValue, trustFilter]);
 
   const rankedAgents = useMemo(() => {
     const source = network === "BASE" ? baseLeads : [];
@@ -720,6 +842,31 @@ export default function Home() {
     });
   };
 
+  const toggleRailFilter = (value: RailFilterValue) => {
+    const nextValues = selectedRails.includes(value)
+      ? selectedRails.filter((entry) => entry !== value)
+      : [...selectedRails, value];
+    replaceRankParams({ rail: encodeMultiValueParam(nextValues) }, { resetPage: true });
+  };
+
+  const toggleReadinessFilter = (value: GatewayReadinessStatus) => {
+    const nextValues = selectedReadinesses.includes(value)
+      ? selectedReadinesses.filter((entry) => entry !== value)
+      : [...selectedReadinesses, value];
+    replaceRankParams({ readiness: encodeMultiValueParam(nextValues) }, { resetPage: true });
+  };
+
+  const clearFilters = () => {
+    replaceRankParams(
+      {
+        rail: null,
+        readiness: null,
+        trust: null,
+      },
+      { resetPage: true },
+    );
+  };
+
   useEffect(() => {
     setPageInput(currentPage.toString());
   }, [currentPage]);
@@ -732,7 +879,7 @@ export default function Home() {
     }
 
     const clampedPage = Math.max(1, Math.min(totalPages, parsed));
-    setCurrentPage(clampedPage);
+    replaceRankParams({ page: clampedPage > 1 ? clampedPage.toString() : null });
     setPageInput(clampedPage.toString());
   };
 
@@ -816,19 +963,33 @@ export default function Home() {
             <div className="text-neutral-600 space-y-1">
               <div>
                 Showing {visibleStart.toLocaleString()}-{visibleEnd.toLocaleString()} of {filteredAgentsCount.toLocaleString()}
-                {searchQuery ? " (filtered)" : ""}
+                {hasActiveFilters ? " (filtered)" : ""}
               </div>
               <div className="text-[9px] tracking-[0.12em] text-neutral-700">
                 TXS column shows the active tx metric. Source labels indicate whether it came from agent txs, owner wallet, creator wallet, or usage activity.
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 md:justify-end md:gap-3">
+              <button
+                type="button"
+                onClick={() => setIsFilterDrawerOpen((previous) => !previous)}
+                className={`inline-flex h-8 items-center gap-2 px-1 text-[10px] transition ${
+                  isFilterDrawerOpen || activeFilterCount > 0
+                    ? "text-red-600"
+                    : "text-neutral-400 hover:text-neutral-200"
+                }`}
+                aria-expanded={isFilterDrawerOpen}
+                aria-label="Toggle filters"
+                title="Toggle filters"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+              </button>
               <span className="text-neutral-500">
                 Page {currentPage} / {totalPages}
               </span>
               <button
                 type="button"
-                onClick={() => setCurrentPage((previous) => Math.max(1, previous - 1))}
+                onClick={() => replaceRankParams({ page: currentPage - 1 > 1 ? String(currentPage - 1) : null })}
                 disabled={!canGoPrev || isPagerDisabled}
                 className="inline-flex h-8 w-8 items-center justify-center border border-neutral-800 text-neutral-400 transition hover:border-neutral-500 hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Previous page"
@@ -837,7 +998,7 @@ export default function Home() {
               </button>
               <button
                 type="button"
-                onClick={() => setCurrentPage((previous) => Math.min(totalPages, previous + 1))}
+                onClick={() => replaceRankParams({ page: String(Math.min(totalPages, currentPage + 1)) })}
                 disabled={!canGoNext || isPagerDisabled}
                 className="inline-flex h-8 w-8 items-center justify-center border border-neutral-800 text-neutral-400 transition hover:border-neutral-500 hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Next page"
@@ -875,6 +1036,110 @@ export default function Home() {
               </button>
             </div>
           </div>
+
+          {isFilterDrawerOpen ? (
+            <div className="border-b border-neutral-800 px-4 py-4 md:px-6">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div className="space-y-3">
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-neutral-600">Filters</div>
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] uppercase tracking-[0.18em] text-neutral-500">Rail</span>
+                      {RAIL_FILTER_VALUES.map((value) => {
+                        const active = selectedRails.includes(value);
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => toggleRailFilter(value)}
+                            className={`border px-3 py-2 text-[10px] uppercase tracking-[0.16em] transition ${
+                              active
+                                ? "border-red-600 bg-red-950/20 text-red-300"
+                                : "border-neutral-800 text-neutral-500 hover:border-neutral-600 hover:text-neutral-300"
+                            }`}
+                          >
+                            {value}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] uppercase tracking-[0.18em] text-neutral-500">Readiness</span>
+                      {READINESS_FILTER_VALUES.map((value) => {
+                        const active = selectedReadinesses.includes(value);
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => toggleReadinessFilter(value)}
+                            className={`border px-3 py-2 text-[10px] uppercase tracking-[0.16em] transition ${
+                              active
+                                ? "border-red-600 bg-red-950/20 text-red-300"
+                                : "border-neutral-800 text-neutral-500 hover:border-neutral-600 hover:text-neutral-300"
+                            }`}
+                          >
+                            {value}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-3 xl:min-w-[320px]">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <label className="space-y-2">
+                      <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">Trust</span>
+                      <select
+                        value={trustFilter ?? ""}
+                        onChange={(event) =>
+                          replaceRankParams({ trust: event.target.value ? event.target.value : null }, { resetPage: true })
+                        }
+                        className="w-full appearance-none border border-neutral-800 bg-neutral-950 px-3 py-3 text-[10px] uppercase tracking-[0.16em] text-neutral-300 outline-none transition hover:border-neutral-600 focus:border-red-600"
+                      >
+                        <option value="">ALL</option>
+                        {TRUST_FILTER_VALUES.map((value) => (
+                          <option key={value} value={value}>
+                            {value === "available" ? "PORTABLE TRUST AVAILABLE" : "NO PORTABLE TRUST"}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-2">
+                      <span className="block text-[10px] uppercase tracking-[0.18em] text-neutral-500">Sort</span>
+                      <select
+                        value={sortValue}
+                        onChange={(event) =>
+                          replaceRankParams({ sort: event.target.value === "volume" ? "volume" : null }, { resetPage: true })
+                        }
+                        className="w-full appearance-none border border-neutral-800 bg-neutral-950 px-3 py-3 text-[10px] uppercase tracking-[0.16em] text-neutral-300 outline-none transition hover:border-neutral-600 focus:border-red-600"
+                      >
+                        <option value="rank">RANK</option>
+                        <option value="volume">VOLUME</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="flex items-center justify-end gap-2">
+                    {activeFilterCount > 0 ? (
+                      <button
+                        type="button"
+                        onClick={clearFilters}
+                        className="border border-neutral-800 px-3 py-2 text-[10px] uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
+                      >
+                        Clear Filters
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => setIsFilterDrawerOpen(false)}
+                      className="border border-neutral-800 px-3 py-2 text-[10px] uppercase tracking-[0.16em] text-neutral-400 transition hover:border-neutral-600 hover:text-neutral-200"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div className="md:hidden">
             {network !== "BASE" ? (
@@ -1352,6 +1617,25 @@ export default function Home() {
         dangerouslySetInnerHTML={{ __html: rankMachineReadableSchemaJson }}
       />
     </>
+  );
+}
+
+const RankPageFallback = () => (
+  <main className="min-h-screen relative z-[50] font-mono text-neutral-400 bg-neutral-950 [background-image:none]">
+    <div className="w-full px-4 py-8 md:px-8 space-y-12">
+      <TerminalHeader title="ghost_rank // REPUTATION LEADERBOARD" />
+      <div className="border border-neutral-800 bg-neutral-950 px-6 py-12 text-center text-xs uppercase tracking-[0.2em] text-neutral-600">
+        Loading leaderboard...
+      </div>
+    </div>
+  </main>
+);
+
+export default function Home() {
+  return (
+    <Suspense fallback={<RankPageFallback />}>
+      <RankPage />
+    </Suspense>
   );
 }
 

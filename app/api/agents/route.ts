@@ -3,6 +3,8 @@ import type { Prisma as PrismaTypes } from "@prisma/client";
 import { createPublicClient, fallback, http } from "viem";
 import { base } from "viem/chains";
 import { prisma } from "@/lib/db";
+import { PORTABLE_TRUST_SCHEMA_VERSION } from "@/lib/trust-artifact";
+import { isPortableTrustEnabled } from "@/lib/trust-signing";
 import { listActivePortableTrustPointersByAgentId } from "@/lib/trust-artifact-store";
 
 export const runtime = "nodejs";
@@ -56,6 +58,14 @@ type GatewayReadinessInfo = {
   lastCanaryPassedAt: string | null;
 };
 
+const RAIL_FILTER_VALUES = ["EXPRESS", "X402", "WIRE", "HYBRID", "UNPROVEN"] as const;
+const READINESS_FILTER_VALUES = ["LIVE", "DEGRADED", "CONFIGURED", "UNCONFIGURED"] as const;
+const TRUST_FILTER_VALUES = ["available", "missing"] as const;
+
+type AgentRailFilterValue = (typeof RAIL_FILTER_VALUES)[number];
+type AgentReadinessFilterValue = (typeof READINESS_FILTER_VALUES)[number];
+type AgentTrustFilterValue = (typeof TRUST_FILTER_VALUES)[number];
+
 let activatedAgentsCache: ActivatedAgentsCache | null = null;
 let activatedAgentsInFlight: Promise<number> | null = null;
 
@@ -91,6 +101,131 @@ const parseQuery = (rawQuery: string | null): string | null => {
   const normalized = rawQuery.trim();
   if (!normalized) return null;
   return normalized.slice(0, MAX_QUERY_LENGTH);
+};
+
+const parseEnumList = <T extends string>(
+  rawValue: string | null,
+  allowedValues: readonly T[],
+  options?: { normalize?: (value: string) => string },
+): { values: T[] | null; invalid: boolean } => {
+  if (!rawValue) return { values: null, invalid: false };
+
+  const normalized = rawValue.trim();
+  if (!normalized) return { values: null, invalid: false };
+
+  const allowed = new Set<string>(allowedValues);
+  const deduped = new Set<T>();
+  const tokens = normalized.split(",");
+
+  for (const token of tokens) {
+    const cleaned = options?.normalize ? options.normalize(token) : token.trim();
+    if (!cleaned) {
+      return { values: null, invalid: true };
+    }
+    if (!allowed.has(cleaned)) {
+      return { values: null, invalid: true };
+    }
+    deduped.add(cleaned as T);
+  }
+
+  return {
+    values: deduped.size > 0 ? Array.from(deduped) : null,
+    invalid: false,
+  };
+};
+
+const parseRailFilter = (rawValue: string | null): { values: AgentRailFilterValue[] | null; invalid: boolean } =>
+  parseEnumList(rawValue, RAIL_FILTER_VALUES, { normalize: (value) => value.trim().toUpperCase() });
+
+const parseReadinessFilter = (rawValue: string | null): { values: AgentReadinessFilterValue[] | null; invalid: boolean } =>
+  parseEnumList(rawValue, READINESS_FILTER_VALUES, { normalize: (value) => value.trim().toUpperCase() });
+
+const parseTrustFilter = (rawValue: string | null): { value: AgentTrustFilterValue | null; invalid: boolean } => {
+  const parsed = parseEnumList(rawValue, TRUST_FILTER_VALUES, { normalize: (value) => value.trim().toLowerCase() });
+  if (parsed.invalid) return { value: null, invalid: true };
+  if (!parsed.values) return { value: null, invalid: false };
+  if (parsed.values.length !== 1) return { value: null, invalid: true };
+  return { value: parsed.values[0], invalid: false };
+};
+
+const buildReadinessFilter = (
+  readinessValues: AgentReadinessFilterValue[],
+): PrismaTypes.LeaderboardSnapshotRowWhereInput | null => {
+  if (readinessValues.length === 0) return null;
+
+  const includeUnconfigured = readinessValues.includes("UNCONFIGURED");
+  const configuredValues = readinessValues.filter((value) => value !== "UNCONFIGURED");
+  const clauses: PrismaTypes.LeaderboardSnapshotRowWhereInput[] = [];
+
+  if (configuredValues.length > 0) {
+    clauses.push({
+      agent: {
+        is: {
+          gatewayConfig: {
+            is: {
+              readinessStatus: {
+                in: configuredValues,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  if (includeUnconfigured) {
+    clauses.push({
+      agent: {
+        is: {
+          gatewayConfig: {
+            is: null,
+          },
+        },
+      },
+    });
+  }
+
+  if (clauses.length === 0) return null;
+  return clauses.length === 1 ? clauses[0] : { OR: clauses };
+};
+
+const buildTrustAvailabilityFilter = (
+  trustValue: AgentTrustFilterValue,
+): PrismaTypes.LeaderboardSnapshotRowWhereInput => {
+  const activeTrustWhere: PrismaTypes.AgentTrustArtifactWhereInput = {
+    schemaVersion: PORTABLE_TRUST_SCHEMA_VERSION,
+    isActive: true,
+    snapshot: {
+      isActive: true,
+      status: "READY",
+    },
+  };
+
+  if (!isPortableTrustEnabled()) {
+    return trustValue === "available"
+      ? { agentId: { equals: "__portable_trust_disabled__" } }
+      : { agentId: { not: "__portable_trust_disabled__" } };
+  }
+
+  return trustValue === "available"
+    ? {
+        agent: {
+          is: {
+            trustArtifacts: {
+              some: activeTrustWhere,
+            },
+          },
+        },
+      }
+    : {
+        agent: {
+          is: {
+            trustArtifacts: {
+              none: activeTrustWhere,
+            },
+          },
+        },
+      };
 };
 
 const parseOwner = (rawOwner: string | null): string | null => {
@@ -283,11 +418,32 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const skip = (page - 1) * limit;
   const ownerQuery = request.nextUrl.searchParams.get("owner");
   const owner = parseOwner(ownerQuery);
-  const activatedAgentsPromise = resolveActivatedAgentsCount();
+  const railFilter = parseRailFilter(request.nextUrl.searchParams.get("rail"));
+  const readinessFilter = parseReadinessFilter(request.nextUrl.searchParams.get("readiness"));
+  const trustFilter = parseTrustFilter(request.nextUrl.searchParams.get("trust"));
 
   if (ownerQuery && !owner) {
     return NextResponse.json(
       { error: "Invalid owner address." },
+      { status: 400, headers: { "cache-control": "no-store" } },
+    );
+  }
+  const activatedAgentsPromise = resolveActivatedAgentsCount();
+  if (railFilter.invalid) {
+    return NextResponse.json(
+      { error: "Invalid rail filter." },
+      { status: 400, headers: { "cache-control": "no-store" } },
+    );
+  }
+  if (readinessFilter.invalid) {
+    return NextResponse.json(
+      { error: "Invalid readiness filter." },
+      { status: 400, headers: { "cache-control": "no-store" } },
+    );
+  }
+  if (trustFilter.invalid) {
+    return NextResponse.json(
+      { error: "Invalid trust filter." },
       { status: 400, headers: { "cache-control": "no-store" } },
     );
   }
@@ -334,6 +490,22 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         { creator: { contains: query, mode: "insensitive" as const } },
       ],
     });
+  }
+  if (railFilter.values && railFilter.values.length > 0) {
+    snapshotFilters.push({
+      railMode: {
+        in: railFilter.values,
+      },
+    });
+  }
+  if (readinessFilter.values && readinessFilter.values.length > 0) {
+    const readinessWhere = buildReadinessFilter(readinessFilter.values);
+    if (readinessWhere) {
+      snapshotFilters.push(readinessWhere);
+    }
+  }
+  if (trustFilter.value) {
+    snapshotFilters.push(buildTrustAvailabilityFilter(trustFilter.value));
   }
   const snapshotWhere: PrismaTypes.LeaderboardSnapshotRowWhereInput =
     snapshotFilters.length === 1 ? snapshotFilters[0] : { AND: snapshotFilters };
