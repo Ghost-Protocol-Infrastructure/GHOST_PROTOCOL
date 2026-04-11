@@ -37,6 +37,7 @@
     - native Ghost evidence remains first-class
     - imported evidence is labeled separately and can carry lower/default confidence until fully verified
   - Why now: this is the cleanest wedge against Virtuals and other ACP surfaces without blocking nearer-term monetization work.
+  - Planning reference: see `docs/plans/2026-04-05-federated-trust-v2-v3.md` for the post-V1 federated input model (`V2`) and neutral multi-issuer trust layer (`V3`).
 - The Upgrade: Activate the Olas Shadow Pipeline (Codex's Hybrid Model).
   - Action: Re-enable the Olas Service indexing in the background.
   - Result: Agents that are actually running (Olas Services) get a "Verified" or "Pro" badge and a higher score based on their deep on-chain activity.
