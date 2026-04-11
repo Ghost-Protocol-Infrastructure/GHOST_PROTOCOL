@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { scoreAgentRailAware } from "../lib/ghostrank-rail-score";
+import { computeExpressConfidence, scoreAgentRailAware } from "../lib/ghostrank-rail-score";
 
 test("wire-only agent is not punished for missing express signals", () => {
   const result = scoreAgentRailAware({
@@ -84,4 +84,63 @@ test("x402-only agent can earn x402 rail reputation without express or wire inpu
   assert.equal(result.x402Reputation, 64.3);
   assert.equal(result.reputation, 64.3);
   assert.equal(result.railMode, "X402");
+});
+
+test("measured wire evidence is not dragged down by uptime-only express fallback", () => {
+  const uptimeOnlyExpressConfidence = computeExpressConfidence({
+    usageAuthorizedCount7d: 0,
+    uptime: 100,
+    expressYield: 0,
+  });
+  const measuredWireOnly = scoreAgentRailAware({
+    velocity: 20,
+    antiWashPenalty: 0,
+    express:
+      uptimeOnlyExpressConfidence > 0
+        ? {
+            uptime: 100,
+            expressYieldNorm: 0,
+            confidence: uptimeOnlyExpressConfidence,
+          }
+        : null,
+    x402: null,
+    wire: {
+      commerceQuality: 10,
+      wireYieldNorm: 100,
+      confidence: 1,
+    },
+  });
+
+  assert.equal(uptimeOnlyExpressConfidence, 0);
+  assert.equal(measuredWireOnly.expressReputation, null);
+  assert.equal(measuredWireOnly.wireReputation, 37);
+  assert.equal(measuredWireOnly.reputation, 37);
+});
+
+test("uptime-only express fallback does not produce an express rail score", () => {
+  const uptimeOnlyExpressConfidence = computeExpressConfidence({
+    usageAuthorizedCount7d: 0,
+    uptime: 100,
+    expressYield: 0,
+  });
+  const result = scoreAgentRailAware({
+    velocity: 20,
+    antiWashPenalty: 0,
+    express:
+      uptimeOnlyExpressConfidence > 0
+        ? {
+            uptime: 100,
+            expressYieldNorm: 0,
+            confidence: uptimeOnlyExpressConfidence,
+          }
+        : null,
+    x402: null,
+    wire: null,
+  });
+
+  assert.equal(uptimeOnlyExpressConfidence, 0);
+  assert.equal(result.expressReputation, null);
+  assert.equal(result.reputation, 0);
+  assert.equal(result.rankScore, 6);
+  assert.equal(result.railMode, "UNPROVEN");
 });

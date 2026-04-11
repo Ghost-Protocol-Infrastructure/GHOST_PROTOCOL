@@ -2,6 +2,7 @@ import { createPublicClient, fallback, getAddress, http, type Address } from "vi
 import { base } from "viem/chains";
 import {
   Prisma,
+  type AgentGatewayReadinessStatus,
   type AgentRailMode,
   type AgentTier,
   type AgentTxSourceKind,
@@ -19,6 +20,7 @@ import {
   computeCommerceQuality,
   computeDepthConfidence,
   computeExpressConfidence,
+  computeReadinessBonus,
   computeWireConfidence,
   normalizeLog100,
   scoreAgentRailAware,
@@ -1138,6 +1140,7 @@ const buildSnapshotRows = (
     }
   >,
   gateSybilSignals: GateSybilSignalSnapshot,
+  readinessStatusByAgentId: ReadonlyMap<string, AgentGatewayReadinessStatus>,
 ): {
   rows: SnapshotScoreRow[];
   maxTxCount: number;
@@ -1282,6 +1285,8 @@ const buildSnapshotRows = (
 
   const scored = preparedInputs.map((prepared) => {
     const { input, gateSignal } = prepared;
+    const readinessStatus = readinessStatusByAgentId.get(input.agentId) ?? "UNCONFIGURED";
+    const readinessBonus = computeReadinessBonus(readinessStatus);
     const txCount = prepared.effectiveTxCount;
     txMetricPathCounts[prepared.txMetricPath] += 1;
     const rawTxVolumeNorm = normalizeLog100(txCount, maxTxCount);
@@ -1370,7 +1375,7 @@ const buildSnapshotRows = (
           velocity: velocityNorm,
           antiWashPenalty,
           express:
-            prepared.usageAuthorizedCount7d > 0 || uptime > 0 || expressYieldValue > 0
+            expressConfidence > 0
               ? {
                   uptime,
                   expressYieldNorm,
@@ -1411,6 +1416,7 @@ const buildSnapshotRows = (
       : hasAttributedRailEvidence
         ? Math.max(baselineRankScore, railScore?.rankScore ?? 0)
         : baselineRankScore;
+    const adjustedRankScore = roundToTwo(clamp(rankScore + readinessBonus, 0, 100));
     const tier = resolveScoreV2Tier(txCount, effectiveIsClaimed, prepared.metricSource);
     const yieldValue = expressYieldValue + x402YieldValue + wireYieldValue;
 
@@ -1425,7 +1431,7 @@ const buildSnapshotRows = (
       canonicalOnchainAddress: prepared.canonicalOnchainAddress,
       canonicalAddressSource: prepared.canonicalAddressSource,
       reputation,
-      rankScore,
+      rankScore: adjustedRankScore,
       tier,
       yieldValue,
       expressYield: expressYieldValue,
@@ -1450,7 +1456,7 @@ const buildSnapshotRows = (
       wireReputation: railScore?.wireReputation ?? null,
       railMode: railScore?.railMode ?? "UNPROVEN",
       volume: BigInt(txCount),
-      score: Math.round(rankScore),
+      score: Math.round(adjustedRankScore),
       antiWashPenalty,
     };
   });
@@ -1993,10 +1999,22 @@ const runSnapshotRanking = async (): Promise<{
   }
 
   const gateSybilSignals = await fetchGateSybilSignals();
+  const readinessRows = await withPrismaRetry("score-v2 load gateway readiness", () =>
+    prisma.agentGatewayConfig.findMany({
+      select: {
+        agentId: true,
+        readinessStatus: true,
+      },
+    }),
+  );
+  const readinessStatusByAgentId = new Map(
+    readinessRows.map((row) => [row.agentId, row.readinessStatus] as const),
+  );
   const { rows, maxTxCount, maxClaimedYield, sybilPenalizedAgents, sybilMaxPenalty, txMetricPathCounts } =
     buildSnapshotRows(
       inputs,
       gateSybilSignals,
+      readinessStatusByAgentId,
     );
   const snapshotId = await writeSnapshot(rows, maxTxCount, maxClaimedYield);
   await issuePortableTrustArtifactsBestEffort(snapshotId);

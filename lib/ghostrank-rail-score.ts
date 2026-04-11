@@ -42,6 +42,7 @@ export type RailAwareScoreInput = {
 };
 
 export type AgentRailModeValue = "X402" | "EXPRESS" | "WIRE" | "HYBRID" | "UNPROVEN";
+export type GatewayReadinessForScoring = "LIVE" | "DEGRADED" | "CONFIGURED" | "UNCONFIGURED";
 
 export const normalizeLog100 = (value: number, maxValue: number): number => {
   if (maxValue <= 0) return 0;
@@ -74,11 +75,17 @@ export const computeDepthConfidence = (sampleCount: number, fullConfidenceAt = 1
   return roundToTwo(clampUnit(sampleCount / fullConfidenceAt));
 };
 
+export const hasMeasuredExpressCommerceEvidence = (input: {
+  usageAuthorizedCount7d: number;
+  expressYield: number;
+}): boolean => input.usageAuthorizedCount7d > 0 || input.expressYield > 0;
+
 export const computeExpressConfidence = (input: {
   usageAuthorizedCount7d: number;
   uptime: number;
   expressYield: number;
 }): number => {
+  if (!hasMeasuredExpressCommerceEvidence(input)) return 0;
   const usageConfidence = computeDepthConfidence(input.usageAuthorizedCount7d, 20);
   const coverageConfidence = clampUnit(
     (input.uptime > 0 ? 0.45 : 0) + (input.expressYield > 0 ? 0.35 : 0) + (input.usageAuthorizedCount7d > 0 ? 0.2 : 0),
@@ -176,6 +183,13 @@ export const computeRankScore = (input: {
   velocity: number;
   antiWashPenalty: number;
 }): number => roundToTwo(clamp(clamp(input.reputation) * 0.7 + clamp(input.velocity) * 0.3 - input.antiWashPenalty));
+
+export const computeReadinessBonus = (readinessStatus: GatewayReadinessForScoring): number => {
+  if (readinessStatus === "LIVE") return 4;
+  if (readinessStatus === "DEGRADED") return 2;
+  if (readinessStatus === "CONFIGURED") return 1;
+  return 0;
+};
 
 export const resolveAgentRailMode = (input: {
   expressConfidence: number;
