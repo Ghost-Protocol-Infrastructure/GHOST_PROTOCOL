@@ -25,6 +25,28 @@ export type RotatingBatchWindow = {
   nextOffset: number;
 };
 
+export type MetadataFetchFailureDetails = {
+  message: string;
+  code?: string | null;
+  httpStatus?: number | null;
+};
+
+export type MetadataFetchFailureClassification = {
+  reason:
+    | "timeout"
+    | "empty_token_uri"
+    | "unfetchable_token_uri"
+    | "invalid_json"
+    | "invalid_url"
+    | "dns_unresolved"
+    | "connection_refused"
+    | `http_${number}`
+    | "unexpected_error";
+  expected: boolean;
+  permanent: boolean;
+  timedOut: boolean;
+};
+
 const NUMERIC_ID_PATTERN = /^\d+$/;
 
 export const parseNumericRefreshSelector = (
@@ -105,5 +127,115 @@ export const computeRotatingBatchWindow = (
     offset,
     limit,
     nextOffset,
+  };
+};
+
+export const classifyMetadataFetchFailure = (
+  input: MetadataFetchFailureDetails,
+): MetadataFetchFailureClassification => {
+  const message = input.message.trim();
+  const code = input.code?.trim() || null;
+  const httpStatus = input.httpStatus ?? null;
+
+  if (/abort|timed out|timeout/i.test(message) || code === "ABORT_ERR") {
+    return {
+      reason: "timeout",
+      expected: true,
+      permanent: false,
+      timedOut: true,
+    };
+  }
+
+  if (/tokenURI returned empty value/i.test(message)) {
+    return {
+      reason: "empty_token_uri",
+      expected: true,
+      permanent: true,
+      timedOut: false,
+    };
+  }
+
+  if (/tokenURI is not a fetchable metadata URI/i.test(message)) {
+    return {
+      reason: "unfetchable_token_uri",
+      expected: true,
+      permanent: true,
+      timedOut: false,
+    };
+  }
+
+  if (
+    /Metadata payload is not a JSON object/i.test(message) ||
+    /Unexpected token/i.test(message) ||
+    /Unexpected end of JSON input/i.test(message) ||
+    /not valid JSON/i.test(message)
+  ) {
+    return {
+      reason: "invalid_json",
+      expected: true,
+      permanent: true,
+      timedOut: false,
+    };
+  }
+
+  if (httpStatus !== null) {
+    if (httpStatus === 429) {
+      return {
+        reason: "http_429",
+        expected: false,
+        permanent: false,
+        timedOut: false,
+      };
+    }
+    if (httpStatus >= 400 && httpStatus < 500) {
+      return {
+        reason: `http_${httpStatus}`,
+        expected: true,
+        permanent: true,
+        timedOut: false,
+      };
+    }
+    if (httpStatus >= 500) {
+      return {
+        reason: `http_${httpStatus}`,
+        expected: false,
+        permanent: false,
+        timedOut: false,
+      };
+    }
+  }
+
+  if (code === "ERR_INVALID_URL") {
+    return {
+      reason: "invalid_url",
+      expected: true,
+      permanent: true,
+      timedOut: false,
+    };
+  }
+
+  if (code === "ENOTFOUND") {
+    return {
+      reason: "dns_unresolved",
+      expected: true,
+      permanent: true,
+      timedOut: false,
+    };
+  }
+
+  if (code === "ECONNREFUSED") {
+    return {
+      reason: "connection_refused",
+      expected: true,
+      permanent: true,
+      timedOut: false,
+    };
+  }
+
+  return {
+    reason: "unexpected_error",
+    expected: false,
+    permanent: false,
+    timedOut: false,
   };
 };

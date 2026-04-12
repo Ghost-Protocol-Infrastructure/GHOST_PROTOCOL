@@ -2,6 +2,7 @@ import { createPublicClient, fallback, getAddress, http, parseAbiItem, type Addr
 import { base } from "viem/chains";
 import { prisma } from "../lib/db";
 import {
+  classifyMetadataFetchFailure,
   computeMirroredMetadataPatch,
   computeRotatingBatchWindow,
   MAX_ERC8004_METADATA_REFRESH_BATCH_SIZE,
@@ -222,6 +223,8 @@ type MetadataRefreshStats = {
   unchanged: number;
   failed: number;
   timedOut: number;
+  failureReasons?: Record<string, number>;
+  failureSamples?: Record<string, string[]>;
 };
 
 type ContractReader = {
@@ -423,37 +426,27 @@ const getErrorCode = (error: unknown): string | null => {
 };
 
 const isExpectedMetadataFetchError = (error: unknown): boolean => {
-  const message = error instanceof Error ? error.message : String(error);
-  if (/tokenURI is not a fetchable metadata URI/i.test(message)) return true;
-
-  const httpStatus = parseHttpStatusFromError(error);
-  if (httpStatus === 404 || httpStatus === 410) return true;
-
-  const code = getErrorCode(error);
-  return code === "ERR_INVALID_URL";
+  return classifyMetadataFetchFailure({
+    message: error instanceof Error ? error.message : String(error),
+    code: getErrorCode(error),
+    httpStatus: parseHttpStatusFromError(error),
+  }).expected;
 };
 
 const isMetadataFetchTimeoutError = (error: unknown): boolean => {
-  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-  const code = getErrorCode(error);
-  return /abort|timed out|timeout/i.test(message) || code === "ABORT_ERR";
+  return classifyMetadataFetchFailure({
+    message: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+    code: getErrorCode(error),
+    httpStatus: parseHttpStatusFromError(error),
+  }).timedOut;
 };
 
 const isPermanentMetadataFetchError = (error: unknown): boolean => {
-  const httpStatus = parseHttpStatusFromError(error);
-  if (httpStatus !== null) {
-    if (httpStatus === 429) return false;
-    if (httpStatus >= 400 && httpStatus < 500) return true;
-  }
-
-  const code = getErrorCode(error);
-  if (!code) return false;
-
-  if (code === "ERR_INVALID_URL" || code === "ENOTFOUND" || code === "ECONNREFUSED") {
-    return true;
-  }
-
-  return false;
+  return classifyMetadataFetchFailure({
+    message: error instanceof Error ? error.message : String(error),
+    code: getErrorCode(error),
+    httpStatus: parseHttpStatusFromError(error),
+  }).permanent;
 };
 
 const fetchJsonWithRetry = async (url: string): Promise<Record<string, unknown>> => {
@@ -1643,12 +1636,22 @@ const refreshErc8004MetadataRows = async (
   mode: MetadataRefreshMode,
 ): Promise<MetadataRefreshStats> => {
   const client = buildClient() as unknown as ContractReader;
+  const failureReasonCounts = new Map<string, number>();
+  const failureReasonSamples = new Map<string, string[]>();
   let refreshed = 0;
   let changed = 0;
   let unchanged = 0;
   let failed = 0;
   let timedOut = 0;
   let processed = 0;
+  const recordFailure = (tokenIdText: string, reason: string): void => {
+    failureReasonCounts.set(reason, (failureReasonCounts.get(reason) ?? 0) + 1);
+    const samples = failureReasonSamples.get(reason) ?? [];
+    if (samples.length < 3) {
+      samples.push(tokenIdText);
+      failureReasonSamples.set(reason, samples);
+    }
+  };
 
   const refreshRow = async (
     row: Erc8004RefreshRow,
@@ -1666,15 +1669,19 @@ const refreshErc8004MetadataRows = async (
       const document = await fetchServiceMetadataDocument(client, BigInt(tokenIdText));
       payload = document.payload;
     } catch (error) {
-      const timedOut = isMetadataFetchTimeoutError(error);
-      const failureLabel = timedOut ? "timed out" : "failed";
-      console.warn(
-        `Metadata fetch ${failureLabel} for ERC-8004 token ${tokenIdText} during ${mode} refresh. Preserving existing mirrored metadata.`,
-      );
-      if (!isExpectedMetadataFetchError(error)) {
+      const failure = classifyMetadataFetchFailure({
+        message: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+        code: getErrorCode(error),
+        httpStatus: parseHttpStatusFromError(error),
+      });
+      recordFailure(tokenIdText, failure.reason);
+      if (!failure.expected) {
+        console.warn(
+          `Metadata fetch ${failure.reason} for ERC-8004 token ${tokenIdText} during ${mode} refresh. Preserving existing mirrored metadata.`,
+        );
         console.error(error);
       }
-      return { refreshed: false, changed: false, failed: true, timedOut };
+      return { refreshed: false, changed: false, failed: true, timedOut: failure.timedOut };
     }
 
     const patch = computeMirroredMetadataPatch(
@@ -1724,6 +1731,27 @@ const refreshErc8004MetadataRows = async (
     }
   }
 
+  const failureReasons = Object.fromEntries(
+    Array.from(failureReasonCounts.entries()).sort((left, right) => right[1] - left[1]),
+  );
+  const failureSamples = Object.fromEntries(
+    Array.from(failureReasonSamples.entries()).sort(
+      (left, right) => (failureReasonCounts.get(right[0]) ?? 0) - (failureReasonCounts.get(left[0]) ?? 0),
+    ),
+  );
+
+  if (Object.keys(failureReasons).length > 0) {
+    const breakdown = Object.entries(failureReasons)
+      .map(([reason, count]) => `${reason}=${count}`)
+      .join(", ");
+    console.log(`ERC-8004 metadata refresh failure breakdown: ${breakdown}`);
+
+    const sampleLine = Object.entries(failureSamples)
+      .map(([reason, tokenIds]) => `${reason}=[${tokenIds.join(",")}]`)
+      .join("; ");
+    console.log(`ERC-8004 metadata refresh failure samples: ${sampleLine}`);
+  }
+
   return {
     mode,
     total: rows.length,
@@ -1732,6 +1760,8 @@ const refreshErc8004MetadataRows = async (
     unchanged,
     failed,
     timedOut,
+    failureReasons,
+    failureSamples,
   };
 };
 

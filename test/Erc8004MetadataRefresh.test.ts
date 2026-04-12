@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  classifyMetadataFetchFailure,
   computeMirroredMetadataPatch,
   computeRotatingBatchWindow,
   parseNumericRefreshSelector,
@@ -85,4 +86,47 @@ test("computeRotatingBatchWindow advances a bounded rotating cursor", () => {
     limit: 250,
     nextOffset: 250,
   });
+});
+
+test("classifyMetadataFetchFailure treats malformed HTML or JSON as expected invalid_json", () => {
+  assert.deepEqual(
+    classifyMetadataFetchFailure({
+      message: 'Unexpected token \'<\', "<!DOCTYPE "... is not valid JSON',
+    }),
+    {
+      reason: "invalid_json",
+      expected: true,
+      permanent: true,
+      timedOut: false,
+    },
+  );
+});
+
+test("classifyMetadataFetchFailure treats empty tokenURI as expected and permanent", () => {
+  assert.deepEqual(
+    classifyMetadataFetchFailure({
+      message: "tokenURI returned empty value",
+    }),
+    {
+      reason: "empty_token_uri",
+      expected: true,
+      permanent: true,
+      timedOut: false,
+    },
+  );
+});
+
+test("classifyMetadataFetchFailure treats timeouts as expected but retryable", () => {
+  assert.deepEqual(
+    classifyMetadataFetchFailure({
+      message: "resolve token timed out after 8000ms",
+      code: "ABORT_ERR",
+    }),
+    {
+      reason: "timeout",
+      expected: true,
+      permanent: false,
+      timedOut: true,
+    },
+  );
 });
