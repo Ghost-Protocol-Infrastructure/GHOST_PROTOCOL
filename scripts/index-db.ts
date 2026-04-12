@@ -1,8 +1,17 @@
 import { createPublicClient, fallback, getAddress, http, parseAbiItem, type Address } from "viem";
 import { base } from "viem/chains";
 import { prisma } from "../lib/db";
+import {
+  computeMirroredMetadataPatch,
+  computeRotatingBatchWindow,
+  MAX_ERC8004_METADATA_REFRESH_BATCH_SIZE,
+  parseNumericRefreshSelector,
+  type MirroredAgentMetadata,
+  type MirroredAgentMetadataUpdate,
+} from "../lib/erc8004-metadata-refresh";
 
 type AgentIndexMode = "erc8004" | "olas";
+type MetadataRefreshMode = "full" | "bounded" | "targeted";
 
 const parseAgentIndexMode = (): AgentIndexMode => {
   const modeArg = process.argv.find((arg) => arg.startsWith("--mode="))?.split("=")[1];
@@ -115,12 +124,54 @@ const TOKEN_URI_FUNCTION = parseAbiItem("function tokenURI(uint256 serviceId) vi
 const FALLBACK_ADDRESS_PREFIX = "service:";
 const ERC8004_ADDRESS_PREFIX = "agent:";
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const ERC8004_METADATA_REFRESH_CURSOR_KEY = "erc8004_metadata_refresh_cursor";
 const FORCE_REFRESH_METADATA =
   process.argv.includes("--force-refresh-metadata") || process.env.AGENT_FORCE_REFRESH_METADATA === "true";
 const FORCE_RESET_INDEXER =
   process.argv.includes("--reset-indexer") || process.env.AGENT_RESET_INDEXER === "true";
-const METADATA_FETCH_TIMEOUT_MS = 8_000;
-const METADATA_FETCH_RETRY_COUNT = 2;
+const getCliOptionValues = (name: string): string[] =>
+  process.argv
+    .filter((arg) => arg.startsWith(`--${name}=`))
+    .map((arg) => arg.slice(name.length + 3))
+    .filter((value) => value.trim().length > 0);
+const ERC8004_REFRESH_AGENT_IDS = parseNumericRefreshSelector(
+  [process.env.AGENT_REFRESH_AGENT_IDS, ...getCliOptionValues("agent-id")],
+  "agentId",
+);
+const ERC8004_REFRESH_TOKEN_IDS = parseNumericRefreshSelector(
+  [process.env.AGENT_REFRESH_TOKEN_IDS, ...getCliOptionValues("token-id")],
+  "tokenId",
+);
+const parseMetadataRefreshMode = (): MetadataRefreshMode | null => {
+  const modeArg = process.argv.find((arg) => arg.startsWith("--refresh-mode="))?.split("=")[1];
+  const rawMode = (modeArg ?? process.env.AGENT_METADATA_REFRESH_MODE ?? "").trim().toLowerCase();
+  if (!rawMode) {
+    if (AGENT_INDEX_MODE === "erc8004" && (ERC8004_REFRESH_AGENT_IDS.length > 0 || ERC8004_REFRESH_TOKEN_IDS.length > 0)) {
+      return "targeted";
+    }
+    return null;
+  }
+  if (rawMode === "full" || rawMode === "bounded" || rawMode === "targeted") {
+    return rawMode;
+  }
+  throw new Error(`Unsupported metadata refresh mode "${rawMode}". Expected full, bounded, or targeted.`);
+};
+const METADATA_REFRESH_MODE = parseMetadataRefreshMode();
+const METADATA_FETCH_TIMEOUT_MS = (() => {
+  const raw = process.env.AGENT_METADATA_FETCH_TIMEOUT_MS?.trim();
+  const parsed = raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 8_000;
+  return Math.max(1_000, Math.min(parsed, 30_000));
+})();
+const METADATA_FETCH_RETRY_COUNT = (() => {
+  const raw = process.env.AGENT_METADATA_FETCH_RETRY_COUNT?.trim();
+  const parsed = raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 2;
+  return Math.max(1, Math.min(parsed, 4));
+})();
+const ERC8004_METADATA_REFRESH_BATCH_SIZE = (() => {
+  const raw = process.env.AGENT_METADATA_REFRESH_BATCH_SIZE?.trim();
+  const parsed = raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : 500;
+  return Math.max(1, Math.min(parsed, MAX_ERC8004_METADATA_REFRESH_BATCH_SIZE));
+})();
 const DEFAULT_IPFS_GATEWAY = "https://ipfs.io/ipfs/";
 const IPFS_CID_PATTERN = /^(Qm[1-9A-HJ-NP-Za-km-z]{44}|bafy[a-zA-Z0-9]{20,})$/;
 const DEFAULT_INDEXER_RPC_FALLBACKS = [
@@ -144,7 +195,15 @@ type ServiceMetadata = {
   name: string | null;
   description: string | null;
   image: string | null;
+  telegram: string | null;
+  twitter: string | null;
+  website: string | null;
   metadataUri: string | null;
+};
+
+type ServiceMetadataDocument = {
+  payload: Record<string, unknown>;
+  metadataUri: string;
 };
 
 type ServiceResolution = {
@@ -152,6 +211,17 @@ type ServiceResolution = {
   record: IndexedAgentRecord | null;
   metadataUsedFallback: boolean;
   resolveTimedOut?: boolean;
+};
+
+type MetadataRefreshStats = {
+  mode: MetadataRefreshMode;
+  total: number;
+  cohortTotal?: number;
+  refreshed: number;
+  changed: number;
+  unchanged: number;
+  failed: number;
+  timedOut: number;
 };
 
 type ContractReader = {
@@ -363,6 +433,12 @@ const isExpectedMetadataFetchError = (error: unknown): boolean => {
   return code === "ERR_INVALID_URL";
 };
 
+const isMetadataFetchTimeoutError = (error: unknown): boolean => {
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  const code = getErrorCode(error);
+  return /abort|timed out|timeout/i.test(message) || code === "ABORT_ERR";
+};
+
 const isPermanentMetadataFetchError = (error: unknown): boolean => {
   const httpStatus = parseHttpStatusFromError(error);
   if (httpStatus !== null) {
@@ -423,10 +499,74 @@ const fetchJsonWithRetry = async (url: string): Promise<Record<string, unknown>>
   throw lastError instanceof Error ? lastError : new Error("Metadata fetch failed");
 };
 
-const fetchServiceMetadata = async (
+const hasOwnProperty = (value: Record<string, unknown>, key: string): boolean =>
+  Object.prototype.hasOwnProperty.call(value, key);
+
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+
+const readMirroredTextField = (
+  payload: Record<string, unknown>,
+  directKeys: string[],
+  nestedKeys: string[] = [],
+): { present: boolean; value: string | null } => {
+  for (const key of directKeys) {
+    if (hasOwnProperty(payload, key)) {
+      return { present: true, value: sanitizeOptionalText(payload[key]) };
+    }
+  }
+
+  for (const containerKey of ["socials", "links"]) {
+    const container = asRecord(payload[containerKey]);
+    if (!container) continue;
+    for (const key of nestedKeys) {
+      if (hasOwnProperty(container, key)) {
+        return { present: true, value: sanitizeOptionalText(container[key]) };
+      }
+    }
+  }
+
+  return { present: false, value: null };
+};
+
+const extractMirroredMetadataUpdate = (payload: Record<string, unknown>): MirroredAgentMetadataUpdate => {
+  const update: MirroredAgentMetadataUpdate = {};
+
+  if (hasOwnProperty(payload, "name")) {
+    const nextName = sanitizeOptionalText(payload.name);
+    if (nextName) {
+      update.name = nextName;
+    }
+  }
+  if (hasOwnProperty(payload, "description")) {
+    update.description = sanitizeOptionalText(payload.description);
+  }
+  if (hasOwnProperty(payload, "image") || hasOwnProperty(payload, "image_data")) {
+    update.image = sanitizeImageField(payload.image) ?? sanitizeImageField(payload.image_data);
+  }
+
+  const telegram = readMirroredTextField(payload, ["telegram"], ["telegram"]);
+  if (telegram.present) {
+    update.telegram = telegram.value;
+  }
+
+  const twitter = readMirroredTextField(payload, ["twitter", "x"], ["twitter", "x"]);
+  if (twitter.present) {
+    update.twitter = twitter.value;
+  }
+
+  const website = readMirroredTextField(payload, ["website", "external_url", "url"], ["website", "url"]);
+  if (website.present) {
+    update.website = website.value;
+  }
+
+  return update;
+};
+
+const fetchServiceMetadataDocument = async (
   client: ContractReader,
   serviceId: bigint,
-): Promise<ServiceMetadata | null> => {
+): Promise<ServiceMetadataDocument> => {
   const rawTokenUri = await client.readContract({
     address: REGISTRY_ADDRESS,
     abi: [TOKEN_URI_FUNCTION],
@@ -442,12 +582,31 @@ const fetchServiceMetadata = async (
   if (!metadataUri) {
     throw new Error("tokenURI is not a fetchable metadata URI");
   }
-  const payload = await fetchJsonWithRetry(metadataUri);
+
+  return {
+    payload: await fetchJsonWithRetry(metadataUri),
+    metadataUri,
+  };
+};
+
+const fetchServiceMetadata = async (
+  client: ContractReader,
+  serviceId: bigint,
+): Promise<ServiceMetadata | null> => {
+  const { payload, metadataUri } = await fetchServiceMetadataDocument(client, serviceId);
   const name = sanitizeOptionalText(payload.name);
   const description = sanitizeOptionalText(payload.description);
   const image = sanitizeImageField(payload.image) ?? sanitizeImageField(payload.image_data);
+  const mirroredUpdate = extractMirroredMetadataUpdate(payload);
 
-  if (!name && !description && !image) {
+  if (
+    !name &&
+    !description &&
+    !image &&
+    mirroredUpdate.telegram == null &&
+    mirroredUpdate.twitter == null &&
+    mirroredUpdate.website == null
+  ) {
     return null;
   }
 
@@ -455,6 +614,9 @@ const fetchServiceMetadata = async (
     name,
     description,
     image,
+    telegram: mirroredUpdate.telegram ?? null,
+    twitter: mirroredUpdate.twitter ?? null,
+    website: mirroredUpdate.website ?? null,
     metadataUri,
   };
 };
@@ -512,9 +674,9 @@ const resolveServiceRecord = async (
         owner: getAddress(ownerAddress as Address).toLowerCase(),
         image: metadata?.image ?? null,
         description: metadata?.description ?? fallbackServiceDescription(serviceIdText),
-        telegram: null,
-        twitter: null,
-        website: null,
+        telegram: metadata?.telegram ?? null,
+        twitter: metadata?.twitter ?? null,
+        website: metadata?.website ?? null,
       },
     };
   } catch (error) {
@@ -573,9 +735,9 @@ const resolveErc8004Record = async (
         owner,
         image: metadata?.image ?? null,
         description: metadata?.description ?? fallbackErc8004Description(tokenIdText),
-        telegram: null,
-        twitter: null,
-        website: null,
+        telegram: metadata?.telegram ?? null,
+        twitter: metadata?.twitter ?? null,
+        website: metadata?.website ?? null,
       },
     };
   } catch (error) {
@@ -1304,6 +1466,304 @@ const forceRefreshServiceMetadata = async (): Promise<{
   };
 };
 
+const ERC8004_REFRESH_ROW_SELECT = {
+  agentId: true,
+  address: true,
+  name: true,
+  image: true,
+  description: true,
+  telegram: true,
+  twitter: true,
+  website: true,
+} as const;
+
+type Erc8004RefreshRow = Awaited<
+  ReturnType<
+    typeof prisma.agent.findMany<{
+      select: typeof ERC8004_REFRESH_ROW_SELECT;
+    }>
+  >
+>[number];
+
+const getMetadataRefreshCursor = async (): Promise<number> => {
+  const state = await prisma.systemState.findUnique({
+    where: { key: ERC8004_METADATA_REFRESH_CURSOR_KEY },
+  });
+  if (!state || state.lastSyncedBlock <= 0n) return 0;
+  const asNumber = Number(state.lastSyncedBlock);
+  return Number.isFinite(asNumber) && asNumber >= 0 ? Math.trunc(asNumber) : 0;
+};
+
+const persistMetadataRefreshCursor = async (nextOffset: number): Promise<void> => {
+  await prisma.systemState.upsert({
+    where: { key: ERC8004_METADATA_REFRESH_CURSOR_KEY },
+    create: {
+      key: ERC8004_METADATA_REFRESH_CURSOR_KEY,
+      lastSyncedBlock: BigInt(Math.max(0, Math.trunc(nextOffset))),
+    },
+    update: {
+      lastSyncedBlock: BigInt(Math.max(0, Math.trunc(nextOffset))),
+    },
+  });
+};
+
+const loadTargetedErc8004RefreshRows = async (): Promise<{ rows: Erc8004RefreshRow[]; total: number }> => {
+  if (ERC8004_REFRESH_AGENT_IDS.length === 0 && ERC8004_REFRESH_TOKEN_IDS.length === 0) {
+    throw new Error(
+      "Targeted ERC-8004 metadata refresh requires --agent-id=<id[,id...]> or --token-id=<id[,id...]>.",
+    );
+  }
+
+  const tokenAddresses = ERC8004_REFRESH_TOKEN_IDS.map((tokenId) => `${ERC8004_ADDRESS_PREFIX}${tokenId}`);
+  const rows = await prisma.agent.findMany({
+    where: {
+      AND: [
+        { address: { startsWith: ERC8004_ADDRESS_PREFIX } },
+        {
+          OR: [
+            ...(ERC8004_REFRESH_AGENT_IDS.length > 0 ? [{ agentId: { in: ERC8004_REFRESH_AGENT_IDS } }] : []),
+            ...(tokenAddresses.length > 0 ? [{ address: { in: tokenAddresses } }] : []),
+          ],
+        },
+      ],
+    },
+    orderBy: { agentId: "asc" },
+    select: ERC8004_REFRESH_ROW_SELECT,
+  });
+
+  return {
+    rows,
+    total: rows.length,
+  };
+};
+
+const loadFullErc8004RefreshRows = async (): Promise<{ rows: Erc8004RefreshRow[]; total: number }> => {
+  const rows = await prisma.agent.findMany({
+    where: { address: { startsWith: ERC8004_ADDRESS_PREFIX } },
+    orderBy: { agentId: "asc" },
+    select: ERC8004_REFRESH_ROW_SELECT,
+  });
+
+  return {
+    rows,
+    total: rows.length,
+  };
+};
+
+const loadBoundedErc8004RefreshRows = async (): Promise<{
+  rows: Erc8004RefreshRow[];
+  total: number;
+  offset: number;
+  nextOffset: number;
+  cohort: string;
+}> => {
+  const currentCursor = await getMetadataRefreshCursor();
+  const activeSnapshot = await prisma.leaderboardSnapshot.findFirst({
+    where: {
+      isActive: true,
+      status: "READY",
+    },
+    select: { id: true },
+  });
+
+  if (activeSnapshot) {
+    const total = await prisma.leaderboardSnapshotRow.count({
+      where: {
+        snapshotId: activeSnapshot.id,
+        agentAddress: { startsWith: ERC8004_ADDRESS_PREFIX },
+      },
+    });
+    const window = computeRotatingBatchWindow(total, ERC8004_METADATA_REFRESH_BATCH_SIZE, currentCursor);
+    if (window.limit === 0) {
+      return {
+        rows: [],
+        total,
+        offset: window.offset,
+        nextOffset: window.nextOffset,
+        cohort: `active_snapshot:${activeSnapshot.id}`,
+      };
+    }
+
+    const snapshotRows = await prisma.leaderboardSnapshotRow.findMany({
+      where: {
+        snapshotId: activeSnapshot.id,
+        agentAddress: { startsWith: ERC8004_ADDRESS_PREFIX },
+      },
+      orderBy: { rank: "asc" },
+      skip: window.offset,
+      take: window.limit,
+      select: { agentAddress: true },
+    });
+    const orderedAddresses = snapshotRows.map((row) => row.agentAddress);
+    const rows = await prisma.agent.findMany({
+      where: {
+        address: { in: orderedAddresses },
+      },
+      select: ERC8004_REFRESH_ROW_SELECT,
+    });
+    const rowsByAddress = new Map(rows.map((row) => [row.address, row] as const));
+
+    return {
+      rows: orderedAddresses
+        .map((address) => rowsByAddress.get(address))
+        .filter((row): row is Erc8004RefreshRow => Boolean(row)),
+      total,
+      offset: window.offset,
+      nextOffset: window.nextOffset,
+      cohort: `active_snapshot:${activeSnapshot.id}`,
+    };
+  }
+
+  const total = await prisma.agent.count({
+    where: { address: { startsWith: ERC8004_ADDRESS_PREFIX } },
+  });
+  const window = computeRotatingBatchWindow(total, ERC8004_METADATA_REFRESH_BATCH_SIZE, currentCursor);
+  const rows =
+    window.limit === 0
+      ? []
+      : await prisma.agent.findMany({
+          where: { address: { startsWith: ERC8004_ADDRESS_PREFIX } },
+          orderBy: { updatedAt: "asc" },
+          skip: window.offset,
+          take: window.limit,
+          select: ERC8004_REFRESH_ROW_SELECT,
+        });
+
+  return {
+    rows,
+    total,
+    offset: window.offset,
+    nextOffset: window.nextOffset,
+    cohort: "agent_table:updatedAt",
+  };
+};
+
+const refreshErc8004MetadataRows = async (
+  rows: Erc8004RefreshRow[],
+  mode: MetadataRefreshMode,
+): Promise<MetadataRefreshStats> => {
+  const client = buildClient() as unknown as ContractReader;
+  let refreshed = 0;
+  let changed = 0;
+  let unchanged = 0;
+  let failed = 0;
+  let timedOut = 0;
+  let processed = 0;
+
+  const refreshRow = async (
+    row: Erc8004RefreshRow,
+  ): Promise<{ refreshed: boolean; changed: boolean; failed: boolean; timedOut: boolean }> => {
+    const tokenIdText = row.address.startsWith(ERC8004_ADDRESS_PREFIX)
+      ? row.address.slice(ERC8004_ADDRESS_PREFIX.length)
+      : "";
+    if (!/^\d+$/.test(tokenIdText)) {
+      return { refreshed: false, changed: false, failed: true, timedOut: false };
+    }
+
+    let payload: Record<string, unknown> | null = null;
+    try {
+      markIndexerProgress(`metadata-refresh:fetch token=${tokenIdText}`);
+      const document = await fetchServiceMetadataDocument(client, BigInt(tokenIdText));
+      payload = document.payload;
+    } catch (error) {
+      const timedOut = isMetadataFetchTimeoutError(error);
+      const failureLabel = timedOut ? "timed out" : "failed";
+      console.warn(
+        `Metadata fetch ${failureLabel} for ERC-8004 token ${tokenIdText} during ${mode} refresh. Preserving existing mirrored metadata.`,
+      );
+      if (!isExpectedMetadataFetchError(error)) {
+        console.error(error);
+      }
+      return { refreshed: false, changed: false, failed: true, timedOut };
+    }
+
+    const patch = computeMirroredMetadataPatch(
+      {
+        name: row.name,
+        image: row.image,
+        description: row.description,
+        telegram: row.telegram,
+        twitter: row.twitter,
+        website: row.website,
+      } satisfies MirroredAgentMetadata,
+      extractMirroredMetadataUpdate(payload),
+    );
+
+    if (Object.keys(patch).length === 0) {
+      return { refreshed: true, changed: false, failed: false, timedOut: false };
+    }
+
+    markIndexerProgress(`metadata-refresh:update token=${tokenIdText}`);
+    await prisma.agent.update({
+      where: { address: row.address },
+      data: patch,
+    });
+
+    return { refreshed: true, changed: true, failed: false, timedOut: false };
+  };
+
+  for (const batch of chunkArray(rows, METADATA_CONCURRENCY)) {
+    markIndexerProgress(`metadata-refresh:batch-start processed=${processed}/${rows.length}`);
+    const results = await Promise.all(batch.map((row) => refreshRow(row)));
+    processed += batch.length;
+
+    for (const result of results) {
+      if (result.refreshed) refreshed += 1;
+      if (result.changed) changed += 1;
+      if (!result.changed && result.refreshed) unchanged += 1;
+      if (result.failed) failed += 1;
+      if (result.timedOut) timedOut += 1;
+    }
+
+    console.log(
+      `ERC-8004 metadata refresh progress: mode=${mode}, processed=${processed}/${rows.length}, changed=${changed}, unchanged=${unchanged}, failed=${failed}, timed_out=${timedOut}`,
+    );
+    markIndexerProgress(`metadata-refresh:progress processed=${processed}/${rows.length}`);
+    if (processed < rows.length && METADATA_BATCH_DELAY_MS > 0) {
+      await sleep(METADATA_BATCH_DELAY_MS);
+    }
+  }
+
+  return {
+    mode,
+    total: rows.length,
+    refreshed,
+    changed,
+    unchanged,
+    failed,
+    timedOut,
+  };
+};
+
+const forceRefreshErc8004Metadata = async (): Promise<MetadataRefreshStats> => {
+  if (!METADATA_REFRESH_MODE) {
+    throw new Error(
+      "ERC-8004 metadata refresh requires --refresh-mode=full|bounded or targeted selectors via --agent-id/--token-id.",
+    );
+  }
+
+  if (METADATA_REFRESH_MODE === "targeted") {
+    const selection = await loadTargetedErc8004RefreshRows();
+    return refreshErc8004MetadataRows(selection.rows, "targeted");
+  }
+
+  if (METADATA_REFRESH_MODE === "full") {
+    const selection = await loadFullErc8004RefreshRows();
+    return refreshErc8004MetadataRows(selection.rows, "full");
+  }
+
+  const selection = await loadBoundedErc8004RefreshRows();
+  console.log(
+    `ERC-8004 bounded metadata refresh cohort: source=${selection.cohort}, total=${selection.total}, offset=${selection.offset}, batch=${selection.rows.length}, next_offset=${selection.nextOffset}`,
+  );
+  const stats = await refreshErc8004MetadataRows(selection.rows, "bounded");
+  await persistMetadataRefreshCursor(selection.nextOffset);
+  return {
+    ...stats,
+    cohortTotal: selection.total,
+  };
+};
+
 const collectUsedAgentIds = async (): Promise<Set<string>> => {
   const rows = await prisma.agent.findMany({
     select: { agentId: true },
@@ -1447,7 +1907,7 @@ const backfillAgentIdentityColumns = async (): Promise<number> => {
 async function main(): Promise<void> {
   markIndexerProgress("main:start");
   console.log(
-    `Indexer config: mode=${AGENT_INDEX_MODE}, cursor_key=${CURSOR_KEY}, chunk_size=${CHUNK_SIZE.toString()} blocks, chunk_delay_ms=${CHUNK_DELAY_MS}, metadata_concurrency=${METADATA_CONCURRENCY}, metadata_batch_delay_ms=${METADATA_BATCH_DELAY_MS}, get_logs_timeout_ms=${GET_LOGS_TIMEOUT_MS}, get_logs_retries=${GET_LOGS_RETRY_COUNT}, get_logs_min_split_range_blocks=${GET_LOGS_MIN_SPLIT_RANGE_BLOCKS.toString()}, prisma_retry_attempts=${PRISMA_RETRY_ATTEMPTS}, prisma_retry_delay_ms=${PRISMA_RETRY_DELAY_MS}, prisma_op_timeout_ms=${PRISMA_OPERATION_TIMEOUT_MS}, prisma_conn_timeout_ms=${PRISMA_CONNECTION_TIMEOUT_MS}, token_resolve_timeout_ms=${TOKEN_RESOLVE_TIMEOUT_MS}, progress_watchdog_timeout_ms=${PROGRESS_WATCHDOG_TIMEOUT_MS}, rpc_env=${INDEXER_RPC_ENV}`,
+    `Indexer config: mode=${AGENT_INDEX_MODE}, cursor_key=${CURSOR_KEY}, chunk_size=${CHUNK_SIZE.toString()} blocks, chunk_delay_ms=${CHUNK_DELAY_MS}, metadata_concurrency=${METADATA_CONCURRENCY}, metadata_batch_delay_ms=${METADATA_BATCH_DELAY_MS}, metadata_fetch_timeout_ms=${METADATA_FETCH_TIMEOUT_MS}, metadata_fetch_retries=${METADATA_FETCH_RETRY_COUNT}, metadata_refresh_mode=${METADATA_REFRESH_MODE ?? "none"}, metadata_refresh_batch_size=${ERC8004_METADATA_REFRESH_BATCH_SIZE}, get_logs_timeout_ms=${GET_LOGS_TIMEOUT_MS}, get_logs_retries=${GET_LOGS_RETRY_COUNT}, get_logs_min_split_range_blocks=${GET_LOGS_MIN_SPLIT_RANGE_BLOCKS.toString()}, prisma_retry_attempts=${PRISMA_RETRY_ATTEMPTS}, prisma_retry_delay_ms=${PRISMA_RETRY_DELAY_MS}, prisma_op_timeout_ms=${PRISMA_OPERATION_TIMEOUT_MS}, prisma_conn_timeout_ms=${PRISMA_CONNECTION_TIMEOUT_MS}, token_resolve_timeout_ms=${TOKEN_RESOLVE_TIMEOUT_MS}, progress_watchdog_timeout_ms=${PROGRESS_WATCHDOG_TIMEOUT_MS}, rpc_env=${INDEXER_RPC_ENV}`,
   );
 
   if (FORCE_RESET_INDEXER) {
@@ -1458,13 +1918,17 @@ async function main(): Promise<void> {
   }
 
   if (FORCE_REFRESH_METADATA) {
-    if (AGENT_INDEX_MODE !== "olas") {
-      console.warn("Forced metadata refresh currently supports Olas service identities only. Skipping.");
+    if (AGENT_INDEX_MODE === "olas") {
+      const stats = await forceRefreshServiceMetadata();
+      console.log(
+        `Forced metadata refresh complete: mode=full, total=${stats.total}, rich_metadata=${stats.refreshed}, fallback=${stats.fallbackUsed}, unchanged=${stats.unchanged}.`,
+      );
       return;
     }
-    const stats = await forceRefreshServiceMetadata();
+
+    const stats = await forceRefreshErc8004Metadata();
     console.log(
-      `Forced metadata refresh complete: total=${stats.total}, rich_metadata=${stats.refreshed}, fallback=${stats.fallbackUsed}, unchanged=${stats.unchanged}.`,
+      `Forced metadata refresh complete: mode=${stats.mode}, total_considered=${stats.total}${typeof stats.cohortTotal === "number" ? `, cohort_total=${stats.cohortTotal}` : ""}, refreshed=${stats.refreshed}, changed=${stats.changed}, unchanged=${stats.unchanged}, failed=${stats.failed}, timed_out=${stats.timedOut}.`,
     );
     return;
   }

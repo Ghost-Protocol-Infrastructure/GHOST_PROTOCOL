@@ -1,0 +1,117 @@
+name: ERC-8004 Metadata Refresh
+
+on:
+  workflow_dispatch:
+    inputs:
+      refresh_mode:
+        description: Metadata refresh mode
+        required: true
+        default: bounded
+        type: choice
+        options:
+          - bounded
+          - full
+  schedule:
+    - cron: "50 */6 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: erc8004-metadata-refresh
+  cancel-in-progress: false
+
+jobs:
+  bounded-refresh:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.refresh_mode == 'bounded')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      POSTGRES_PRISMA_URL: ${{ secrets.POSTGRES_PRISMA_URL }}
+      POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}
+      BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
+      AGENT_INDEX_MODE: erc8004
+      AGENT_METADATA_REFRESH_MODE: bounded
+      AGENT_METADATA_REFRESH_BATCH_SIZE: "1000"
+      AGENT_METADATA_CONCURRENCY: "12"
+      AGENT_METADATA_BATCH_DELAY_MS: "25"
+      AGENT_METADATA_FETCH_TIMEOUT_MS: "8000"
+      AGENT_METADATA_FETCH_RETRY_COUNT: "2"
+      AGENT_PRISMA_RETRY_ATTEMPTS: "4"
+      AGENT_PRISMA_RETRY_DELAY_MS: "1000"
+      AGENT_PRISMA_OPERATION_TIMEOUT_MS: "180000"
+      AGENT_PRISMA_CONNECTION_TIMEOUT_MS: "12000"
+      AGENT_PROGRESS_WATCHDOG_TIMEOUT_MS: "300000"
+      ERC8004_REGISTRY_ADDRESS: ${{ secrets.ERC8004_REGISTRY_ADDRESS }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20.20.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Report refresh config
+        run: |
+          echo "refresh_mode=${AGENT_METADATA_REFRESH_MODE}"
+          echo "batch_size=${AGENT_METADATA_REFRESH_BATCH_SIZE}"
+          echo "metadata_concurrency=${AGENT_METADATA_CONCURRENCY}"
+          echo "metadata_fetch_timeout_ms=${AGENT_METADATA_FETCH_TIMEOUT_MS}"
+
+      - name: Run bounded ERC-8004 metadata refresh
+        run: npx tsx scripts/index-db.ts --mode=erc8004 --force-refresh-metadata --refresh-mode=bounded
+
+  full-refresh:
+    if: github.event_name == 'workflow_dispatch' && inputs.refresh_mode == 'full'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      POSTGRES_PRISMA_URL: ${{ secrets.POSTGRES_PRISMA_URL }}
+      POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}
+      BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
+      AGENT_INDEX_MODE: erc8004
+      AGENT_METADATA_REFRESH_MODE: full
+      AGENT_METADATA_CONCURRENCY: "16"
+      AGENT_METADATA_BATCH_DELAY_MS: "10"
+      AGENT_METADATA_FETCH_TIMEOUT_MS: "8000"
+      AGENT_METADATA_FETCH_RETRY_COUNT: "2"
+      AGENT_PRISMA_RETRY_ATTEMPTS: "4"
+      AGENT_PRISMA_RETRY_DELAY_MS: "1000"
+      AGENT_PRISMA_OPERATION_TIMEOUT_MS: "180000"
+      AGENT_PRISMA_CONNECTION_TIMEOUT_MS: "12000"
+      AGENT_PROGRESS_WATCHDOG_TIMEOUT_MS: "300000"
+      ERC8004_REGISTRY_ADDRESS: ${{ secrets.ERC8004_REGISTRY_ADDRESS }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20.20.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Report refresh config
+        run: |
+          echo "refresh_mode=${AGENT_METADATA_REFRESH_MODE}"
+          echo "metadata_concurrency=${AGENT_METADATA_CONCURRENCY}"
+          echo "metadata_fetch_timeout_ms=${AGENT_METADATA_FETCH_TIMEOUT_MS}"
+
+      - name: Run full ERC-8004 metadata refresh seed
+        run: npx tsx scripts/index-db.ts --mode=erc8004 --force-refresh-metadata --refresh-mode=full
