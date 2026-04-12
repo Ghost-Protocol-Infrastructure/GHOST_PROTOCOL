@@ -1,7 +1,7 @@
 # GHOST PROTOCOL: PROJECT SPEC (AS-BUILT)
 **Version:** 3.0  
-**Last Updated:** 2026-03-26
-**Status:** Live on Base Mainnet with Postgres-backed indexing, snapshot-only GhostRank runtime reads, a single canonical Score V2 refresh/snapshot workflow, GhostVault V2 pooled credit backing, spend-attributed merchant settlement, GhostGate Express authorization, open x402 settlement reporting, runtime-aware x402 reporting wrappers, config-first HTTP monetization kit bindings, stateless MCP payment-aware proxy support, fulfillment (ticket/capture/expiry/support), direct-only GhostWire APIs and reconciliation, rail-aware GhostRank scoring inputs, and hosted settlement/operator automation enabled for configured services.
+**Last Updated:** 2026-04-12
+**Status:** Live on Base Mainnet with Postgres-backed indexing, a separate ERC-8004 metadata refresh workflow, snapshot-only GhostRank runtime reads, a single canonical Score V2 refresh/snapshot workflow, GhostVault V2 pooled credit backing, spend-attributed merchant settlement, GhostGate Express authorization, open x402 settlement reporting, runtime-aware x402 reporting wrappers, config-first HTTP monetization kit bindings, stateless MCP payment-aware proxy support, fulfillment (ticket/capture/expiry/support), direct-only GhostWire APIs and reconciliation, rail-aware GhostRank scoring inputs, and hosted settlement/operator automation enabled for configured services.
 
 ---
 
@@ -118,6 +118,16 @@ Primary operator/developer docs:
   - `eth_getLogs` uses timeout + retry + adaptive range splitting for stalled ranges (strict mode: no auto-skip)
   - provider-aware `eth_getLogs` failover is enabled with endpoint-labeled logs (`BASE_RPC_URL_INDEXER` primary plus built-in fallbacks)
   - configurable progress watchdog exits idle/stalled runs with last-step diagnostics (`AGENT_PROGRESS_WATCHDOG_TIMEOUT_MS`, `0` disables)
+- ERC-8004 mirrored metadata freshness is handled outside scoring:
+  - `scripts/index-db.ts --force-refresh-metadata --refresh-mode=targeted|bounded|full`
+  - writes only the mirrored metadata fields when one of them actually changed:
+    - `name`
+    - `image`
+    - `description`
+    - `telegram`
+    - `twitter`
+    - `website`
+  - failed refresh fetches preserve existing mirrored values instead of writing fallback churn
 
 ### 3.2 Scoring (legacy note)
 - The old V1 scorer (`scripts/score-leads.ts`) has been removed from the active repo.
@@ -138,20 +148,53 @@ Implemented in `scripts/score-v2.ts`:
   - `x402Reputation`
   - `wireReputation`
   - `railMode`
+  - `expressConfidence`
+  - `x402Confidence`
+  - `wireConfidence`
 
 Current rail-aware reputation model in the codebase:
+- Score V2 first resolves an evidence boundary using `isClaimedAgent(...)`, not status text alone.
+- Measured/claimed eligibility can come from:
+  - claimed-style status/tier
+  - positive `yield`
+  - positive `uptime`
+  - measured Express evidence (`usageAuthorizedCount7d`, `expressYield`)
+  - measured `x402` evidence (`x402Yield`, qualified count, unique counterparties, qualified net volume)
+  - provider-attributed GhostWire evidence (`wireYield`, terminal jobs, settled principal, settled provider earnings)
 - Missing non-applicable rail signals are not treated as zeros; only rails with confidence contribute to final blended reputation.
 - `expressReputation = uptime*0.65 + expressYieldNorm*0.35`
+- Express confidence is gated by measured commerce evidence:
+  - if `usageAuthorizedCount7d = 0` and `expressYield = 0`, then `expressConfidence = 0`
+  - uptime-only Express does not activate the Express rail
+- When Express is eligible:
+  - `usageConfidence = usageAuthorizedCount7d / 20`, clamped to `0..1`
+  - `coverageConfidence = (uptime>0 ? 0.45 : 0) + (expressYield>0 ? 0.35 : 0) + (usageAuthorizedCount7d>0 ? 0.2 : 0)`
+  - `expressConfidence = max(usageConfidence, coverageConfidence)`
 - `x402Reputation = breadthScore*0.30 + repeatScore*0.25 + x402YieldNorm*0.20 + successRate*0.15 + uptime*0.10 - concentrationPenalty`
-- `wireReputation = commerceQuality*0.7 + wireYieldNorm*0.3`
 - `x402Confidence` is derived from qualified paid calls, unique counterparties, repeat counterparties, active days, and qualified net volume over the rolling `30d` window
+- Current x402 confidence weights:
+  - request depth: `20%`
+  - unique counterparties: `30%`
+  - repeat counterparties: `20%`
+  - active days: `20%`
+  - qualified net volume depth: `10%`
+- `wireReputation = commerceQuality*0.7 + wireYieldNorm*0.3`
 - `commerceQuality` uses provider-only GhostWire outcomes over a rolling `30d` window:
   - `COMPLETED = 1.0`
   - `REJECTED = 0.1`
   - `EXPIRED = 0.0`
   - weighted by capped settled-volume confidence and sample-depth confidence
+- `wireConfidence = max(depthConfidence(terminalJobs, 10), coverageConfidence)`
+- `coverageConfidence = (terminalJobs>0 ? 0.45 : 0) + (settledPrincipal>0 ? 0.2 : 0) + (settledProviderEarnings>0 ? 0.35 : 0)`
 - `reputation = confidenceWeighted(expressReputation, x402Reputation, wireReputation)`
 - `rankScore = reputation*0.7 + velocity*0.3 - antiWashPenalty`
+- readiness is now a separate bounded final-score contribution:
+  - `LIVE = +4`
+  - `DEGRADED = +2`
+  - `CONFIGURED = +1`
+  - `UNCONFIGURED = +0`
+- final persisted rank score is:
+  - `adjustedRankScore = clamp(rankScore + readinessBonus, 0, 100)`
 - `railMode` resolves to:
   - `X402`
   - `EXPRESS`
@@ -169,10 +212,15 @@ Current rail-aware reputation model in the codebase:
     - `x402 = x402Yield`
     - `GhostWire = wireYield`
   - `yield = expressYield + x402Yield + wireYield`
-  - `uptime` remains the request-rail reliability metric and is meaningful for Express and open `x402`
+  - `uptime` remains the request-rail reliability metric used as a supporting input for Express and open `x402`
+  - readiness is a separate operational state and separate bounded rank bonus; it is not part of rail reputation
   - claimed/measured agents can display `0.0000 ETH` / `0.0%`
   - unclaimed or fallback-only rows display `---` for yield/uptime because those metrics are not yet meaningful proof for those rows
 - `WHALE` now requires measured non-fallback activity above `500`; fallback-only rows do not qualify for `WHALE`
+- Fallback-only ranking behavior:
+  - velocity is still visible for discovery
+  - owner/creator fallback tx signal is capped and cluster-damped
+  - fallback-only rows use a bounded baseline instead of full measured rail reputation
 
 Score V2 operational behavior:
 - GhostRank runtime reads are snapshot-only from the active ready `LeaderboardSnapshot`
@@ -679,7 +727,31 @@ File: `.github/workflows/cron.yml`
   - watchdog-assisted stall detection can terminate idle runs with last-step diagnostics so manual resumes are deterministic
 - No push trigger.
 
-### 9.2 Score V2 Workflow
+### 9.2 ERC-8004 Metadata Refresh Workflow
+File: `.github/workflows/erc8004-metadata-refresh.yml`
+- Name: `ERC-8004 Metadata Refresh`
+- Triggers:
+  - `workflow_dispatch`
+  - schedule: `50 */6 * * *`
+- Modes:
+  - manual `full` refresh seed
+  - scheduled bounded maintenance refresh
+- Separation:
+  - refreshes mirrored ERC-8004 metadata only
+  - does not ingest telemetry
+  - does not run `score-v2`
+  - does not build snapshots
+- Scheduled bounded maintenance behavior:
+  - refreshes a capped cohort each run instead of sweeping the full mirrored set
+  - prioritizes active-market rows when an active snapshot exists
+  - uses a separate maintenance cursor for rotation
+- Failure behavior:
+  - bounded fetch timeout and bounded retry count
+  - bad/unreachable metadata endpoints are non-fatal
+  - failures preserve existing mirrored metadata
+  - expected failures are summarized by reason rather than emitted as per-row stack-trace noise
+
+### 9.3 Score V2 Workflow
 File: `.github/workflows/score-v2.yml`
 - Name: `Score V2`
 - Triggers:
@@ -698,7 +770,7 @@ File: `.github/workflows/score-v2.yml`
   - no shadow mode
   - no `Agent` score writeback
 
-### 9.3 Credit Reconcile Workflow
+### 9.4 Credit Reconcile Workflow
 File: `.github/workflows/credit-reconcile.yml`
 - Name: `Credit Reconcile`
 - Triggers:
@@ -709,12 +781,12 @@ File: `.github/workflows/credit-reconcile.yml`
   - `monitor:credits`
 - Optional SMTP alerts to configured recipient.
 
-### 9.4 Credit Hardening Scripts
+### 9.5 Credit Hardening Scripts
 - `scripts/reconcile-credits.ts`: balance vs ledger drift check.
 - `scripts/monitor-credit-alerts.ts`: replay spike threshold monitor.
 - `scripts/test-credit-regression.ts`: gate/credit regression checks.
 
-### 9.5 Fulfillment Expire Sweep Workflow
+### 9.6 Fulfillment Expire Sweep Workflow
 File: `.github/workflows/fulfillment-expire-sweep.yml`
 - Name: `Fulfillment Expire Sweep`
 - Triggers:
@@ -725,7 +797,7 @@ File: `.github/workflows/fulfillment-expire-sweep.yml`
 - Auth:
   - GitHub Actions secret `GHOST_FULFILLMENT_EXPIRE_SWEEP_SECRET`
 
-### 9.6 Settlement Operator Workflow
+### 9.7 Settlement Operator Workflow
 File: `.github/workflows/settlement-operator.yml`
 - Name: `Settlement Operator`
 - Triggers:

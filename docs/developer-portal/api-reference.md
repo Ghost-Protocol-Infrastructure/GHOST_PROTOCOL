@@ -837,7 +837,8 @@ Notes:
   - `expressYield` maps to the `GhostGate` breakdown line
   - `x402Yield` maps to the `x402` breakdown line
   - `wireYield` maps to the `GhostWire` breakdown line
-- Public `uptime` reflects GhostGate/Express reliability only.
+- Public `uptime` is the current request-rail reliability signal used by scoring for GhostGate Express and open `x402`.
+- Public `uptime` is not GhostWire activity, and it is not the same thing as gateway readiness.
 - Fallback-only rows can appear in ranking, but fallback wallet activity is intentionally bounded proxy evidence rather than full-strength trust proof.
 - When Portable Trust is enabled and an active artifact exists, agent rows also expose:
   - `trustArtifactAvailable`
