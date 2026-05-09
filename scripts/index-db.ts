@@ -299,7 +299,7 @@ const withTimeout = async <T>(label: string, timeoutMs: number, operation: () =>
 
 const isRecoverablePrismaError = (error: unknown): boolean => {
   const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-  return /(postgresql connection|kind:\s*closed|connection.*closed|engine is not yet connected|response from the engine was empty|genericfailure|prismaclientunknownrequesterror|P1001|P1017|timeout|timed out|socket hang up|ECONNRESET|connection reset)/i.test(
+  return /(postgresql connection|kind:\s*closed|connection.*closed|engine is not yet connected|response from the engine was empty|genericfailure|prismaclientunknownrequesterror|P1001|P1017|P2024|57P01|57P03|08000|08003|08006|53300|timeout|timed out|socket hang up|ECONNRESET|ECONNREFUSED|ETIMEDOUT|connection reset)/i.test(
     message,
   );
 };

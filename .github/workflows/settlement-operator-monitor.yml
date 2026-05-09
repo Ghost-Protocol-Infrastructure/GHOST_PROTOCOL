@@ -60,23 +60,48 @@ jobs:
             local url="$1"
             local response_file="$2"
             local http_code=""
+            local curl_exit=0
+            local attempt=1
+            local max_attempts=3
 
-            echo "Checking settlement operator health via ${url}"
-            http_code="$(curl -sS -o "${response_file}" -w '%{http_code}' \
-              -H "Authorization: Bearer ${SETTLEMENT_SECRET}" \
-              -H "Accept: application/json" \
-              "${url}")"
+            while [ "${attempt}" -le "${max_attempts}" ]; do
+              echo "Attempt ${attempt}/${max_attempts}: checking settlement operator health via ${url}"
+              set +e
+              http_code="$(curl -sS -o "${response_file}" -w '%{http_code}' \
+                --connect-timeout 10 \
+                --max-time 60 \
+                -H "Authorization: Bearer ${SETTLEMENT_SECRET}" \
+                -H "Accept: application/json" \
+                "${url}")"
+              curl_exit=$?
+              set -e
 
-            if [ "${http_code}" = "200" ]; then
-              return 0
-            fi
+              if [ "${curl_exit}" -eq 0 ] && [ "${http_code}" = "200" ]; then
+                return 0
+              fi
 
-            if [ "${http_code}" = "401" ]; then
-              echo "Settlement operator health endpoint rejected secret with HTTP 401" >&2
-              return 1
-            fi
+              if [ "${curl_exit}" -eq 0 ] && [ "${http_code}" = "401" ]; then
+                echo "Settlement operator health endpoint rejected secret with HTTP 401" >&2
+                return 1
+              fi
 
-            echo "Settlement operator health endpoint failed with HTTP ${http_code}" >&2
+              if [ "${curl_exit}" -ne 0 ]; then
+                echo "Settlement operator health curl failed with exit ${curl_exit}." >&2
+              else
+                echo "Settlement operator health endpoint failed with HTTP ${http_code}." >&2
+              fi
+
+              if [ "${attempt}" -lt "${max_attempts}" ] && { [ "${curl_exit}" -ne 0 ] || [ "${http_code}" = "408" ] || [ "${http_code}" = "429" ] || [[ "${http_code}" =~ ^5 ]]; }; then
+                sleep_for=$((attempt * 10))
+                echo "Retrying settlement operator health check in ${sleep_for}s..." >&2
+                sleep "${sleep_for}"
+              else
+                return 1
+              fi
+
+              attempt=$((attempt + 1))
+            done
+
             return 1
           }
 
@@ -86,6 +111,7 @@ jobs:
 
       - name: Send settlement operator alert email
         if: ${{ failure() && env.ALERT_SMTP_SERVER != '' && env.ALERT_SMTP_USERNAME != '' && env.ALERT_SMTP_PASSWORD != '' && env.ALERT_FROM_EMAIL != '' }}
+        continue-on-error: true
         env:
           ALERT_SUBJECT: "[Ghost Protocol][Settlement] Operator Health Alert"
           ALERT_BODY: |

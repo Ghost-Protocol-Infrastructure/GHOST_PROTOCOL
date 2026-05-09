@@ -82,6 +82,7 @@ jobs:
 
       - name: Send MCP monitor alert email
         if: ${{ failure() && env.ALERT_SMTP_SERVER != '' && env.ALERT_SMTP_USERNAME != '' && env.ALERT_SMTP_PASSWORD != '' && env.ALERT_FROM_EMAIL != '' }}
+        continue-on-error: true
         env:
           ALERT_SUBJECT: "[Ghost Protocol][MCP] Read-only endpoint monitor failure"
           ALERT_BODY: |

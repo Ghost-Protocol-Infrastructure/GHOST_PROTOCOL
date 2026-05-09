@@ -1,5 +1,6 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 import { bootstrapPostgresEnv, getPrismaClientDatasourceOptions } from "../lib/postgres-env";
+import { parseBoundedInt, withPrismaRetry } from "./prisma-retry";
 
 const postgresEnv = bootstrapPostgresEnv();
 
@@ -13,6 +14,24 @@ const DEFAULT_CREDIT_PRICE_WEI = 10_000_000_000_000n; // 0.00001 ETH
 const WEI_PER_ETH = 1_000_000_000_000_000_000n;
 const DEFAULT_UPDATE_BATCH_SIZE = 200;
 const CHANGE_EPSILON = 0.000001;
+const TELEMETRY_PRISMA_RETRY_ATTEMPTS = parseBoundedInt(
+  process.env.TELEMETRY_PRISMA_RETRY_ATTEMPTS ?? process.env.SCORE_V2_PRISMA_RETRY_ATTEMPTS,
+  4,
+  1,
+  8,
+);
+const TELEMETRY_PRISMA_RETRY_DELAY_MS = parseBoundedInt(
+  process.env.TELEMETRY_PRISMA_RETRY_DELAY_MS ?? process.env.SCORE_V2_PRISMA_RETRY_DELAY_MS,
+  1_000,
+  100,
+  10_000,
+);
+const TELEMETRY_PRISMA_CONNECTION_TIMEOUT_MS = parseBoundedInt(
+  process.env.TELEMETRY_PRISMA_CONNECTION_TIMEOUT_MS ?? process.env.SCORE_V2_PRISMA_CONNECTION_TIMEOUT_MS,
+  12_000,
+  2_000,
+  60_000,
+);
 
 type MetricSample = {
   uptime: number;
@@ -103,10 +122,20 @@ const chunkArray = <T>(items: T[], size: number): T[][] => {
   return chunks;
 };
 
+const withTelemetryPrismaRetry = <T>(label: string, operation: () => Promise<T>): Promise<T> =>
+  withPrismaRetry(prisma, label, operation, {
+    attempts: TELEMETRY_PRISMA_RETRY_ATTEMPTS,
+    delayMs: TELEMETRY_PRISMA_RETRY_DELAY_MS,
+    connectionTimeoutMs: TELEMETRY_PRISMA_CONNECTION_TIMEOUT_MS,
+    labelPrefix: "telemetry-ingest",
+  });
+
 const tableExists = async (name: string): Promise<boolean> => {
-  const result = await prisma.$queryRaw<Array<{ relation: string | null }>>(Prisma.sql`
-    SELECT to_regclass(${`public."${name}"`})::text AS relation
-  `);
+  const result = await withTelemetryPrismaRetry(`check ${name} table`, () =>
+    prisma.$queryRaw<Array<{ relation: string | null }>>(Prisma.sql`
+      SELECT to_regclass(${`public."${name}"`})::text AS relation
+    `),
+  );
   return Boolean(result[0]?.relation);
 };
 
@@ -116,15 +145,17 @@ const computeYieldByAgentId = async (since: Date, creditPriceWei: bigint): Promi
     return out;
   }
 
-  const rows = await prisma.fulfillmentHold.groupBy({
-    by: ["agentId"],
-    where: {
-      state: "CAPTURED",
-      capturedAt: { gte: since },
-      agentId: { not: null },
-    },
-    _sum: { cost: true },
-  });
+  const rows = await withTelemetryPrismaRetry("aggregate fulfillment yield", () =>
+    prisma.fulfillmentHold.groupBy({
+      by: ["agentId"],
+      where: {
+        state: "CAPTURED",
+        capturedAt: { gte: since },
+        agentId: { not: null },
+      },
+      _sum: { cost: true },
+    }),
+  );
 
   for (const row of rows) {
     if (!row.agentId) continue;
@@ -148,11 +179,13 @@ const computeCanaryUptimeByAgentId = async (since: Date): Promise<Map<string, Me
   }
 
   const countsByConfig = new Map<string, { total: number; success: number }>();
-  const groupedChecks = await prisma.agentGatewayCanaryCheck.groupBy({
-    by: ["gatewayConfigId", "success"],
-    where: { checkedAt: { gte: since } },
-    _count: { _all: true },
-  });
+  const groupedChecks = await withTelemetryPrismaRetry("aggregate gateway canary uptime", () =>
+    prisma.agentGatewayCanaryCheck.groupBy({
+      by: ["gatewayConfigId", "success"],
+      where: { checkedAt: { gte: since } },
+      _count: { _all: true },
+    }),
+  );
 
   for (const row of groupedChecks) {
     const current = countsByConfig.get(row.gatewayConfigId) ?? { total: 0, success: 0 };
@@ -162,12 +195,14 @@ const computeCanaryUptimeByAgentId = async (since: Date): Promise<Map<string, Me
     countsByConfig.set(row.gatewayConfigId, current);
   }
 
-  const configs = await prisma.agentGatewayConfig.findMany({
-    select: {
-      id: true,
-      agentId: true,
-    },
-  });
+  const configs = await withTelemetryPrismaRetry("load gateway configs for uptime", () =>
+    prisma.agentGatewayConfig.findMany({
+      select: {
+        id: true,
+        agentId: true,
+      },
+    }),
+  );
 
   for (const config of configs) {
     const counts = countsByConfig.get(config.id);
@@ -194,14 +229,16 @@ const computeOutcomeFallbackUptimeByAgentId = async (since: Date): Promise<Map<s
     return out;
   }
 
-  const grouped = await prisma.telemetryOutcomeEvent.groupBy({
-    by: ["agentId", "success"],
-    where: {
-      createdAt: { gte: since },
-      agentId: { not: null },
-    },
-    _count: { _all: true },
-  });
+  const grouped = await withTelemetryPrismaRetry("aggregate telemetry outcome uptime", () =>
+    prisma.telemetryOutcomeEvent.groupBy({
+      by: ["agentId", "success"],
+      where: {
+        createdAt: { gte: since },
+        agentId: { not: null },
+      },
+      _count: { _all: true },
+    }),
+  );
 
   const counters = new Map<string, { total: number; success: number }>();
   for (const row of grouped) {
@@ -252,7 +289,7 @@ const run = async (): Promise<void> => {
     return;
   }
 
-  const [agents, yieldByAgentId, canaryUptimeByAgentId, outcomeFallbackUptimeByAgentId] = await Promise.all([
+  const agents = await withTelemetryPrismaRetry("load agents", () =>
     prisma.agent.findMany({
       select: {
         address: true,
@@ -261,10 +298,10 @@ const run = async (): Promise<void> => {
         uptime: true,
       },
     }),
-    computeYieldByAgentId(since, creditPriceWei),
-    computeCanaryUptimeByAgentId(since),
-    computeOutcomeFallbackUptimeByAgentId(since),
-  ]);
+  );
+  const yieldByAgentId = await computeYieldByAgentId(since, creditPriceWei);
+  const canaryUptimeByAgentId = await computeCanaryUptimeByAgentId(since);
+  const outcomeFallbackUptimeByAgentId = await computeOutcomeFallbackUptimeByAgentId(since);
 
   const agentRows: AgentRow[] = agents.map((row) => ({
     address: row.address,
@@ -316,15 +353,17 @@ const run = async (): Promise<void> => {
   let updatedCount = 0;
   if (!dryRun && updates.length > 0) {
     for (const chunk of chunkArray(updates, updateBatchSize)) {
-      await prisma.$transaction(
-        chunk.map((update) =>
-          prisma.agent.update({
-            where: { address: update.address },
-            data: {
-              yield: update.nextYield,
-              uptime: update.nextUptime,
-            },
-          }),
+      await withTelemetryPrismaRetry("persist telemetry signal updates", () =>
+        prisma.$transaction(
+          chunk.map((update) =>
+            prisma.agent.update({
+              where: { address: update.address },
+              data: {
+                yield: update.nextYield,
+                uptime: update.nextUptime,
+              },
+            }),
+          ),
         ),
       );
       updatedCount += chunk.length;

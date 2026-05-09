@@ -4,6 +4,7 @@ import os
 import smtplib
 import ssl
 import sys
+import time
 from email.message import EmailMessage
 
 
@@ -72,14 +73,33 @@ def send_message(message: EmailMessage) -> None:
 
 
 def main() -> int:
+    retry_count = parse_int("ALERT_SMTP_RETRY_COUNT", 2)
+    retry_delay_seconds = parse_int("ALERT_SMTP_RETRY_DELAY_SECONDS", 3)
+
     try:
         message = build_message()
-        send_message(message)
-        print("Alert email sent successfully.")
-        return 0
     except Exception as error:
-        print(f"Failed to send alert email: {error}", file=sys.stderr)
+        print(f"Failed to build alert email: {error}", file=sys.stderr)
         return 1
+
+    for attempt in range(1, retry_count + 1):
+        try:
+            send_message(message)
+            print(f"Alert email sent successfully on attempt {attempt}/{retry_count}.")
+            return 0
+        except Exception as error:
+            if attempt >= retry_count:
+                print(f"Failed to send alert email after {attempt}/{retry_count} attempts: {error}", file=sys.stderr)
+                return 1
+
+            print(
+                f"Failed to send alert email on attempt {attempt}/{retry_count}: {error}; "
+                f"retrying in {retry_delay_seconds}s.",
+                file=sys.stderr,
+            )
+            time.sleep(retry_delay_seconds * attempt)
+
+    return 1
 
 
 if __name__ == "__main__":

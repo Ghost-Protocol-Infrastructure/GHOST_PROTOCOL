@@ -62,6 +62,7 @@ jobs:
 
       - name: Send credit alert email
         if: ${{ failure() && env.ALERT_SMTP_SERVER != '' && env.ALERT_SMTP_USERNAME != '' && env.ALERT_SMTP_PASSWORD != '' && env.ALERT_FROM_EMAIL != '' }}
+        continue-on-error: true
         env:
           ALERT_SUBJECT: "[Ghost Rank][Credit] Workflow Alert: ${{ github.workflow }}"
           ALERT_BODY: |

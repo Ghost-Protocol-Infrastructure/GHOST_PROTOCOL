@@ -1,6 +1,7 @@
 import { config as loadEnv } from "dotenv";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/db";
+import { parseBoundedInt, withPrismaRetry } from "./prisma-retry";
 
 loadEnv({ path: ".env", quiet: true });
 loadEnv({ path: ".env.local", override: true, quiet: true });
@@ -25,6 +26,20 @@ type HeldAggregateRow = {
 };
 
 const failOnMismatch = process.env.CREDIT_RECONCILE_FAIL_ON_MISMATCH === "true";
+const prismaRetryOptions = {
+  attempts: parseBoundedInt(process.env.CREDIT_RECONCILE_PRISMA_RETRY_ATTEMPTS, 4, 1, 8),
+  delayMs: parseBoundedInt(process.env.CREDIT_RECONCILE_PRISMA_RETRY_DELAY_MS, 1_000, 100, 10_000),
+  connectionTimeoutMs: parseBoundedInt(
+    process.env.CREDIT_RECONCILE_PRISMA_CONNECTION_TIMEOUT_MS,
+    12_000,
+    2_000,
+    60_000,
+  ),
+  labelPrefix: "credit-reconcile",
+};
+
+const withCreditPrismaRetry = <T>(label: string, operation: () => Promise<T>): Promise<T> =>
+  withPrismaRetry(prisma, label, operation, prismaRetryOptions);
 
 const toBigIntValue = (value: bigint | number | string | null | undefined): bigint => {
   if (value == null) return 0n;
@@ -34,57 +49,69 @@ const toBigIntValue = (value: bigint | number | string | null | undefined): bigi
 };
 
 const run = async (): Promise<void> => {
-  const tableCheck = await prisma.$queryRaw<Array<{ relation: string | null }>>(Prisma.sql`
-    SELECT to_regclass('public."CreditLedger"')::text AS relation
-  `);
+  const tableCheck = await withCreditPrismaRetry("check CreditLedger table", () =>
+    prisma.$queryRaw<Array<{ relation: string | null }>>(Prisma.sql`
+      SELECT to_regclass('public."CreditLedger"')::text AS relation
+    `),
+  );
   if (!tableCheck[0]?.relation) {
     console.warn('Credit reconcile skipped: table "CreditLedger" does not exist yet. Run migrations first.');
     return;
   }
 
-  const heldCreditsColumnCheck = await prisma.$queryRaw<Array<{ present: boolean }>>(Prisma.sql`
-    SELECT EXISTS (
-      SELECT 1
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND table_name = 'CreditBalance'
-        AND column_name = 'heldCredits'
-    ) AS present
-  `);
+  const heldCreditsColumnCheck = await withCreditPrismaRetry("check CreditBalance.heldCredits column", () =>
+    prisma.$queryRaw<Array<{ present: boolean }>>(Prisma.sql`
+      SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'CreditBalance'
+          AND column_name = 'heldCredits'
+      ) AS present
+    `),
+  );
   const hasHeldCreditsColumn = Boolean(heldCreditsColumnCheck[0]?.present);
 
-  const fulfillmentHoldTableCheck = await prisma.$queryRaw<Array<{ relation: string | null }>>(Prisma.sql`
-    SELECT to_regclass('public."FulfillmentHold"')::text AS relation
-  `);
+  const fulfillmentHoldTableCheck = await withCreditPrismaRetry("check FulfillmentHold table", () =>
+    prisma.$queryRaw<Array<{ relation: string | null }>>(Prisma.sql`
+      SELECT to_regclass('public."FulfillmentHold"')::text AS relation
+    `),
+  );
   const hasFulfillmentHoldTable = Boolean(fulfillmentHoldTableCheck[0]?.relation);
 
   const balances: CreditBalanceRow[] = hasHeldCreditsColumn
-    ? await prisma.creditBalance.findMany({
-        select: {
-          walletAddress: true,
-          credits: true,
-          heldCredits: true,
-          lastSyncedBlock: true,
-          updatedAt: true,
-        },
-      })
-    : await prisma.creditBalance.findMany({
-        select: {
-          walletAddress: true,
-          credits: true,
-          lastSyncedBlock: true,
-          updatedAt: true,
-        },
-      });
+    ? await withCreditPrismaRetry("load credit balances with held credits", () =>
+        prisma.creditBalance.findMany({
+          select: {
+            walletAddress: true,
+            credits: true,
+            heldCredits: true,
+            lastSyncedBlock: true,
+            updatedAt: true,
+          },
+        }),
+      )
+    : await withCreditPrismaRetry("load credit balances", () =>
+        prisma.creditBalance.findMany({
+          select: {
+            walletAddress: true,
+            credits: true,
+            lastSyncedBlock: true,
+            updatedAt: true,
+          },
+        }),
+      );
 
-  const latestLedgerRows = await prisma.$queryRaw<LatestLedgerRow[]>(Prisma.sql`
-    SELECT DISTINCT ON ("walletAddress")
-      "walletAddress",
-      "balanceAfter",
-      "createdAt"
-    FROM "CreditLedger"
-    ORDER BY "walletAddress", "createdAt" DESC
-  `);
+  const latestLedgerRows = await withCreditPrismaRetry("load latest credit ledger rows", () =>
+    prisma.$queryRaw<LatestLedgerRow[]>(Prisma.sql`
+      SELECT DISTINCT ON ("walletAddress")
+        "walletAddress",
+        "balanceAfter",
+        "createdAt"
+      FROM "CreditLedger"
+      ORDER BY "walletAddress", "createdAt" DESC
+    `),
+  );
 
   const latestByWallet = new Map<string, LatestLedgerRow>();
   for (const row of latestLedgerRows) {
@@ -112,14 +139,16 @@ const run = async (): Promise<void> => {
   }
 
   if (hasHeldCreditsColumn && hasFulfillmentHoldTable) {
-    const heldAggregates = await prisma.$queryRaw<HeldAggregateRow[]>(Prisma.sql`
-      SELECT
-        "walletAddress",
-        COALESCE(SUM("cost"), 0)::bigint AS "heldCostSum"
-      FROM "FulfillmentHold"
-      WHERE "state" = 'HELD'
-      GROUP BY "walletAddress"
-    `);
+    const heldAggregates = await withCreditPrismaRetry("aggregate active fulfillment holds", () =>
+      prisma.$queryRaw<HeldAggregateRow[]>(Prisma.sql`
+        SELECT
+          "walletAddress",
+          COALESCE(SUM("cost"), 0)::bigint AS "heldCostSum"
+        FROM "FulfillmentHold"
+        WHERE "state" = 'HELD'
+        GROUP BY "walletAddress"
+      `),
+    );
 
     const heldByWallet = new Map<string, bigint>();
     for (const row of heldAggregates) {
@@ -139,16 +168,20 @@ const run = async (): Promise<void> => {
     }
   }
 
-  const creditAggregate = await prisma.creditLedger.aggregate({
-    where: { direction: "CREDIT" },
-    _sum: { amount: true },
-    _count: { _all: true },
-  });
-  const debitAggregate = await prisma.creditLedger.aggregate({
-    where: { direction: "DEBIT" },
-    _sum: { amount: true },
-    _count: { _all: true },
-  });
+  const creditAggregate = await withCreditPrismaRetry("aggregate credit ledger credits", () =>
+    prisma.creditLedger.aggregate({
+      where: { direction: "CREDIT" },
+      _sum: { amount: true },
+      _count: { _all: true },
+    }),
+  );
+  const debitAggregate = await withCreditPrismaRetry("aggregate credit ledger debits", () =>
+    prisma.creditLedger.aggregate({
+      where: { direction: "DEBIT" },
+      _sum: { amount: true },
+      _count: { _all: true },
+    }),
+  );
 
   const totalBalanceCredits = balances.reduce((sum, row) => sum + BigInt(row.credits), 0n);
   const ledgerCredits = BigInt(creditAggregate._sum.amount ?? 0);

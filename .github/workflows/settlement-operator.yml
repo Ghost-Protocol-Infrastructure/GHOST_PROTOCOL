@@ -67,31 +67,45 @@ jobs:
             local url="$2"
             local response_file="$3"
             local http_code=""
+            local curl_exit=0
             local attempt=1
             local max_attempts=3
 
             while [ "${attempt}" -le "${max_attempts}" ]; do
               echo "Attempt ${attempt}/${max_attempts}: ${method} ${url}"
+              set +e
               http_code="$(curl -sS -o "${response_file}" -w '%{http_code}' \
                 -X "${method}" \
+                --connect-timeout 10 \
+                --max-time 90 \
                 -H "Authorization: Bearer ${SETTLEMENT_SECRET}" \
                 -H "Accept: application/json" \
                 "${url}")"
+              curl_exit=$?
+              set -e
 
-              if [ "${http_code}" = "200" ]; then
+              if [ "${curl_exit}" -eq 0 ] && [ "${http_code}" = "200" ]; then
                 return 0
               fi
 
-              if [ "${http_code}" = "401" ]; then
+              if [ "${curl_exit}" -eq 0 ] && [ "${http_code}" = "401" ]; then
                 echo "Endpoint rejected settlement operator secret with HTTP 401" >&2
                 return 1
               fi
 
-              if [ "${attempt}" -lt "${max_attempts}" ]; then
-                echo "Endpoint failed with HTTP ${http_code}; retrying in 10s..." >&2
-                sleep 10
+              if [ "${curl_exit}" -ne 0 ]; then
+                echo "Settlement operator curl failed with exit ${curl_exit}." >&2
               else
-                echo "Endpoint failed with HTTP ${http_code}" >&2
+                echo "Endpoint failed with HTTP ${http_code}." >&2
+              fi
+
+              if [ "${attempt}" -lt "${max_attempts}" ] && { [ "${curl_exit}" -ne 0 ] || [ "${http_code}" = "408" ] || [ "${http_code}" = "429" ] || [[ "${http_code}" =~ ^5 ]]; }; then
+                sleep_for=$((attempt * 10))
+                echo "Retrying settlement operator request in ${sleep_for}s..." >&2
+                sleep "${sleep_for}"
+              else
+                echo "Settlement operator request failed without another retry." >&2
+                return 1
               fi
 
               attempt=$((attempt + 1))
