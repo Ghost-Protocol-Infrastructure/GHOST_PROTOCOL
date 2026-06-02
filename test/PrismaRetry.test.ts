@@ -19,6 +19,17 @@ test("isRecoverablePrismaError treats Postgres administrator termination as retr
   assert.equal(isRecoverablePrismaError(buildRecoverableError()), true);
 });
 
+test("isRecoverablePrismaError treats transient database reachability failures as retryable", () => {
+  assert.equal(
+    isRecoverablePrismaError(
+      new Error(
+        "PrismaClientInitializationError: Can't reach database server at `ep-little-fog-ai2cive4.c-4.us-east-1.aws.neon.tech:5432`. Please make sure your database server is running.",
+      ),
+    ),
+    true,
+  );
+});
+
 test("isRecoverablePrismaError treats validation failures as non-retryable", () => {
   assert.equal(isRecoverablePrismaError(new Error("Unique constraint failed on the fields: (`id`)")), false);
 });
