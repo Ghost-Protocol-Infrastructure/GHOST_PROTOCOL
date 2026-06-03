@@ -46,7 +46,9 @@
     "check:lock": "npx npm@10.8.2 ci --ignore-scripts --no-audit --no-fund",
     "update-data": "npm run index:db",
     "postinstall": "prisma generate",
-    "prepare": "husky"
+    "prepare": "husky",
+    "db:retention:snapshots": "npx tsx scripts/prune-score-snapshots.ts",
+    "db:footprint": "npx tsx scripts/report-db-footprint.ts"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0",

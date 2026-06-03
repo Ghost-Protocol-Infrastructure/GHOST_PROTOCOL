@@ -71,5 +71,8 @@ jobs:
       - name: Build v2 leaderboard snapshot
         run: npm run score:v2:snapshot
 
+      - name: Apply score snapshot retention
+        run: npm run db:retention:snapshots -- --execute --keep-ready-snapshots=2 --keep-non-ready-hours=48 --max-delete-snapshots=3 --vacuum=none
+
       - name: Report index health
         run: npx tsx scripts/report-index-health.ts
