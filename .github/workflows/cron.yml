@@ -32,7 +32,6 @@ jobs:
       AGENT_PRISMA_RETRY_DELAY_MS: "1000"
       AGENT_PRISMA_OPERATION_TIMEOUT_MS: "180000"
       AGENT_PRISMA_CONNECTION_TIMEOUT_MS: "12000"
-      GHOST_TELEMETRY_WINDOW_MINUTES: "1440"
 
     steps:
       - name: Checkout code
@@ -56,9 +55,6 @@ jobs:
 
       - name: Run indexer
         run: npm run index:db
-
-      - name: Ingest telemetry signals
-        run: npm run ingest:telemetry
 
       - name: Report index health
         run: npx tsx scripts/report-index-health.ts
