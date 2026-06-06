@@ -1479,25 +1479,29 @@ type Erc8004RefreshRow = Awaited<
 >[number];
 
 const getMetadataRefreshCursor = async (): Promise<number> => {
-  const state = await prisma.systemState.findUnique({
-    where: { key: ERC8004_METADATA_REFRESH_CURSOR_KEY },
-  });
+  const state = await withPrismaRetry("read ERC-8004 metadata refresh cursor", () =>
+    prisma.systemState.findUnique({
+      where: { key: ERC8004_METADATA_REFRESH_CURSOR_KEY },
+    }),
+  );
   if (!state || state.lastSyncedBlock <= 0n) return 0;
   const asNumber = Number(state.lastSyncedBlock);
   return Number.isFinite(asNumber) && asNumber >= 0 ? Math.trunc(asNumber) : 0;
 };
 
 const persistMetadataRefreshCursor = async (nextOffset: number): Promise<void> => {
-  await prisma.systemState.upsert({
-    where: { key: ERC8004_METADATA_REFRESH_CURSOR_KEY },
-    create: {
-      key: ERC8004_METADATA_REFRESH_CURSOR_KEY,
-      lastSyncedBlock: BigInt(Math.max(0, Math.trunc(nextOffset))),
-    },
-    update: {
-      lastSyncedBlock: BigInt(Math.max(0, Math.trunc(nextOffset))),
-    },
-  });
+  await withPrismaRetry("persist ERC-8004 metadata refresh cursor", () =>
+    prisma.systemState.upsert({
+      where: { key: ERC8004_METADATA_REFRESH_CURSOR_KEY },
+      create: {
+        key: ERC8004_METADATA_REFRESH_CURSOR_KEY,
+        lastSyncedBlock: BigInt(Math.max(0, Math.trunc(nextOffset))),
+      },
+      update: {
+        lastSyncedBlock: BigInt(Math.max(0, Math.trunc(nextOffset))),
+      },
+    }),
+  );
 };
 
 const loadTargetedErc8004RefreshRows = async (): Promise<{ rows: Erc8004RefreshRow[]; total: number }> => {
@@ -1508,21 +1512,23 @@ const loadTargetedErc8004RefreshRows = async (): Promise<{ rows: Erc8004RefreshR
   }
 
   const tokenAddresses = ERC8004_REFRESH_TOKEN_IDS.map((tokenId) => `${ERC8004_ADDRESS_PREFIX}${tokenId}`);
-  const rows = await prisma.agent.findMany({
-    where: {
-      AND: [
-        { address: { startsWith: ERC8004_ADDRESS_PREFIX } },
-        {
-          OR: [
-            ...(ERC8004_REFRESH_AGENT_IDS.length > 0 ? [{ agentId: { in: ERC8004_REFRESH_AGENT_IDS } }] : []),
-            ...(tokenAddresses.length > 0 ? [{ address: { in: tokenAddresses } }] : []),
-          ],
-        },
-      ],
-    },
-    orderBy: { agentId: "asc" },
-    select: ERC8004_REFRESH_ROW_SELECT,
-  });
+  const rows = await withPrismaRetry("load targeted ERC-8004 metadata refresh rows", () =>
+    prisma.agent.findMany({
+      where: {
+        AND: [
+          { address: { startsWith: ERC8004_ADDRESS_PREFIX } },
+          {
+            OR: [
+              ...(ERC8004_REFRESH_AGENT_IDS.length > 0 ? [{ agentId: { in: ERC8004_REFRESH_AGENT_IDS } }] : []),
+              ...(tokenAddresses.length > 0 ? [{ address: { in: tokenAddresses } }] : []),
+            ],
+          },
+        ],
+      },
+      orderBy: { agentId: "asc" },
+      select: ERC8004_REFRESH_ROW_SELECT,
+    }),
+  );
 
   return {
     rows,
@@ -1531,11 +1537,13 @@ const loadTargetedErc8004RefreshRows = async (): Promise<{ rows: Erc8004RefreshR
 };
 
 const loadFullErc8004RefreshRows = async (): Promise<{ rows: Erc8004RefreshRow[]; total: number }> => {
-  const rows = await prisma.agent.findMany({
-    where: { address: { startsWith: ERC8004_ADDRESS_PREFIX } },
-    orderBy: { agentId: "asc" },
-    select: ERC8004_REFRESH_ROW_SELECT,
-  });
+  const rows = await withPrismaRetry("load full ERC-8004 metadata refresh rows", () =>
+    prisma.agent.findMany({
+      where: { address: { startsWith: ERC8004_ADDRESS_PREFIX } },
+      orderBy: { agentId: "asc" },
+      select: ERC8004_REFRESH_ROW_SELECT,
+    }),
+  );
 
   return {
     rows,
@@ -1551,21 +1559,25 @@ const loadBoundedErc8004RefreshRows = async (): Promise<{
   cohort: string;
 }> => {
   const currentCursor = await getMetadataRefreshCursor();
-  const activeSnapshot = await prisma.leaderboardSnapshot.findFirst({
-    where: {
-      isActive: true,
-      status: "READY",
-    },
-    select: { id: true },
-  });
+  const activeSnapshot = await withPrismaRetry("load active snapshot for ERC-8004 metadata refresh", () =>
+    prisma.leaderboardSnapshot.findFirst({
+      where: {
+        isActive: true,
+        status: "READY",
+      },
+      select: { id: true },
+    }),
+  );
 
   if (activeSnapshot) {
-    const total = await prisma.leaderboardSnapshotRow.count({
-      where: {
-        snapshotId: activeSnapshot.id,
-        agentAddress: { startsWith: ERC8004_ADDRESS_PREFIX },
-      },
-    });
+    const total = await withPrismaRetry("count active ERC-8004 metadata refresh cohort", () =>
+      prisma.leaderboardSnapshotRow.count({
+        where: {
+          snapshotId: activeSnapshot.id,
+          agentAddress: { startsWith: ERC8004_ADDRESS_PREFIX },
+        },
+      }),
+    );
     const window = computeRotatingBatchWindow(total, ERC8004_METADATA_REFRESH_BATCH_SIZE, currentCursor);
     if (window.limit === 0) {
       return {
@@ -1577,23 +1589,27 @@ const loadBoundedErc8004RefreshRows = async (): Promise<{
       };
     }
 
-    const snapshotRows = await prisma.leaderboardSnapshotRow.findMany({
-      where: {
-        snapshotId: activeSnapshot.id,
-        agentAddress: { startsWith: ERC8004_ADDRESS_PREFIX },
-      },
-      orderBy: { rank: "asc" },
-      skip: window.offset,
-      take: window.limit,
-      select: { agentAddress: true },
-    });
+    const snapshotRows = await withPrismaRetry("load active ERC-8004 metadata refresh window", () =>
+      prisma.leaderboardSnapshotRow.findMany({
+        where: {
+          snapshotId: activeSnapshot.id,
+          agentAddress: { startsWith: ERC8004_ADDRESS_PREFIX },
+        },
+        orderBy: { rank: "asc" },
+        skip: window.offset,
+        take: window.limit,
+        select: { agentAddress: true },
+      }),
+    );
     const orderedAddresses = snapshotRows.map((row) => row.agentAddress);
-    const rows = await prisma.agent.findMany({
-      where: {
-        address: { in: orderedAddresses },
-      },
-      select: ERC8004_REFRESH_ROW_SELECT,
-    });
+    const rows = await withPrismaRetry("load active ERC-8004 agent metadata refresh rows", () =>
+      prisma.agent.findMany({
+        where: {
+          address: { in: orderedAddresses },
+        },
+        select: ERC8004_REFRESH_ROW_SELECT,
+      }),
+    );
     const rowsByAddress = new Map(rows.map((row) => [row.address, row] as const));
 
     return {
@@ -1607,20 +1623,24 @@ const loadBoundedErc8004RefreshRows = async (): Promise<{
     };
   }
 
-  const total = await prisma.agent.count({
-    where: { address: { startsWith: ERC8004_ADDRESS_PREFIX } },
-  });
+  const total = await withPrismaRetry("count fallback ERC-8004 metadata refresh cohort", () =>
+    prisma.agent.count({
+      where: { address: { startsWith: ERC8004_ADDRESS_PREFIX } },
+    }),
+  );
   const window = computeRotatingBatchWindow(total, ERC8004_METADATA_REFRESH_BATCH_SIZE, currentCursor);
   const rows =
     window.limit === 0
       ? []
-      : await prisma.agent.findMany({
-          where: { address: { startsWith: ERC8004_ADDRESS_PREFIX } },
-          orderBy: { updatedAt: "asc" },
-          skip: window.offset,
-          take: window.limit,
-          select: ERC8004_REFRESH_ROW_SELECT,
-        });
+      : await withPrismaRetry("load fallback ERC-8004 metadata refresh window", () =>
+          prisma.agent.findMany({
+            where: { address: { startsWith: ERC8004_ADDRESS_PREFIX } },
+            orderBy: { updatedAt: "asc" },
+            skip: window.offset,
+            take: window.limit,
+            select: ERC8004_REFRESH_ROW_SELECT,
+          }),
+        );
 
   return {
     rows,
